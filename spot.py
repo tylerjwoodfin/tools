@@ -77,4 +77,4 @@ if __name__ == '__main__':
     f.close()
 
     # Push the new log file (and anything else from today) to Github
-    os.system("cd /var/www/html; git add -A; git commit -m 'Updated Logs'; git push")
+    os.system("cd /var/www/html; git pull; git add -A; git commit -m 'Updated Logs'; git push")
