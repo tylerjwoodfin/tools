@@ -4,9 +4,9 @@
 import os
 
 def variable(varname):
-	f = open("SecureData/" + varname, "r")
+	f = open("/home/pi/Tools/SecureData/" + varname, "r")
 	return f.read()
 
 def array(varname):
-	f = open("SecureData/" + varname, "r")
+	f = open("/home/pi/Tools/SecureData/" + varname, "r")
 	return f.read().split('\n')
