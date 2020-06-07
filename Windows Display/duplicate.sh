@@ -1,0 +1,1 @@
+"C:\Program Files (x86)\12noon Display Changer/dccmd" dccmd -monitor="\\\\.\\DISPLAY2" -detach
