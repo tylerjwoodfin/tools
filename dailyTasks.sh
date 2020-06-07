@@ -5,9 +5,9 @@
 #!/bin/sh
 
 # Read certain variables from the secure data folder
-tasks=$(</home/pi/SecureData/nextCloudRootDirectory)
-email_pi=$(</home/pi/SecureData/email_pi)
-email=$(</home/pi/SecureData/email)
+tasks=$(</home/pi/Tools/SecureData/nextCloudRootDirectory)
+email_pi=$(</home/pi/Tools/SecureData/email_pi)
+email=$(</home/pi/Tools/SecureData/email)
 
 body="
 <!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">
