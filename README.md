@@ -15,5 +15,5 @@ I keep a day-to-day "Tasks.txt" text file, which I use to manage my life. It's b
 My Raspberry Pi email everybody on a list on Thursdays to remind us to enter our time for the week. Anybody can sign up on [my website](https://tyler.cloud/timecard), or through our organization's internal website.
 
 ## Contact
-- tyler.cloud
-- linkedin.com/in/tylerjwoodfin
+- [tyler.cloud](tyler.cloud) (Website)
+- [LinkedIn](http://linkedin.com/in/tylerjwoodfin)
