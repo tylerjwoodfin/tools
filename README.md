@@ -12,7 +12,7 @@ I keep a day-to-day "Tasks.txt" text file, which I use to manage my life. It's b
 
 ## timecard.py
 
-My Raspberry Pi email everybody on a list on Thursdays to remind us to enter our time for the week. Anybody can sign up at [https://tyler.cloud/timecard], or through our organization's internal website.
+My Raspberry Pi email everybody on a list on Thursdays to remind us to enter our time for the week. Anybody can sign up on [my website](https://tyler.cloud/timecard), or through our organization's internal website.
 
 ## Contact
 - tyler.cloud
