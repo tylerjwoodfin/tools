@@ -10,7 +10,7 @@ email_pi=$(</home/pi/Tools/SecureData/email_pi)
 email=$(</home/pi/Tools/SecureData/email)
 
 today=$(date +%Y-%m-%d)
-tasksCopy="/var/www/html/Logs/Tasks/"
+tasksCopy="/var/www/html/Logs/Tasks"
 
 # copy to the Log folder to back up
 mkdir -p $tasksCopy # in case it's not there for some reason
