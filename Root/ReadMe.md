@@ -14,7 +14,7 @@ This is a guide to rooting an Android phone after receiving an [OTA] (over-the-a
 I'm not liable for anything that goes wrong, although worst case scenario, you need to factory reset your phone. I hope you've backed everything up properly!
 
 # BEFORE UPDATING:
-    - Move the entire OTA somewhere safe (stored in ~/.ota), because it's going to be deleted after the update
+    - Copy the entire OTA somewhere safe (stored in ~/.ota on your phone), because it's going to be deleted after the update
     - Update your phone using the built-in system updater
     - Extract payload.bin from the OTA using 7Zip or something similar
     - Place payload.bin into the input folder inside payload_dumper-win64
