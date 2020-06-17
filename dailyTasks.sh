@@ -1,11 +1,10 @@
 # ReadMe
-# This grabs my Tasks file from Nextcloud, then emails it to me.
+# This formats my Tasks.txt file to monospace, then emails it to me. The associated cron job first pulls from Dropbox using Rclone.
 # Usage: sudo bash dailyTasks.sh
-
-#!/bin/sh
+#!/bin/bash
 
 # Read certain variables from the secure data folder
-tasks=$(</home/pi/Tools/SecureData/nextCloudRootDirectory)
+tasks="/home/pi/Notes/Tasks.txt"
 email_pi=$(</home/pi/Tools/SecureData/email_pi)
 email=$(</home/pi/Tools/SecureData/email)
 
@@ -14,7 +13,7 @@ tasksCopy="/var/www/html/Logs/Tasks"
 
 # copy to the Log folder to back up
 mkdir -p $tasksCopy # in case it's not there for some reason
-cp -r $tasks/Notes/Tasks.txt "$tasksCopy/Tasks $today.txt"
+cp -r $tasks "$tasksCopy/Tasks $today.txt"
 echo "Tasks copied to Log folder."
 
 body="
@@ -27,7 +26,7 @@ Dear Tyler,<br><br>
 Please review the following tasks:<br><font face='monospace'>"
 
 # Replace \n with <br> and replace ' ' with &nbsp;
-tasks=$(sed -e 's|^|<br>|' -e 's|\s|\&nbsp;|g' $tasks/Notes/Tasks.txt)
+tasks=$(sed -e 's|^|<br>|' -e 's|\s|\&nbsp;|g' $tasks)
 
 body="$body$tasks"
 
