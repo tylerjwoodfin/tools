@@ -5,12 +5,13 @@
 
 import os, secureData
 
-sentFrom = "Tyler's Raspberry Pi"
+sentFrom = "Raspberry Pi"
 contacts = secureData.array("timecardEmails")
 
 for i in contacts:
-	if(i.split(":")[0] == "hub"):
-		sentFrom = "- Oracle Austin Hub Team"
+    if(i.split(":")[0] == "hub"):
+        sentFrom = "Oracle Austin Hub Team"
 
-	message = "Please remember to enter your time.\n\nThanks,\n" + sentFrom + "\n\nReply STOP to unsubscribe"
-	os.system("echo \"" + "Hi " + i.split(":")[1] +",\n\n" + message + "\" | mail -s \"Timecard Reminder\" " + i.split(":")[2])
+    message = "Hi " + i.split(":")[1] + ",<br><br>Please remember to enter your time.<br><br>Thanks,<br><br>- " + sentFrom + "<br><br>Reply STOP to unsubscribe"
+    # os.system("echo \"" + message + "\" | mail -s \"Timecard Reminder\" -f \"Oracle Austin Hub\"" + i.split(":")[2])
+    os.system("echo \"" + message + "\" | mail  -a \"From: " + sentFrom + "\"  -a \"MIME-Version: 1.0\"  -a \"Content-Type: text/html\"  -s \"Timecard Reminder\" \"" + i.split(":")[2] + "\"")
