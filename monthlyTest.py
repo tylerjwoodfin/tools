@@ -7,6 +7,4 @@ import os, secureData
 os.system("echo \"" + "This is a test file used to test email, network, and Git functionality\"")
 os.system("echo \"Testing Email:\"")
 
-os.system("echo \"" + "Hi Tyler,\n\nThis is a test email from your Raspberry Pi." + "\" | mail -s \"Raspberry Pi Test Email\" " + secureData.variable("email"))
-
-os.system("echo \"Email Sent.\"")
+os.system("sudo bash sendEmail.sh " + secureData.variable("email") + "\"Monthly Raspberry Pi Test\" \"This is a monthly system test for the Raspberry Pi.\"")

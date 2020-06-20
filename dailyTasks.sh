@@ -31,11 +31,4 @@ tasks=$(sed -e 's|^|<br>|' -e 's|\s|\&nbsp;|g' $tasks)
 body="$body$tasks"
 
 # Email the Tasks file
-echo $body | mail \
--a "From: $email_pi" \
--a "MIME-Version: 1.0" \
--a "Content-Type: text/html" \
--s "Daily Tasks Review" \
-$email
-
-echo "Email Sent."
+bash sendEmail.sh $email "Daily Tasks Review" "$body"
