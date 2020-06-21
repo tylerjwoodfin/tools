@@ -14,6 +14,9 @@ if [ -z "$4" ]; then
 	sender="Raspberry Pi"
 fi
 
+# Log to syslog
+logger "Sending Email: to $to, sub $subject, from $sender"
+
 if echo $message | mail \
 -a "From: $sender" \
 -a "MIME-Version: 1.0" \
