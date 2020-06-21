@@ -420,9 +420,9 @@ class LB130(object):
                 else:
                     raise RuntimeError("Bulb returned error: " + dec_data)
             else:
-                raise RuntimeError("Error connecting to bulb")
+                raise RuntimeError("Error connecting to bulb, Update1")
         except:
-            raise RuntimeError("Error connecting to bulb")
+            raise RuntimeError("Error connecting to bulb, Update")
 
     def __fetch_data(self, message):
         '''
@@ -449,6 +449,6 @@ class LB130(object):
                 else:
                     raise RuntimeError("Bulb returned error: " + dec_data)
             else:
-                raise RuntimeError("Error connecting to bulb")
+                raise RuntimeError("Error connecting to bulb, FetchData1")
         except:
-            raise RuntimeError("Error connecting to bulb")
+            raise RuntimeError("Error connecting to bulb, FetchData")
