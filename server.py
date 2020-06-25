@@ -1,3 +1,9 @@
+# ReadMe
+# Usage: this runs as a service named TylerDotCloud on my Raspberry Pi. If not, then add it as a service using steps here: https://medium.com/@benmorel/creating-a-linux-service-with-systemd-611b5c8b91d6
+# This is a constantly-running local server on Port 10000. If I run the associated client.py to send a message, this responds accordingly.
+# Right now, it's set up for my Smart bulb to send an alert, but I can also use it in the future for some sort of voice command system.
+# Lots of potential!
+
 import select
 import socket
 import sys
