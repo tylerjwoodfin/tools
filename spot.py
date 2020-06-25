@@ -49,7 +49,7 @@ if __name__ == '__main__':
     client_credentials_manager = SpotifyClientCredentials()
     sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
-    filePath = "/var/www/html/Logs/"
+    filePath = "/var/www/html/Logs/Songs/"
     fullPath = filePath + "Songs " + str(datetime.date.today()) + ".csv"
 
     # get number of songs from yesterday
