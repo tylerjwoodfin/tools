@@ -1,3 +1,7 @@
+# ReadMe
+# Connects to the supposed-to-be-running server.py and sends a message. Server.py responds according to its own logic, this is just the messenger.
+# If nothing is received, check that the server is running.
+
 import socket
 import sys
 
