@@ -24,6 +24,9 @@ def main():
     saturation = light.saturation # y-axis on app
     temperature = light.temperature #x-axis on app
     
+    # Turn On, in case it's off
+    light.on()
+
     # Cycle Red and Blue
     light.hue = 255
     light.saturation = 100
