@@ -10,6 +10,7 @@ import sys
 import Queue
 import time
 import os
+import json
 
 # import from SmartBulb folder
 sys.path.append('/home/pi/Tools/SmartBulb')
@@ -41,7 +42,7 @@ message_queues = {}
 while inputs:
 
     # Wait for at least one of the sockets to be ready for processing
-    print >> sys.stderr, '\nwaiting for the next event'
+    # print >> sys.stderr, '\nwaiting for the next event'
     readable, writable, exceptional = select.select(inputs, outputs, inputs)
 
     # Handle inputs
@@ -61,7 +62,39 @@ while inputs:
             if data:
                 # Hello -> Alert
                 if(data == "hello"):
-                    os.system("python3 /home/pi/Tools/SmartBulb/alert.py")
+                    lightWasOff = False
+                    
+                    try:
+                        light.status()
+                    except:
+                        light.on() # light was off (hence the error), so turn it on
+                        lightWasOff = True
+                        
+                    
+                    # Store current variables
+                    hue = light.hue
+                    brightness = light.brightness
+                    saturation = light.saturation # y-axis on app
+                    temperature = light.temperature #x-axis on app
+                    isLightOn = json.loads(light.status())['system']['get_sysinfo']['light_state']['on_off']
+
+                    # Cycle Red and Blue
+                    light.hue = 255
+                    light.saturation = 100
+                    time.sleep(1)
+                    light.hue = 0
+                    time.sleep(1)
+                    light.hue = 255
+                    time.sleep(1)
+    
+                    # Restore variables
+                    light.hue = hue
+                    light.brightness = brightness
+                    light.saturation = saturation
+                    light.temperature = max(temperature,4000)
+                    
+                    if(lightWasOff):
+                        light.off()
 
                 # A readable client socket has data
                 print >> sys.stderr, 'received "%s" from %s' % \
