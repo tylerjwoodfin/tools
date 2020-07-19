@@ -25,3 +25,4 @@ I'm not liable for anything that goes wrong, although worst case scenario, you n
     - Place your phone in Fastboot mode and connect it
     - Open a terminal window in the same folder as magisk_patched.img, and run:
         - fastboot flash boot magisk_patched.img
+        - fastboot reboot
