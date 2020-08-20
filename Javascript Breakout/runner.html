@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Run Dino</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+
+        // key listeners
+        document.addEventListener("keydown", keyDownHandler, false);
+        document.addEventListener("keyup", keyUpHandler, false);
+        // document.addEventListener("mousemove", mouseMoveHandler, false);
+
+        // colors
+        var colors = ['#FF6633', '#FFB399', '#FF33FF', '#FFFF99', '#00B3E6', 
+		  '#E6B333', '#3366E6', '#999966', '#99FF99', '#B34D4D',
+		  '#80B300', '#809900', '#E6B3B3', '#6680B3', '#66991A', 
+		  '#FF99E6', '#CCFF1A', '#FF1A66', '#E6331A', '#33FFCC',
+		  '#66994D', '#B366CC', '#4D8000', '#B33300', '#CC80CC', 
+		  '#66664D', '#991AFF', '#E666FF', '#4DB3FF', '#1AB399',
+		  '#E666B3', '#33991A', '#CC9999', '#B3B31A', '#00E680', 
+		  '#4D8066', '#809980', '#E6FF80', '#1AFF33', '#999933',
+		  '#FF3380', '#CCCC00', '#66E64D', '#4D80CC', '#9900B3', 
+		  '#E64D66', '#4DB380', '#FF4D4D', '#99E6E6', '#6666FF'];
+        
+        var movingLeft = false;
+        var movingRight = false;
+
+        function keyDownHandler(e) {
+            if(e.key == "Right" || e.key == "ArrowRight") {
+                movingRight = true;
+            }
+            else if(e.key == "Left" || e.key == "ArrowLeft") {
+                movingLeft = true;
+            }
+        }
+
+        function keyUpHandler(e) {
+            if(e.key == "Right" || e.key == "ArrowRight") {
+                movingRight = false;
+            }
+            else if(e.key == "Left" || e.key == "ArrowLeft") {
+                movingLeft = false;
+            }
+        }
+
+        function mouseMoveHandler(e) {
+            var relativeX = e.clientX - canvas.offsetLeft;
+            if(relativeX > 0 && relativeX < canvas.width) {
+                dino.x = relativeX - dino.width/2;
+            }
+        }
+
+        //initialize dino
+        var dino = {};
+        function initializeDino() {
+            dino.height = 80;
+            dino.width = 80;
+            dino.margin = 30;
+            dino.x = (canvas.width-dino.width) / 2;
+        }
+
+        initializeDino();
+
+        // initialize obstacles
+        obstacles = [];
+
+        function initializeObstacle(o) {
+            o.size = 20;
+            o.x = canvas.width - o.size - 5;
+            o.y = canvas.height - (dino.height/2 + 10);
+            o.dx = 0 - Math.floor(Math.random() * 10) - 5;
+            o.dy = -0;
+            o.color = colors[Math.floor(Math.random() * colors.length)];
+
+            return o;
+        }
+
+        function initializeObstacles() {
+            for(var i=0; i < Math.floor(Math.random() * 3) + 1; i++)
+            {                
+                obstacles.push(initializeObstacle({}));
+            }
+        }
+
+        // resize to fit
+        (function() 
+        {
+            var canvas = document.getElementById('canvas');
+            var ctx = canvas.getContext('2d');
+
+            // resize the canvas to fill browser window dynamically
+            window.addEventListener('resize', resizeCanvas, false);
+            
+            function resizeCanvas() {
+                    console.log("Resizing");
+                    canvas.width = window.innerWidth;
+                    canvas.height = window.innerHeight;
+            }
+
+            resizeCanvas();
+            
+            initializeObstacles();
+
+            // score
+            var score = 0;
+
+            function drawScore() {
+                ctx.font = "16px Arial";
+                ctx.fillStyle = "#0095DD";
+                ctx.fillText(score, 8, 20);
+            }
+
+            function drawObstacle(o) {
+                ctx.beginPath();
+                ctx.arc(o.x, o.y, o.size, 0, Math.PI*2);
+                ctx.fillStyle = o.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+
+            function drawDino() {
+                ctx.beginPath();
+                ctx.rect(dino.x, canvas.height-dino.height - dino.margin, dino.width, dino.height);
+                ctx.fillStyle = "#0095DD";
+                ctx.fill();
+                ctx.closePath();
+            }
+            
+            function draw() {
+                if(typeof(obstacle) == "undefined")
+                {
+                    obstacle = {};
+                    initializeObstacle(obstacle);
+                }
+
+                // make 2nd obstacle
+
+                // draw ball
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                drawDino();
+                drawScore();
+
+                // draw each obstacle
+                for(i in obstacles)
+                {
+                    drawObstacle(obstacles[i]);
+                }
+
+                for(i in obstacles)
+                {
+                    // detect walls:
+                    if(obstacles[i].x + obstacles[i].dx > canvas.width-obstacles[i].size || obstacles[i].x + obstacles[i].dx < obstacles[i].size) {
+                        obstacles[i].dx = -obstacles[i].dx;
+                    }
+                    if(obstacles[i].y + obstacles[i].dy < obstacles[i].size) {
+                        obstacles[i].dy = -obstacles[i].dy;
+                    }
+
+                    if(obstacles[i].x <= dino.x + (dino.width*1.5)) {  // collision
+                        obstacles = [];
+                        setTimeout(function(){ 
+                            initializeObstacles();
+                        }, 3000);
+                        score--;
+                        break;
+                    }
+                    else
+                    {
+                        obstacles[i].x += Math.floor(Math.random() * 10 > 8) ? obstacles[i].dx-1 : obstacles[i].dx;
+                        obstacles[i].y += obstacles[i].dy;
+                    }
+                }
+
+                requestAnimationFrame(draw);
+            }
+
+            // draw every 10ms
+            draw();
+
+        })();
+
+    </script>
+
+</body>
+</html>
