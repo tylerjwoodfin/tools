@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Breakout</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+
+        // key listeners
+        document.addEventListener("keydown", keyDownHandler, false);
+        document.addEventListener("keyup", keyUpHandler, false);
+        document.addEventListener("mousemove", mouseMoveHandler, false);
+        
+        var movingLeft = false;
+        var movingRight = false;
+
+        function keyDownHandler(e) {
+            if(e.key == "Right" || e.key == "ArrowRight") {
+                movingRight = true;
+            }
+            else if(e.key == "Left" || e.key == "ArrowLeft") {
+                movingLeft = true;
+            }
+        }
+
+        function keyUpHandler(e) {
+            if(e.key == "Right" || e.key == "ArrowRight") {
+                movingRight = false;
+            }
+            else if(e.key == "Left" || e.key == "ArrowLeft") {
+                movingLeft = false;
+            }
+        }
+
+        function mouseMoveHandler(e) {
+            var relativeX = e.clientX - canvas.offsetLeft;
+            if(relativeX > 0 && relativeX < canvas.width) {
+                paddleX = relativeX - paddleWidth/2;
+            }
+        }
+
+        //initialize paddle
+        var paddleHeight = 10;
+        var paddleWidth = 150;
+        var paddleMargin = 30;
+        var paddleX = (canvas.width-paddleWidth) / 2;
+
+        // resize to fit
+        (function() 
+        {
+            var canvas = document.getElementById('canvas');
+            var ctx = canvas.getContext('2d');
+
+            // resize the canvas to fill browser window dynamically
+            window.addEventListener('resize', resizeCanvas, false);
+            
+            function resizeCanvas() {
+                    canvas.width = window.innerWidth;
+                    canvas.height = window.innerHeight;
+            }
+
+            resizeCanvas();
+
+            // initialize ball
+            var ballSize = 30;
+            var x = canvas.width/2;
+            var y = canvas.height-30 - paddleMargin - paddleHeight;
+            var dx = 4;
+            var dy = -4;
+
+            // initialize bricks
+            var brickRowCount = 3;
+            var brickColumnCount = 6;
+            var brickWidth = 150;
+            var brickHeight = 40;
+            var brickPadding = 20;
+            var brickOffsetTop = 30;
+            var brickOffsetLeft = 30;
+
+            var bricks = [];
+            for(var c=0; c<brickColumnCount; c++) {
+                bricks[c] = [];
+                for(var r=0; r<brickRowCount; r++) {
+                    bricks[c][r] = { x: 0, y: 0, status: 1 };
+                }
+            }
+
+            // score
+            var score = 0;
+
+            function collisionDetection() {
+                for (var c = 0; c < brickColumnCount; c++) {
+                    for (var r = 0; r < brickRowCount; r++) {
+                        var b = bricks[c][r];
+                        if (b.status == 1) {
+                            if (x > b.x && x < b.x + brickWidth && y > b.y && y < b.y + brickHeight) {
+                                dy = -dy;
+                                b.status = 0;
+                                score+=10;
+
+                                if(score == brickRowCount*brickColumnCount*10) {
+                                    alert("YOU WIN, CONGRATULATIONS!");
+                                    document.location.reload();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            function drawScore() {
+                ctx.font = "16px Arial";
+                ctx.fillStyle = "#0095DD";
+                ctx.fillText("Score: "+score, 8, 20);
+            }
+
+            function drawBricks() {
+                for (var c = 0; c < brickColumnCount; c++) {
+                    for (var r = 0; r < brickRowCount; r++) {
+                        if (bricks[c][r].status == 1) {
+                            var brickX = (c * (brickWidth + brickPadding)) + canvas.width/4;
+                            var brickY = (r * (brickHeight + brickPadding)) + brickOffsetTop;
+                            bricks[c][r].x = brickX;
+                            bricks[c][r].y = brickY;
+                            ctx.beginPath();
+                            ctx.rect(brickX, brickY, brickWidth, brickHeight);
+                            ctx.fillStyle = "#0095DD";
+                            ctx.fill();
+                            ctx.closePath();
+                        }
+                    }
+                }
+            }
+
+            function drawBall() {
+                ctx.beginPath();
+                ctx.arc(x, y, ballSize, 0, Math.PI*2);
+                ctx.fillStyle = "#FF0000";
+                ctx.fill();
+                ctx.closePath();
+            }
+
+            function drawPaddle() {
+                ctx.beginPath();
+                ctx.rect(paddleX, canvas.height-paddleHeight - paddleMargin, paddleWidth, paddleHeight);
+                ctx.fillStyle = "#0095DD";
+                ctx.fill();
+                ctx.closePath();
+            }
+            
+            function draw() {
+
+                // draw ball
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                drawBricks();
+                drawBall();
+                drawPaddle();
+                collisionDetection();
+                drawScore();
+
+                // detect walls:
+                if(x + dx > canvas.width-ballSize || x + dx < ballSize) {
+                    dx = -dx;
+                }
+                if(y + dy < ballSize) {
+                    dy = -dy;
+                }
+                else if(y + dy > canvas.height-ballSize - paddleMargin)
+                {
+                    if(x > paddleX && x < paddleX + paddleWidth) {  // inside paddle
+                        dy = Math.floor(Math.random() * 10 > 8) ? -dx : -dy;
+
+                        // speed up
+                        dy += (dy > 0 ? 1 : -1);
+                        dx += (dx > 0 ? 1 : -1);
+                    }
+                    else if(y + dy > canvas.height-ballSize) {
+                        console.log("Game Over!");
+                        document.location.reload();
+                    }
+                }
+
+                // detect paddle movement
+                if(movingRight) {
+                    paddleX += 7;
+                    if (paddleX + paddleWidth > canvas.width){
+                        paddleX = canvas.width - paddleWidth;
+                    }
+                }
+                else if(movingLeft) {
+                    paddleX -= 7;
+                    if (paddleX < 0){
+                        paddleX = 0;
+                    }
+                }
+
+                x += Math.floor(Math.random() * 10 > 8) ? dx-1 : dx;
+                y += dy;
+
+                requestAnimationFrame(draw);
+            }
+
+            // draw every 10ms
+            draw();
+
+        })();
+
+    </script>
+
+</body>
+</html>
