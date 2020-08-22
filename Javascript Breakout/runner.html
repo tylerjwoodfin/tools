@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8" />
-    <title>Run Dino</title>
+    <title>Run, Dino</title>
     <link rel="stylesheet" type="text/css" href="style.css">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=NO">
 </head>
@@ -36,6 +36,13 @@
             }    
         }
 
+        // Dino
+        var img = new Image();   // Create new img element
+        img.addEventListener('load', function() {
+            // execute drawImage statements here
+        }, false);
+        img.src = 'square.png'; // Set source path
+
         // score
         var score = 0;
         var gameStarted = false;
@@ -44,11 +51,12 @@
         // instructions
         var showingInstructions = false;
 
-        var instructions = ["You're a square. Deal with it.",
-                            "Use the mouse or arrow keys to move up and down.",
-                            "Circles are evil. Don't you dare touch them.",
+        var instructions = ["You are Dino.",
+                            "Dino doesn't like circles. Why should he? Squares are a much more efficient use of space.",
+                            "Circles... scare Dino.",
+                            "Use the mouse or arrow keys to move up and down, and DON'T YOU DARE touch a circle.",
                             "Oh, but nothing can hurt you for the first 3 seconds. That's why you're hollow.",
-                            "Grab power-ups like 💣 and 🐌. I'll explain when you get one."];
+                            "Grab power-ups like 🏁 and 🐌. I'll explain them when you get them."];
 
         // key listeners
         document.addEventListener("keydown", keyDownHandler, false);
@@ -269,7 +277,7 @@
                 
                 if(!showingText)
                 {
-                    showText("Run Dino");
+                    showText("Run, Dino");
                     
                     if(!showingInstructions)
                     {
@@ -338,7 +346,7 @@
                     ctx.font = 1.3*o.diameter + "px Courier New";
                     ctx.fillStyle = "#424242";
                     ctx.textAlign = "center";
-                    ctx.fillText("💣", o.x, o.y);
+                    ctx.fillText("🏁", o.x, o.y);
                 }
 
                 ctx.fill();
@@ -350,12 +358,13 @@
                 
                 if(Date.now() - dino.birth > 3000)
                 {
-                    ctx.fillStyle = "#0095DD";
-                    ctx.fillRect(dino.x, dino.y, dino.width, dino.height);
+                    // ctx.fillStyle = "#0095DD";
+                    // ctx.fillRect(dino.x, dino.y, dino.width, dino.height);
+                    ctx.drawImage(img, dino.x, dino.y, dino.width, dino.height);
                 }
                 else
                 {
-                    showSubText("You're Indestructible!");
+                    // showSubText("You're Indestructible!");
                     ctx.strokeRect(dino.x, dino.y, dino.width, dino.height);
                 }
 
