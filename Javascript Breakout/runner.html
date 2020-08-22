@@ -139,11 +139,13 @@
         obstacles = [];
 
         function initializeObstacle(o) {
-            var fractionsOfCanvas = [20,30,40];
+            var fractionsOfCanvas = [15,25,30,35];
             o.diameter = canvas.height/fractionsOfCanvas[random(fractionsOfCanvas.length)];
             o.x = canvas.width - o.diameter - 5;
             o.y = canvas.height - random(canvas.height);
+
             o.dx = 0 - (random(6) + 3) - Math.floor(score/50);
+
             o.dy = random(10) > 7 ? (random(2) == 1 ? random(4) : 0 - random(4)) : 0;
             
             if(random(200) == 14)
@@ -249,6 +251,7 @@
                 if(o.status == "kill")
                 {
                     ctx.arc(o.x, o.y, o.diameter/2, 0, Math.PI*2);
+                    // ctx.fillRect(o.x, o.y, o.diameter, o.diameter);
                     
                 }
                 else if(o.status == "slow")
@@ -325,7 +328,7 @@
                 for(i in obstacles)
                 {
                     // detect walls:
-                    if(obstacles[i].x + obstacles[i].dx < obstacles[i].diameter) {  // obstacle cleared
+                    if(obstacles[i].x < 0) {  // obstacle cleared
                         obstacles.splice(i, 1);
 
                         if(gameStarted && !gameEnded)
@@ -338,14 +341,18 @@
                     }
 
                     if (dino.x < obstacles[i].x + obstacles[i].diameter
-                    && dino.y < obstacles[i].y + obstacles[i].diameter
-                    && dino.x + dino.width - 5 > obstacles[i].x
-                    && dino.y + dino.height > obstacles[i].y
+                    && dino.y < obstacles[i].y + obstacles[i].diameter/2
+                    && dino.x + dino.width > obstacles[i].x
+                    && dino.y + dino.height > obstacles[i].y - obstacles[i].diameter/2
                     && !gameEnded
                     && (Date.now() - dino.birth) > 3000) {  // collision
 
                         //testing
-                        alert("Dino X: " + dino.x + "\nDino Y: " + dino.y + "\nDino Height: " + dino.height + "\nObstacle X: " + obstacles[i].x + "\nObstacle Y: " + obstacles[i].y + "\nObstacle Diameter: " + obstacles[i].diameter);
+                        // obstacles = [obstacles[i]];
+                        // ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        // drawDino();
+                        // drawObstacle(obstacles[0]);
+                        // alert("Dino X: " + dino.x + "\nDino Y: " + dino.y + "\nDino Height: " + dino.height + "\nObstacle X: " + obstacles[0].x + "\nObstacle Y: " + obstacles[0].y + "\nObstacle Diameter: " + obstacles[0].diameter);
 
                         if(obstacles[i].status == "kill")
                         {
