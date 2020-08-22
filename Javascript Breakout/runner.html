@@ -20,7 +20,6 @@
         var h2 = Math.round(h * resolution);
         canvas.style.width = w + "px";
         canvas.style.height = h + "px";
-        // canvas.sdf(w2, h2);
 
         function sound(src) {
             this.sound = document.createElement("audio");
@@ -42,6 +41,15 @@
         var gameStarted = false;
         var gameEnded = false;
 
+        // instructions
+        var showingInstructions = false;
+
+        var instructions = ["You're a square. Deal with it.",
+                            "Use the mouse or arrow keys to move up and down.",
+                            "Circles are evil. Don't you dare touch them.",
+                            "Oh, but nothing can hurt you for the first 3 seconds. That's why you're hollow.",
+                            "Grab power-ups like 💣 and 🐌. I'll explain when you get one."];
+
         // key listeners
         document.addEventListener("keydown", keyDownHandler, false);
         document.addEventListener("keyup", keyUpHandler, false);
@@ -61,7 +69,7 @@
 
         // you died messages
         var deathMessages = ["You died.", "Oops", "Did someone die?", "lol", "DOOM", "Oof", "lmao", "Pathetic.", "That was fast.", "Really?", "What a cute try.",
-         "RIP", "What a shame.", "Do better next time.", "Try not dying next time.", "That's all you've got?", "There's not an easy mode.", "Is this your first video game?"];
+         "RIP", "What a shame.", "Do better next time.", "Try not dying next time.", "That's all you've got?", "There's not an easy mode.", "Is this your first video game?", "You're hilarious."];
          var deathMessage;
 
         // sound
@@ -83,6 +91,9 @@
             }
             else if(e.keyCode == 32)
             {
+                
+                showingInstructions = false;
+
                 if(!gameStarted)
                 {
                     gameStarted = true;
@@ -99,6 +110,13 @@
 
                 deathMessage = deathMessages[random(deathMessages.length)];
                 
+            }
+            else if(e.keyCode == 105 || e.keyCode == 73)
+            {
+                if(!gameStarted || gameEnded)
+                {
+                    showingInstructions = !showingInstructions;
+                }
             }
         }
 
@@ -118,6 +136,11 @@
             var relativeY = e.clientY;
             if(relativeY > 0 && relativeY < canvas.height) {
                 dino.y = relativeY - dino.height/2;
+
+                if (dino.y > canvas.height - dino.height){
+                    console.log("Fixed");
+                    dino.y = canvas.height - dino.height;
+                }
             }
         }
 
@@ -141,10 +164,15 @@
         function initializeObstacle(o) {
             var fractionsOfCanvas = [15,25,30,35];
             o.diameter = canvas.height/fractionsOfCanvas[random(fractionsOfCanvas.length)];
-            o.x = canvas.width - o.diameter - 5;
+
+            if(random(75) == 15)
+            {
+                o.diameter *= 2;
+            }
+            o.x = canvas.width + o.diameter + 10;
             o.y = canvas.height - random(canvas.height);
 
-            o.dx = 0 - (random(6) + 3) - Math.floor(score/50);
+            o.dx = 0 - (random(5) + 2) - Math.floor(score/35);
 
             o.dy = random(10) > 7 ? (random(2) == 1 ? random(4) : 0 - random(4)) : 0;
             
@@ -169,7 +197,8 @@
             for(var i=0; i < random(15) + 10; i++)
             {
                 setInterval(function() {
-                    if(obstacles.length < 25)
+                    var limit = Math.floor(score/12) < 17 ? 25 + Math.floor(score/12) : 42;
+                    if(obstacles.length < limit)
                     {
                         obstacles.push(initializeObstacle({}));
                     }
@@ -185,16 +214,18 @@
             var ctx = canvas.getContext('2d');
 
             // resize the canvas to fill browser window dynamically
-            window.addEventListener('resize', resizeCanvas, false);
+            // window.addEventListener('resize', resizeCanvas, false);
             
             function resizeCanvas() {
-                    console.log("Resizing");
+                    console.log("Resizing, " + window.innerHeight);
                     canvas.width = window.innerWidth;
                     canvas.height = window.innerHeight;
+                    // showingText = "Refresh to fix scaling";
+                    // draw();
             }
 
             function showText(text) {
-                ctx.font = "50px Courier New";
+                ctx.font = "80px Courier New";
                 ctx.fillStyle = "#424242";
                 ctx.textAlign = "center";
                 ctx.fillText(text, canvas.width/2, canvas.height/2);
@@ -207,6 +238,24 @@
                 ctx.fillText(text, canvas.width/2, canvas.height/2 + 50);
             }
 
+            function showInstructions(lineArray) {
+                ctx.font = "20px Courier New";
+                ctx.fillStyle = "#424242";
+                ctx.textAlign = "center";
+
+                for(var i in lineArray)
+                {
+                    ctx.fillText(lineArray[i], canvas.width/2, canvas.height/2 + 50 + i*50);
+                }
+            }
+
+            function showInstructionLink(text) {
+                ctx.font = "25px Courier New";
+                ctx.fillStyle = "#424242";
+                ctx.textAlign = "center";
+                ctx.fillText(text, canvas.width/2, canvas.height - 100);
+            }
+
             resizeCanvas();
             initializeObstacles();
 
@@ -217,17 +266,32 @@
             }
 
             function drawTitle() {
-                showText("Run Dino");
-
-                ctx.font = "20px Courier New";
-
-                if(Math.floor(Date.now()/1000) % 4 < 2)
+                
+                if(!showingText)
                 {
-                    showSubText("Press Space to Play");
+                    showText("Run Dino");
+                    
+                    if(!showingInstructions)
+                    {
+                        showInstructionLink("Press I for Instructions");
+                    }
+                }
+
+                if(!showingInstructions)
+                {
+                    if(Math.floor(Date.now()/1000) % 4 < 2)
+                    {
+                        showSubText("Press Space to Play");
+                    }
+                    else
+                    {
+                        showSubText("Avoid Circles")
+                    }
                 }
                 else
                 {
-                    showSubText("Avoid Circles")
+                    showInstructions(instructions);
+                    showInstructionLink("Press Space to Play");
                 }
                 
             }
@@ -236,11 +300,19 @@
                 showText(deathMessage);
 
                 ctx.font = "20px Courier New";
-                ctx.fillText("Your score: " + score, canvas.width/2, (canvas.height/2) + 50);
 
-                if(Math.floor(Date.now()/1000) % 2 == 0)
+                if(!showingInstructions)
                 {
-                    ctx.fillText("Press Space to Continue", canvas.width/2, (canvas.height/2) + 100);
+                    ctx.fillText("Your score: " + score, canvas.width/2, (canvas.height/2) + 50);
+
+                    if(Math.floor(Date.now()/1000) % 4 < 2)
+                    {
+                        ctx.fillText("Press Space to Continue", canvas.width/2, (canvas.height/2) + 100);
+                    }
+                    else
+                    {
+                        ctx.fillText("Press I for Instructions", canvas.width/2, (canvas.height/2) + 100);
+                    }
                 }
             }
 
@@ -298,7 +370,6 @@
 
                 if(showingText)
                 {
-                    console.log("Showing " + showingText);
                     showText(showingText);
                 }
 
@@ -307,6 +378,11 @@
                     if(gameEnded)
                     {
                         drawEndingTitle();
+
+                        if(showingInstructions)
+                        {
+                            showInstructions(instructions);
+                        }
                     }
                     else
                     {
@@ -414,6 +490,7 @@
                 if(movingDown) {
                     dino.y += 7;
                     if (dino.y > canvas.height - dino.height){
+                        console.log("Fixed");
                         dino.y = canvas.height - dino.height;
                     }
                 }
