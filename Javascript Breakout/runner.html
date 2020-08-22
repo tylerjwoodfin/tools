@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <title>Run Dino</title>
     <link rel="stylesheet" type="text/css" href="style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=NO">
 </head>
 <body>
 
@@ -11,10 +12,40 @@
 
     <script>
 
+        // prevent zooming
+        var resolution = window.devicePixelRatio;
+        var w = window.innerWidth;
+        var h = window.innerHeight;
+        var w2 = Math.round(w * resolution);
+        var h2 = Math.round(h * resolution);
+        canvas.style.width = w + "px";
+        canvas.style.height = h + "px";
+        // canvas.sdf(w2, h2);
+
+        function sound(src) {
+            this.sound = document.createElement("audio");
+            this.sound.src = src;
+            this.sound.setAttribute("preload", "auto");
+            this.sound.setAttribute("controls", "none");
+            this.sound.style.display = "none";
+            document.body.appendChild(this.sound);
+            this.play = function(){
+                this.sound.play();
+            }
+            this.stop = function(){
+                this.sound.pause();
+            }    
+        }
+
+        // score
+        var score = 0;
+        var gameStarted = false;
+        var gameEnded = false;
+
         // key listeners
         document.addEventListener("keydown", keyDownHandler, false);
         document.addEventListener("keyup", keyUpHandler, false);
-        // document.addEventListener("mousemove", mouseMoveHandler, false);
+        document.addEventListener("mousemove", mouseMoveHandler, false);
 
         // colors
         var colors = ['#FF6633', '#FFB399', '#FF33FF', '#FFFF99', '#00B3E6', 
@@ -27,64 +58,121 @@
 		  '#4D8066', '#809980', '#E6FF80', '#1AFF33', '#999933',
 		  '#FF3380', '#CCCC00', '#66E64D', '#4D80CC', '#9900B3', 
 		  '#E64D66', '#4DB380', '#FF4D4D', '#99E6E6', '#6666FF'];
+
+        // you died messages
+        var deathMessages = ["You died.", "Oops", "Did someone die?", "lol", "DOOM", "Oof", "lmao", "Pathetic.", "That was fast.", "Really?", "What a cute try.",
+         "RIP", "What a shame.", "Do better next time.", "Try not dying next time.", "That's all you've got?", "There's not an easy mode.", "Is this your first video game?"];
+         var deathMessage;
+
+        // sound
+        var clearSound = new sound("bloop.mp3");
+        var deathSound = new sound("death.mp3");
+        var explosionSound = new sound("explosion.mp3");
         
-        var movingLeft = false;
-        var movingRight = false;
+        var movingDown = false;
+        var movingUp = false;
+
+        var showingText = "";
 
         function keyDownHandler(e) {
-            if(e.key == "Right" || e.key == "ArrowRight") {
-                movingRight = true;
+            if(e.key == "Up" || e.key == "ArrowUp") {
+                movingUp = true;
             }
-            else if(e.key == "Left" || e.key == "ArrowLeft") {
-                movingLeft = true;
+            else if(e.key == "Down" || e.key == "ArrowDown") {
+                movingDown = true;
+            }
+            else if(e.keyCode == 32)
+            {
+                if(!gameStarted)
+                {
+                    gameStarted = true;
+                    document.body.style.cursor = "none";
+                    initializeDino();
+                }
+                if(gameEnded)
+                {
+                    initializeObstacles();
+                    initializeDino();
+                    score = 0;
+                    gameEnded = false;
+                }
+
+                deathMessage = deathMessages[random(deathMessages.length)];
+                
             }
         }
 
         function keyUpHandler(e) {
-            if(e.key == "Right" || e.key == "ArrowRight") {
-                movingRight = false;
+            if(e.key == "Up" || e.key == "ArrowUp") {
+                movingUp = false;
             }
-            else if(e.key == "Left" || e.key == "ArrowLeft") {
-                movingLeft = false;
+            else if(e.key == "Down" || e.key == "ArrowDown") {
+                movingDown = false;
+            }
+            else if(e.keyCode == 32) { //space bar
+                // console.log("Space");
             }
         }
 
         function mouseMoveHandler(e) {
-            var relativeX = e.clientX - canvas.offsetLeft;
-            if(relativeX > 0 && relativeX < canvas.width) {
-                dino.x = relativeX - dino.width/2;
+            var relativeY = e.clientY;
+            if(relativeY > 0 && relativeY < canvas.height) {
+                dino.y = relativeY - dino.height/2;
             }
+        }
+
+        function random(max) {
+            return Math.floor(Math.random() * Math.floor(max));
         }
 
         //initialize dino
         var dino = {};
         function initializeDino() {
-            dino.height = 80;
-            dino.width = 80;
-            dino.margin = 30;
-            dino.x = (canvas.width-dino.width) / 2;
+            dino.height = canvas.height/12;
+            dino.width = dino.height;
+            dino.x = 10;
+            dino.y = canvas.height-dino.height;
+            dino.birth = Date.now();
         }
-
-        initializeDino();
 
         // initialize obstacles
         obstacles = [];
 
         function initializeObstacle(o) {
-            o.size = 20;
-            o.x = canvas.width - o.size - 5;
-            o.y = canvas.height - (dino.height/2 + 10);
-            o.dx = 0 - Math.floor(Math.random() * 10) - 5;
-            o.dy = -0;
-            o.color = colors[Math.floor(Math.random() * colors.length)];
+            var fractionsOfCanvas = [20,30,40];
+            o.diameter = canvas.height/fractionsOfCanvas[random(fractionsOfCanvas.length)];
+            o.x = canvas.width - o.diameter - 5;
+            o.y = canvas.height - random(canvas.height);
+            o.dx = 0 - (random(6) + 3) - Math.floor(score/50);
+            o.dy = random(10) > 7 ? (random(2) == 1 ? random(4) : 0 - random(4)) : 0;
+            
+            if(random(200) == 14)
+            {
+                o.status = "slow";
+            }
+            else if(random(200) == 10)
+            {
+                o.status = "bomb";
+            }
+            else
+            {
+                o.color = colors[random(colors.length)];
+                o.status = "kill";
+            }
 
             return o;
         }
 
         function initializeObstacles() {
-            for(var i=0; i < Math.floor(Math.random() * 3) + 1; i++)
-            {                
-                obstacles.push(initializeObstacle({}));
+            for(var i=0; i < random(15) + 10; i++)
+            {
+                setInterval(function() {
+                    if(obstacles.length < 25)
+                    {
+                        obstacles.push(initializeObstacle({}));
+                    }
+                    
+                }, 300);
             }
         }
 
@@ -103,48 +191,130 @@
                     canvas.height = window.innerHeight;
             }
 
+            function showText(text) {
+                ctx.font = "50px Courier New";
+                ctx.fillStyle = "#424242";
+                ctx.textAlign = "center";
+                ctx.fillText(text, canvas.width/2, canvas.height/2);
+            }
+
+            function showSubText(text) {
+                ctx.font = "20px Courier New";
+                ctx.fillStyle = "#424242";
+                ctx.textAlign = "center";
+                ctx.fillText(text, canvas.width/2, canvas.height/2 + 50);
+            }
+
             resizeCanvas();
-            
             initializeObstacles();
 
-            // score
-            var score = 0;
-
             function drawScore() {
-                ctx.font = "16px Arial";
+                ctx.font = "22px Courier New";
                 ctx.fillStyle = "#0095DD";
-                ctx.fillText(score, 8, 20);
+                ctx.fillText(score, 50, 30);
+            }
+
+            function drawTitle() {
+                showText("Run Dino");
+
+                ctx.font = "20px Courier New";
+
+                if(Math.floor(Date.now()/1000) % 4 < 2)
+                {
+                    showSubText("Press Space to Play");
+                }
+                else
+                {
+                    showSubText("Avoid Circles")
+                }
+                
+            }
+
+            function drawEndingTitle() {
+                showText(deathMessage);
+
+                ctx.font = "20px Courier New";
+                ctx.fillText("Your score: " + score, canvas.width/2, (canvas.height/2) + 50);
+
+                if(Math.floor(Date.now()/1000) % 2 == 0)
+                {
+                    ctx.fillText("Press Space to Continue", canvas.width/2, (canvas.height/2) + 100);
+                }
             }
 
             function drawObstacle(o) {
                 ctx.beginPath();
-                ctx.arc(o.x, o.y, o.size, 0, Math.PI*2);
                 ctx.fillStyle = o.color;
+
+                if(o.status == "kill")
+                {
+                    ctx.arc(o.x, o.y, o.diameter/2, 0, Math.PI*2);
+                    
+                }
+                else if(o.status == "slow")
+                {
+                    ctx.font = 1.3*o.diameter + "px Courier New";
+                    ctx.fillStyle = "#424242";
+                    ctx.textAlign = "center";
+                    ctx.fillText("🐌", o.x, o.y);
+                }
+                else if(o.status == "bomb")
+                {
+                    ctx.font = 1.3*o.diameter + "px Courier New";
+                    ctx.fillStyle = "#424242";
+                    ctx.textAlign = "center";
+                    ctx.fillText("💣", o.x, o.y);
+                }
+
                 ctx.fill();
                 ctx.closePath();
             }
 
             function drawDino() {
                 ctx.beginPath();
-                ctx.rect(dino.x, canvas.height-dino.height - dino.margin, dino.width, dino.height);
-                ctx.fillStyle = "#0095DD";
+                
+                if(Date.now() - dino.birth > 3000)
+                {
+                    ctx.fillStyle = "#0095DD";
+                    ctx.fillRect(dino.x, dino.y, dino.width, dino.height);
+                }
+                else
+                {
+                    showSubText("You're Indestructible!");
+                    ctx.strokeRect(dino.x, dino.y, dino.width, dino.height);
+                }
+
                 ctx.fill();
                 ctx.closePath();
             }
             
             function draw() {
-                if(typeof(obstacle) == "undefined")
+
+                // anything above this line will be cleared...
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                if(showingText)
                 {
-                    obstacle = {};
-                    initializeObstacle(obstacle);
+                    console.log("Showing " + showingText);
+                    showText(showingText);
                 }
 
-                // make 2nd obstacle
-
-                // draw ball
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                drawDino();
-                drawScore();
+                if(gameStarted)
+                {
+                    if(gameEnded)
+                    {
+                        drawEndingTitle();
+                    }
+                    else
+                    {
+                        drawDino();
+                        drawScore();
+                    }
+                }
+                else
+                {
+                    drawTitle();
+                }
 
                 // draw each obstacle
                 for(i in obstacles)
@@ -155,32 +325,106 @@
                 for(i in obstacles)
                 {
                     // detect walls:
-                    if(obstacles[i].x + obstacles[i].dx > canvas.width-obstacles[i].size || obstacles[i].x + obstacles[i].dx < obstacles[i].size) {
-                        obstacles[i].dx = -obstacles[i].dx;
-                    }
-                    if(obstacles[i].y + obstacles[i].dy < obstacles[i].size) {
-                        obstacles[i].dy = -obstacles[i].dy;
+                    if(obstacles[i].x + obstacles[i].dx < obstacles[i].diameter) {  // obstacle cleared
+                        obstacles.splice(i, 1);
+
+                        if(gameStarted && !gameEnded)
+                        {
+                            score++;
+                            clearSound.play();
+                        }
+
+                        continue;
                     }
 
-                    if(obstacles[i].x <= dino.x + (dino.width*1.5)) {  // collision
-                        obstacles = [];
-                        setTimeout(function(){ 
+                    if (dino.x < obstacles[i].x + obstacles[i].diameter
+                    && dino.y < obstacles[i].y + obstacles[i].diameter
+                    && dino.x + dino.width - 5 > obstacles[i].x
+                    && dino.y + dino.height > obstacles[i].y
+                    && !gameEnded
+                    && (Date.now() - dino.birth) > 3000) {  // collision
+
+                        //testing
+                        alert("Dino X: " + dino.x + "\nDino Y: " + dino.y + "\nDino Height: " + dino.height + "\nObstacle X: " + obstacles[i].x + "\nObstacle Y: " + obstacles[i].y + "\nObstacle Diameter: " + obstacles[i].diameter);
+
+                        if(obstacles[i].status == "kill")
+                        {
+                            obstacles = [];
+                            deathSound.play();
+                            gameEnded = true;
+                            break;
+                        }
+                        else if(obstacles[i].status == "slow")
+                        {
+                            showingText = "We're going slow";
+
+                            setTimeout(function() {
+                                showingText = "";
+                            }, 2000);
+
+                            for(k in obstacles)
+                            {
+                                obstacles[k].dx = obstacles[k].dx / 3;
+                            }
+
+                            obstacles.splice(i,1);                        
+                        }
+                        else if(obstacles[i].status == "bomb")
+                        {
+                            explosionSound.play();
+                            showingText = "A fresh start";
+                            score += obstacles.length;
+
+                            setTimeout(function() {
+                                showingText = "";
+                            }, 2000);
+
+                            obstacles = [];
                             initializeObstacles();
-                        }, 3000);
-                        score--;
-                        break;
+                            break;
+                 
+                        }
+
                     }
                     else
                     {
-                        obstacles[i].x += Math.floor(Math.random() * 10 > 8) ? obstacles[i].dx-1 : obstacles[i].dx;
+                        obstacles[i].x += random(10) > 8 ? obstacles[i].dx-1 : obstacles[i].dx;
                         obstacles[i].y += obstacles[i].dy;
+
+                        if(random(10000) == 2)
+                        {
+                            obstacles[i].dy = random(3)
+
+                            if(random(2) == 1)
+                            {
+                                obstacles[i].dy = 0 -obstacles[i].dy;
+                            }
+                        }
+                    }
+                }
+
+                // detect dino movement
+                if(movingDown) {
+                    dino.y += 7;
+                    if (dino.y > canvas.height - dino.height){
+                        dino.y = canvas.height - dino.height;
+                    }
+                }
+                else if(movingUp) {
+                    dino.y -= 7;
+                    if (dino.y < 0){
+                        dino.y = 0;
                     }
                 }
 
                 requestAnimationFrame(draw);
             }
 
-            // draw every 10ms
+            if(!gameStarted)
+            {
+                drawTitle();
+            }
+
             draw();
 
         })();
