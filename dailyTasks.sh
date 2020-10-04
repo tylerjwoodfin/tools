@@ -31,4 +31,4 @@ tasks=$(sed -e 's|^|<br>|' -e 's|\s|\&nbsp;|g' $tasks)
 body="$body$tasks"
 
 # Email the Tasks file
-bash /home/pi/Tools/sendEmail.sh $email "Daily Tasks Review" "$body"
+bash /home/pi/Tools/sendEmail.sh $email "Daily Tasks- Take Your Medicine" "$body"
