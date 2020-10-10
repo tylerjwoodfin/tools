@@ -18,6 +18,7 @@ GAME:
 
 SCORE:
 - ScoreID [pk int auto increment]
+- ScoreDate [datetime (default to now()]
 - PlayerName [varchar]
 - Score [int]
 - GameID [fk]
