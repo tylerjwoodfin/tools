@@ -1,0 +1,84 @@
+<canvas id="gc"></canvas>
+<script>
+window.onload=function() {
+    canv=document.getElementById("gc");
+    ctx=canv.getContext("2d");
+    document.addEventListener("keydown",keyPush);
+    setInterval(game,1000/15);
+}
+
+player = {};
+apple = {};
+
+player.x = 10;
+player.y = 10;
+gridSize = 50;
+apple.x = 15;
+apple.y = 15;
+dx=0;
+dy=0;
+trail=[];
+length = 5;
+
+// set canvas width/height
+document.getElementById("gc").width = gridSize * gridSize;
+document.getElementById("gc").height = gridSize * gridSize;
+
+function game() {
+    player.x += dx;
+    player.y  += dy;
+    if(player.x<0) {
+        player.x = gridSize-1;
+    }
+    if(player.x > gridSize-1) {
+        player.x = 0;
+    }
+    if(player.y < 0) {
+        player.y = gridSize-1;
+    }
+    if(player.y > gridSize-1) {
+        player.y = 0;
+    }
+    ctx.fillStyle="black";
+    ctx.fillRect(0,0,window.innerWidth, window.innerHeight);
+ 
+    ctx.fillStyle="lime";
+    for(var i=0; i< trail.length; i++) {
+        ctx.fillRect(trail[i].x*gridSize ,trail[i].y*gridSize ,gridSize -2,gridSize -2);
+
+        if(trail[i].x == player.x && trail[i].y == player.y) {  // game over
+            console.log("suck it");
+            length = 5;
+        }
+    }
+    trail.push({x:player.x, y:player.y});
+
+    while(trail.length > length) {
+        trail.shift();
+    }
+ 
+    if(apple.x ==player.x && apple.y == player.y) {
+        length++;
+        apple.x = Math.floor(Math.random()*gridSize);
+        apple.y = Math.floor(Math.random()*gridSize);
+    }
+    ctx.fillStyle="red";
+    ctx.fillRect(apple.x*gridSize, apple.y * gridSize, gridSize-2, gridSize-2);
+}
+function keyPush(evt) {
+    switch(evt.keyCode) {
+        case 37:        // left
+            dx=-1;dy=0;
+            break;
+        case 38:        // down
+            dx=0;dy=-1;
+            break;
+        case 39:        // right
+            dx=1;dy=0;
+            break;
+        case 40:        // up
+            dx=0;dy=1;
+            break;
+    }
+}
+</script>
