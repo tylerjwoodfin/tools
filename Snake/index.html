@@ -7,12 +7,16 @@ window.onload=function() {
     setInterval(game,1000/15);
 }
 
+windowWidth = document.body.clientWidth-20;
+windowHeight = document.body.clientHeight-20;
+
 player = {};
 apple = {};
 
 player.x = 10;
 player.y = 10;
-gridSize = 50;
+gridWidth = windowWidth/50;
+gridHeight = windowHeight/50;
 apple.x = 15;
 apple.y = 15;
 dx=0;
@@ -21,33 +25,39 @@ trail=[];
 length = 5;
 
 // set canvas width/height
-document.getElementById("gc").width = gridSize * gridSize;
-document.getElementById("gc").height = gridSize * gridSize;
+document.getElementById("gc").width = windowWidth;
+document.getElementById("gc").height = windowHeight;
 
 function game() {
     player.x += dx;
     player.y  += dy;
-    if(player.x<0) {
-        player.x = gridSize-1;
+
+    // wrap x
+    if(player.x < 0) {
+        player.x = gridWidth-1;
     }
-    if(player.x > gridSize-1) {
+    else if(player.x > gridWidth-1) {
+        console.log(gridWidth);
         player.x = 0;
     }
+
+    // wrap y
     if(player.y < 0) {
-        player.y = gridSize-1;
+        player.y = gridHeight-1;
     }
-    if(player.y > gridSize-1) {
+    else if(player.y > gridHeight-1) {
         player.y = 0;
     }
+
     ctx.fillStyle="black";
-    ctx.fillRect(0,0,window.innerWidth, window.innerHeight);
+    ctx.fillRect(0, 0, windowWidth, windowHeight);
  
     ctx.fillStyle="lime";
     for(var i=0; i< trail.length; i++) {
-        ctx.fillRect(trail[i].x*gridSize ,trail[i].y*gridSize ,gridSize -2,gridSize -2);
+        ctx.fillRect(trail[i].x*gridWidth ,trail[i].y*gridHeight, gridWidth -2, gridHeight -2);
 
         if(trail[i].x == player.x && trail[i].y == player.y) {  // game over
-            console.log("suck it");
+            // console.log("suck it");
             length = 5;
         }
     }
@@ -59,11 +69,11 @@ function game() {
  
     if(apple.x ==player.x && apple.y == player.y) {
         length++;
-        apple.x = Math.floor(Math.random()*gridSize);
-        apple.y = Math.floor(Math.random()*gridSize);
+        apple.x = Math.floor(Math.random()*gridWidth);
+        apple.y = Math.floor(Math.random()*gridHeight);
     }
     ctx.fillStyle="red";
-    ctx.fillRect(apple.x*gridSize, apple.y * gridSize, gridSize-2, gridSize-2);
+    ctx.fillRect(apple.x*gridWidth, apple.y * gridHeight, gridWidth-2, gridHeight-2);
 }
 function keyPush(evt) {
     switch(evt.keyCode) {
