@@ -17,7 +17,7 @@ I'm not liable for anything that goes wrong, although worst case scenario, you n
     - Copy the entire OTA somewhere safe (stored in ~/.ota on your phone), because it's going to be deleted after the update
     - Update your phone using the built-in system updater
     - Extract payload.bin from the OTA using 7Zip or something similar
-    - Place payload.bin into the input folder inside payload_dumper-win64
+    - Place payload.bin into the payload_input folder inside payload_dumper-win64
     - Run payload_dumper.exe
     - Move boot.img from the output folder to your phone
         - open Magisk Manager and patch the boot.img you selected
