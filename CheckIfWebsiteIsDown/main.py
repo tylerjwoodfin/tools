@@ -6,7 +6,11 @@ sys.path.append(parentdir)
 
 import secureData
 
-myIP = socket.gethostbyname(socket.gethostname())
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.connect(("8.8.8.8", 80))
+myIP = s.getsockname()[0]
+s.close()
+
 hostname = "192.168.1.123"
 
 if myIP == "192.168.1.123":
