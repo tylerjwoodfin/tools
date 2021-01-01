@@ -33,7 +33,7 @@ def show_tracks(tracks):
     for i, item in enumerate(tracks['items']):
         track = item['track']
         inc+=1
-        line = str(inc) + "::" + (track['artists'][0]['name']) + "::" + track['name'] + "::" + (track['external_urls']['spotify'] if track['is_local'] == False else "") + "\n"
+        line = str(inc) + "::" + (track['artists'][0]['name']) + "::" + track['name'] + "::" + str(track['album']['release_date']) + "::" + (track['external_urls']['spotify'] if track['is_local'] == False else "") + "\n"
         toReturn += line
         if(inc > yesterdayCount):
                 print(line.encode("utf-8"))
