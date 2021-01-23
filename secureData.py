@@ -3,10 +3,15 @@
 
 import os
 
-def variable(varname):
-    f = open("/home/pi/Tools/SecureData/" + varname, "r")
+def variable(item):
+    f = open("SecureData/" + item, "r")
     return f.read()
 
-def array(varname):
-    f = open("/home/pi/Tools/SecureData/" + varname, "r")
+def array(item):
+    f = open("SecureData/" + item, "r")
     return f.read().rstrip().split('\n')
+
+def write(item, content):
+    f = open("SecureData/" + item, "w")
+    f.write(content)
+    f.close
