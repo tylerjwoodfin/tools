@@ -1,0 +1,1 @@
+A simple test to control my Google Home Mini in my upstairs office with my Raspberry Pi.
