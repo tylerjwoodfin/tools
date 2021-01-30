@@ -3,15 +3,17 @@
 
 import os
 
+fileDir = os.path.dirname(os.path.realpath('__file__'))
+
 def variable(item):
-    f = open("SecureData/" + item, "r")
+    f = open(os.path.join(fileDir, "Tools/SecureData/" + item), "r")
     return f.read()
 
 def array(item):
-    f = open("SecureData/" + item, "r")
+    f = open(os.path.join(fileDir, "Tools/SecureData/" + item), "r")
     return f.read().rstrip().split('\n')
 
 def write(item, content):
-    f = open("SecureData/" + item, "w")
+    f = open(os.path.join(fileDir, "Tools/SecureData/" + item), "w")
     f.write(content)
     f.close
