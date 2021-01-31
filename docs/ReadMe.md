@@ -1,8 +1,12 @@
 # About
 
-This folder is designed to be my own internal reference for most of my tools. Smaller scripts may have their own ReadMe, but anything I use routinely should have a text file here describing any common issues I run into and their solutions.
+This repository hosts some tools that I use for my own personal use to make my life easier. By sharing it with the world, I hope it makes your life easier, as well.
 
-Because I will routinely update this, this folder will also as a public documentation area. I welcome any comments or tips for suggestions- please visit tyler.cloud and click "reach out" to submit feedback.
+I welcome any comments or tips for suggestions- please visit tyler.cloud and click "reach out" to submit feedback.
+
+# Contact
+- [tyler.cloud](tyler.cloud) (Website)
+- [LinkedIn](http://linkedin.com/in/tylerjwoodfin)
 
 # Smaller Projects:
 
