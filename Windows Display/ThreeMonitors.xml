@@ -3,7 +3,7 @@
     <!--topology=-->
     <!--Internal, Clone, Extend, External-->
     <!--The monitor ID attribute must be specified.-->
-    <monitor active="true" virtual="false" id="4358" adapterHigh="0" adapterLow="37139">
+    <monitor active="true" virtual="false" id="4356" adapterHigh="0" adapterLow="39347">
         <name>KG271U</name>
         <!--source: the origin of the video signal-->
         <source id="0">
@@ -24,7 +24,7 @@
         <scanlineorder value="Progressive"/>
     </monitor>
     <!--The monitor ID attribute must be specified.-->
-    <monitor active="true" virtual="false" id="4357" adapterHigh="0" adapterLow="37139">
+    <monitor active="true" virtual="false" id="4359" adapterHigh="0" adapterLow="39347">
         <name>E50-C1</name>
         <!--source: the origin of the video signal-->
         <source id="1">
@@ -32,7 +32,7 @@
             <path>\\?\PCI#VEN_10DE&amp;DEV_1B81&amp;SUBSYS_33061462&amp;REV_A1#4&amp;3834d97&amp;0&amp;0008#{5b45201d-f2f2-4f3b-85bb-30ff1f953599}</path>
         </source>
         <size width="1920" height="1080"/>
-        <position left="2560" top="597"/>
+        <position left="5120" top="709"/>
         <!--8bpp, 16bpp, 24bpp, 32bpp, Non-GDI-->
         <color value="32bpp"/>
         <!--Identity, 90-degreesCW, 180-degreesCW, 270-degreesCW-->
@@ -45,7 +45,7 @@
         <scanlineorder value="Progressive"/>
     </monitor>
     <!--The monitor ID attribute must be specified.-->
-    <monitor active="true" virtual="false" id="4353" adapterHigh="0" adapterLow="37139">
+    <monitor active="true" virtual="false" id="4353" adapterHigh="0" adapterLow="39347">
         <name>G257HU</name>
         <!--source: the origin of the video signal-->
         <source id="2">
@@ -53,7 +53,7 @@
             <path>\\?\PCI#VEN_10DE&amp;DEV_1B81&amp;SUBSYS_33061462&amp;REV_A1#4&amp;3834d97&amp;0&amp;0008#{5b45201d-f2f2-4f3b-85bb-30ff1f953599}</path>
         </source>
         <size width="2560" height="1440"/>
-        <position left="-2560" top="-97"/>
+        <position left="2560" top="133"/>
         <!--8bpp, 16bpp, 24bpp, 32bpp, Non-GDI-->
         <color value="32bpp"/>
         <!--Identity, 90-degreesCW, 180-degreesCW, 270-degreesCW-->
