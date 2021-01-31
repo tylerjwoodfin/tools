@@ -1,11 +1,13 @@
-# Overview
+# MySQL
+
+## Overview
 
 To access, use:
 > sudo mysql -u root -p
 
 Then enter the root password.
 
-# Error 1405 Workaround:
+## Error 1405 Workaround:
 > sudo systemctl mysql stop
 > sudo /usr/sbin/mysqld --skip-grant-tables --skip-networking &
 
