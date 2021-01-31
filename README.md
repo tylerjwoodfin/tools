@@ -14,6 +14,11 @@ I keep a day-to-day "Tasks.txt" text file, which I use to manage my life. It's b
 
 My Raspberry Pi email everybody on a list on Thursdays to remind us to enter our time for the week. Anybody can sign up on [my website](https://tyler.cloud/timecard), or through our organization's internal website.
 
+## SecureData
+
+I keep a "SecureData" folder within Tools to store email addresses, ZIP Codes, etc.
+You will see most tools, particularly .py files, use secureData.py to retrieve this information to keep sensitive information out of GitHub.
+
 ## Contact
 - [tyler.cloud](tyler.cloud) (Website)
 - [LinkedIn](http://linkedin.com/in/tylerjwoodfin)
