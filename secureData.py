@@ -3,17 +3,17 @@
 
 import os
 
-fileDir = os.path.dirname(os.path.realpath('__file__'))
+fileDir = "/home/pi/Tools/SecureData/"
 
 def variable(item):
-    f = open(os.path.join(fileDir, "Tools/SecureData/" + item), "r")
+    f = open(fileDir + item, "r")
     return f.read()
 
 def array(item):
-    f = open(os.path.join(fileDir, "Tools/SecureData/" + item), "r")
+    f = open(fileDir + item, "r")
     return f.read().rstrip().split('\n')
 
 def write(item, content):
-    f = open(os.path.join(fileDir, "Tools/SecureData/" + item), "w")
+    f = open(fileDir + item, "r")
     f.write(content)
     f.close

@@ -21,7 +21,7 @@ Takes a backup of my Spotify music library and places it in a log folder in my N
 
 ## dailyTasks.py
 
-I keep a day-to-day "Tasks.txt" text file, which I use to manage my life. It's basically a to-do list. This simply takes it from Nextcloud and emails me at 9PM each night so I can review and plan for the next day.
+I keep a day-to-day "Tasks.txt" text file, which I use to manage my life. It's basically a to-do list. This simply takes it from Dropbox and emails me at 9PM each night so I can review and plan for the next day.
 
 ## timecard.py
 
