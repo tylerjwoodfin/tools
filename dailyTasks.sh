@@ -3,12 +3,19 @@
 # Usage: sudo bash dailyTasks.sh
 #!/bin/bash
 
-# Read certain variables from the secure data folder
-tasks="/home/pi/Notes/Tasks.txt"
-cron="/var/spool/cron/crontabs/pi"
+# Execute something in Python3
+split() {
+  readarray -d $2 -t strarr <<< "$1"
 
+  echo "${strarr[$3]}"
+}
+
+# Read certain variables from the secure data folder
 email_pi=$(</home/pi/Tools/SecureData/email_pi)
 email=$(</home/pi/Tools/SecureData/email)
+
+tasks="/home/pi/Notes/Tasks.txt"
+cron="/var/spool/cron/crontabs/pi"
 
 today=$(date +%Y-%m-%d)
 logPath="/var/www/html/Logs/"
@@ -18,6 +25,7 @@ mkdir -p $logPath/Tasks 			 # create in case it's not there for some reason
 mkdir -p $logPath/Cron	 			 # create in case it's not there for some reason
 cp -r $tasks "$logPath/Tasks/Tasks $today.txt"
 cp -r $cron "$logPath/Cron/Cron $today.txt"
+chmod 777 -R "$logPath/Cron"
 echo "Tasks and Cron copied to Log folder."
 
 body="
@@ -26,13 +34,29 @@ body="
 <head><title></title>
 </head>
 <body>
-Dear Tyler,<br><br>
-Please review the following tasks:<br><font face='monospace'>"
+Dear Tyler,<br><br>"
 
 # Replace \n with <br> and replace ' ' with &nbsp;
 tasks=$(sed -e 's|^|<br>|' -e 's|\s|\&nbsp;|g' $tasks)
 
-body="$body$tasks"
+# Calculate time since last log Git commit
+cd /var/www/html
+gitOutput=$(git show -s --format=%ct HEAD)
+now=$(date +%s)
+result=`expr $now - $gitOutput`
+resultText="Your last Git commit was before today:<br><br>"
+gitStatus=$(git log -1)
+gitStatus=$(echo -e ${gitStatus//$'\n'/<br>})
+conclusion="<br><br>Typically, spot.py pushes logs to the website repository on a daily basis. Please double check!<br><br>Thanks,<br>Raspberry Pi</br>"
 
-# Email the Tasks file
-bash /home/pi/Tools/sendEmail.sh $email "Daily Tasks- Take Your Medicine" "$body"
+body="$body$resultText$gitStatus$conclusion"
+
+body=${body//$\n/<br>}
+
+# Send Email
+echo "Git commit was $result seconds ago"
+
+if [ $result -gt 400 ]
+then
+  bash /home/pi/Tools/sendEmail.sh $email "Check Git Commits $today" "$body"
+fi
