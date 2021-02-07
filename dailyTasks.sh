@@ -56,7 +56,7 @@ body=${body//$\n/<br>}
 # Send Email
 echo "Git commit was $result seconds ago"
 
-if [ $result -gt 400 ]
+if [ $result -gt 86400 ]
 then
   bash /home/pi/Tools/sendEmail.sh $email "Check Git Commits $today" "$body"
 fi
