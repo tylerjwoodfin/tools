@@ -78,11 +78,3 @@ if __name__ == '__main__':
 
     # Push the new log file (and anything else from today) to Github
     os.system("cd /var/www/html; git pull; git add -A; git commit -m 'Updated Logs'; git push")
-    
-    # gitOutput = os.popen("git push").read()
-    gitOutput = os.popen("cd /var/www/html; git log -1").read().replace("\n","<br>")
-    
-    sentFrom = "Raspberry Pi"
-    email = secureData.variable("email")
-    # message = "Hi Tyler,<br><br>Your humidity at home is " + str(humidity) + "%. I recommend turning on your humidifier.<br><br>Thanks,<br><br>- " + sentFrom
-    os.system("bash /home/pi/Tools/sendEmail.sh " + email + " \"Git Log\" \"" + str(gitOutput) + "\" " + "\"" + sentFrom + "\"")
