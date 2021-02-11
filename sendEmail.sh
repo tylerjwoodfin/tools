@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # ReadMe
 # Sends emails using msmtp
 # This script is used to avoid having to pass parameters every time
