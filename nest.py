@@ -95,4 +95,4 @@ if(humidity < 35):
     sentFrom = "Raspberry Pi"
     email = secureData.variable("email")
     message = "Hi Tyler,<br><br>Your humidity at home is " + str(humidity) + "%. I recommend turning on your humidifier.<br><br>Thanks,<br><br>- " + sentFrom
-    os.system("bash /home/pi/Tools/sendEmail.sh " + email + " \"Low Humidity\" \"" + message + "\" " + "\"" + sentFrom + "\"")
+    os.system("bash /home/pi/Git/Tools/sendEmail.sh " + email + " \"Low Humidity\" \"" + message + "\" " + "\"" + sentFrom + "\"")

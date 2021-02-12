@@ -21,4 +21,4 @@ response = os.system("ping -c 1 " + hostname)
 if response != 0:
   email = secureData.variable("email")
   message = "Your server at " + hostname + " is down."
-  os.system("bash /home/pi/Tools/sendEmail.sh " + email + " \"" + hostname + " is Down\" \"" + message + "\" " + "\"" + "Raspberry Pi" + "\"")
+  os.system("bash /home/pi/Git/Tools/sendEmail.sh " + email + " \"" + hostname + " is Down\" \"" + message + "\" " + "\"" + "Raspberry Pi" + "\"")

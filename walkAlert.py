@@ -38,4 +38,4 @@ if(temperature >= 65 and temperature <= 85 and wind < 10 and now.hour >= 15):
 
     if(timeToSunset < 5):
         message = "Hi Tyler,<br><br>You should really take a walk!<br><br><ul><li>It's between 65 and 85 degrees (actually " + str(temperature) + ")</li><li>It's not raining</li><li>The wind isn't bad</li><li>It's a nice time of day</li><br><br>Thanks,<br><br>- " + sentFrom
-        os.system("bash /home/pi/Tools/sendEmail.sh " + email + " \"Take a walk, please!\" \"" + message + "\" " + "\"" + sentFrom + "\"")
+        os.system("bash /home/pi/Git/Tools/sendEmail.sh " + email + " \"Take a walk, please!\" \"" + message + "\" " + "\"" + sentFrom + "\"")

@@ -1,55 +1,40 @@
 import json
 import os
+import sys
 from requests import get
 
-msg = ''
-apiIP = ''
-ipFile = "/home/pi/Tools/SecureData/currentIP"
+currentdir = os.path.dirname(os.path.realpath(__file__))
+parentdir = os.path.dirname(currentdir)
+sys.path.append(parentdir)
 
-print("Updating IP Address.")
+import secureData
 
-try:
-    with open(ipFile) as f:
-        print("Current:")
-        msg = f.read()
-        print(msg)
-        print
-except:
-    print("File not found, creating.")
-    f = open(ipFile,'w')
-    f.close()
+currentIP = secureData.variable("currentIP")
+email = secureData.variable("email")
+
+print("Updating IP Address, " + email)
 
 ip = get('https://api.ipify.org?format=json').text
-apiIP = json.loads(ip)["ip"]
+discoveredIP = json.loads(ip)["ip"]
 
-
-print("Found:")
-print(apiIP)
-print
+print ("Found " + discoveredIP + ", currently " + currentIP + ".")
 
 # IP was updated
-if(msg == apiIP):
+if(currentIP == discoveredIP):
     print("No change.")
-elif(msg != apiIP):
+else:
     print("New IP! Updating and sending email.")
-    f = open(ipFile, 'w')
-    f.write(apiIP)
-    f.close()
+    secureData.write("currentIP", discoveredIP)
     
     # Replace OVPN file with new IP and email it
-
-    newLine = "remote " + apiIP + " 1194"
-    with open('Tools/IPUpdate/devices9.ovpn', 'r+') as file:
-        f = file.read()
-        f = f.split("remote ")[0] + newLine + f.split(" 1194")[1]
-        # print("Going to use:")
-        # print(f)
-        file.seek(0)
-        file.write(f)
-        file.truncate()
+    newLine = "remote " + discoveredIP + " 1194"
+    vpnFile = secureData.variable("tyler.cloud.ovpn")
+    # print("." + vpnFile + ".")
+    vpnFile = vpnFile.split("remote ")[0] + newLine + vpnFile.split(" 1194")[1]
+    secureData.write("tyler.cloud.ovpn", vpnFile)
     
     # Send email
-    message = "Your public IP was updated from " + msg + " to " + apiIP + ". To keep tyler.cloud (including Nextcloud), update your Namecheap settings. To keep TylerVPN, please use the file on your Pi at " + os.getcwd() + ".\n\nThanks,\nTyler's Raspberry Pi"
-    os.system("echo \"" + "Hi Tyler,\n\n" + message + "\" | mail -s \"IP Updated - new OVPN\" tylerjwoodfin@gmail.com")
+    message = "Your public IP was updated from " + currentIP + " to " + discoveredIP + ". To keep tyler.cloud, update your Namecheap settings. To keep TylerVPN, please switch your OVPN file to the one located in SecureData.\n\nThanks,\nTyler's Raspberry Pi"
+    os.system("bash /home/pi/Git/Tools/sendEmail.sh " + email + " \"" + " IP Updated - new OVPN file\" \"" + message + "\" " + "\"" + "Raspberry Pi" + "\"")
     
     
