@@ -62,7 +62,7 @@ if __name__ == '__main__':
     
     f = open(fullPath, 'w+')
 
-    playlists = sp.user_playlists(secureData.variable("username"))
+    playlists = sp.user_playlists(secureData.variable("SPOTIPY_USERNAME"))
     for playlist in playlists['items']:
         if playlist['name'] == "Tyler Radio":
             print(playlist['name'])
