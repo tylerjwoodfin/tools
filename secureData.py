@@ -6,14 +6,17 @@ import os
 fileDir = "/home/pi/Git/SecureData/"
 
 def variable(item):
-    f = open(fileDir + item, "r")
+    # print("Opening " + fileDir + item)
+    f = open(fileDir + item, "a+")
+    f.seek(0,0)
     return f.read()
 
 def array(item):
-    f = open(fileDir + item, "r")
+    f = open(fileDir + item, "a+")
+    f.seek(0,0)
     return f.read().rstrip().split('\n')
 
 def write(item, content):
-    f = open(fileDir + item, "r")
+    f = open(fileDir + item, "w")
     f.write(content)
     f.close
