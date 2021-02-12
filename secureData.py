@@ -3,7 +3,7 @@
 
 import os
 
-fileDir = "/home/pi/Tools/SecureData/"
+fileDir = "/home/pi/Git/SecureData/"
 
 def variable(item):
     f = open(fileDir + item, "r")

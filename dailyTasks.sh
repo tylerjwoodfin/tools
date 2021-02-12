@@ -11,8 +11,8 @@ split() {
 }
 
 # Read certain variables from the secure data folder
-email_pi=$(</home/pi/Tools/SecureData/email_pi)
-email=$(</home/pi/Tools/SecureData/email)
+email_pi=$(</home/pi/Git/SecureData/email_pi)
+email=$(</home/pi/Git/SecureData/email)
 
 tasks="/home/pi/Notes/Tasks.txt"
 cron="/var/spool/cron/crontabs/pi"
