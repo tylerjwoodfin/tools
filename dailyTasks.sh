@@ -58,7 +58,7 @@ echo "Git commit was $result seconds ago"
 
 if [ $result -gt 7200 ]
 then
-  bash /home/pi/Tools/sendEmail.sh $email "Check Git Commits $today" "$body"
+  bash /home/pi/Git/Tools/sendEmail.sh $email "Check Git Commits $today" "$body"
 else
-  bash /home/pi/Tools/sendEmail.sh $email "Git Up to Date $today" "$gitStatus"
+  bash /home/pi/Git/Tools/sendEmail.sh $email "Git Up to Date $today" "$gitStatus"
 fi
