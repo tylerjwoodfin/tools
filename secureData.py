@@ -9,7 +9,7 @@ def variable(item):
     # print("Opening " + fileDir + item)
     f = open(fileDir + item, "a+")
     f.seek(0,0)
-    return f.read()
+    return f.read().rstrip().split('\n')[0]
 
 def array(item):
     f = open(fileDir + item, "a+")
