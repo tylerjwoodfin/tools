@@ -39,6 +39,7 @@ params = (
 response = requests.post('https://www.googleapis.com/oauth2/v4/token', params=params)
 
 response_json = response.json()
+print(response.json())
 access_token = response_json['token_type'] + ' ' + response_json['access_token']
 secureData.write("NestAccessToken", access_token)
 print('Access token: ' + access_token)
