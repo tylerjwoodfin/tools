@@ -26,7 +26,7 @@ lon = str(response.json()["coord"]["lon"])
 temperature = round((response.json()["main"]["temp"] - 273.15) * 9/5 + 32)
 wind = response.json()["wind"]["speed"]
 
-if(temperature >= 65 and temperature <= 85 and wind < 10 and now.hour >= 16):
+if(int(secureData.variable("walkAlertSent")) < (time.time() - 43200) and temperature >= 65 and temperature <= 85 and wind < 10 and now.hour >= 16):
 
     # Get Sunset
     url_sunset = "https://api.sunrise-sunset.org/json?lat=%s&lng=%s&date=today&formatted=0" % (lat,lon)
@@ -54,3 +54,4 @@ if(temperature >= 65 and temperature <= 85 and wind < 10 and now.hour >= 16):
                     <br><br>Thanks,<br><br>- """ + sentFrom
         
         os.system("bash /home/pi/Git/Tools/sendEmail.sh " + email + " \"Take a walk, please!\" \"" + message + "\" " + "\"" + sentFrom + "\"")
+        secureData.write("walkAlertSent",str(int(time.time())))
