@@ -17,18 +17,19 @@ def datetime_from_utc_to_local(utc_datetime):
 
 # Call API
 url_request = "https://api.openweathermap.org/data/2.5/weather?zip=%s&appid=%s" % (secureData.variable("zipCode"), secureData.variable("weatherAPIKey"))
-url_sunset = "https://api.sunrise-sunset.org/json?lat=%s&lng=%s&date=today&formatted=0" % (lat,lon)
 response = requests.get(url_request)
 
 # Context Variables
 now = datetime.datetime.now()
 lat = str(response.json()["coord"]["lat"])
 lon = str(response.json()["coord"]["lon"])
-temperature = str(round((response.json()["main"]["temp"] - 273.15) * 9/5 + 32))
+temperature = round((response.json()["main"]["temp"] - 273.15) * 9/5 + 32)
 wind = response.json()["wind"]["speed"]
 
 if(temperature >= 65 and temperature <= 85 and wind < 10 and now.hour >= 16):
 
+    # Get Sunset
+    url_sunset = "https://api.sunrise-sunset.org/json?lat=%s&lng=%s&date=today&formatted=0" % (lat,lon)
     response = requests.get(url_sunset)
 
     # Email Variables
@@ -46,9 +47,10 @@ if(temperature >= 65 and temperature <= 85 and wind < 10 and now.hour >= 16):
             Hi Tyler,\
                 <br><br>You should really take a walk!<br><br>
                 <ul>
-                    <li>It's """ + temperature + """°- a perfectly nice temperature!</li>
+                    <li>It's """ + str(temperature) + """°- a perfectly nice temperature!</li>
                     <li>It's not raining</li>
                     <li>The wind isn't bad</li>
                     <li>It's a nice time of day</li>
                     <br><br>Thanks,<br><br>- """ + sentFrom
+        
         os.system("bash /home/pi/Git/Tools/sendEmail.sh " + email + " \"Take a walk, please!\" \"" + message + "\" " + "\"" + sentFrom + "\"")
