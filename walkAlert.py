@@ -15,20 +15,25 @@ def datetime_from_utc_to_local(utc_datetime):
     offset = datetime.datetime.fromtimestamp(now_timestamp) - datetime.datetime.utcfromtimestamp(now_timestamp)
     return utc_datetime + offset
 
-# Email Variables
-sentFrom = "Raspberry Pi"
-email = secureData.variable("email")
+# Call API
+url_request = "https://api.openweathermap.org/data/2.5/weather?zip=%s&appid=%s" % (secureData.variable("zipCode"), secureData.variable("weatherAPIKey"))
+url_sunset = "https://api.sunrise-sunset.org/json?lat=%s&lng=%s&date=today&formatted=0" % (lat,lon)
+response = requests.get(url_request)
+
+# Context Variables
 now = datetime.datetime.now()
-
-response = requests.get("https://api.openweathermap.org/data/2.5/weather?zip=" + secureData.variable("zipCode") + '&appid=' + secureData.variable("weatherAPIKey"))
-
-lat = response.json()["coord"]["lat"]
-long = response.json()["coord"]["lon"]
-temperature = round((response.json()["main"]["temp"] - 273.15) * 9/5 + 32)
+lat = str(response.json()["coord"]["lat"])
+lon = str(response.json()["coord"]["lon"])
+temperature = str(round((response.json()["main"]["temp"] - 273.15) * 9/5 + 32))
 wind = response.json()["wind"]["speed"]
 
-if(temperature >= 65 and temperature <= 85 and wind < 10 and now.hour >= 15):
-    response = requests.get("https://api.sunrise-sunset.org/json?lat=" + str(lat) + "&lng=" + str(long) + "&date=today&formatted=0")
+if(temperature >= 65 and temperature <= 85 and wind < 10 and now.hour >= 16):
+
+    response = requests.get(url_sunset)
+
+    # Email Variables
+    sentFrom = "Raspberry Pi"
+    email = secureData.variable("email")
 
     hrs = response.json()["results"]["sunset"].split("T")[1].split(":")[0]
     mns = response.json()["results"]["sunset"].split("T")[1].split(":")[1]
@@ -37,5 +42,13 @@ if(temperature >= 65 and temperature <= 85 and wind < 10 and now.hour >= 15):
     timeToSunset = (datetime_from_utc_to_local(sunsetTime) - now).seconds / 3600
 
     if(timeToSunset < 5):
-        message = "Hi Tyler,<br><br>You should really take a walk!<br><br><ul><li>It's between 65 and 85 degrees (actually " + str(temperature) + ")</li><li>It's not raining</li><li>The wind isn't bad</li><li>It's a nice time of day</li><br><br>Thanks,<br><br>- " + sentFrom
+        message = """\
+            Hi Tyler,\
+                <br><br>You should really take a walk!<br><br>
+                <ul>
+                    <li>It's """ + temperature + """°- a perfectly nice temperature!</li>
+                    <li>It's not raining</li>
+                    <li>The wind isn't bad</li>
+                    <li>It's a nice time of day</li>
+                    <br><br>Thanks,<br><br>- """ + sentFrom
         os.system("bash /home/pi/Git/Tools/sendEmail.sh " + email + " \"Take a walk, please!\" \"" + message + "\" " + "\"" + sentFrom + "\"")
