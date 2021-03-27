@@ -3,12 +3,11 @@
 # Dependencies: requests (pip install requests), secureData (my internal function to grab nonpublic variables from a secure folder)
 # Note: weatherAPIKey should be obtained for free through openweathermap.org.
 
-import os
 import requests
 import datetime
 import time
-import json
 import secureData
+import mail
 
 def datetime_from_utc_to_local(utc_datetime):
     now_timestamp = time.time()
@@ -32,10 +31,6 @@ if(int(secureData.variable("walkAlertSent")) < (time.time() - 43200) and tempera
     url_sunset = "https://api.sunrise-sunset.org/json?lat=%s&lng=%s&date=today&formatted=0" % (lat,lon)
     response = requests.get(url_sunset)
 
-    # Email Variables
-    sentFrom = "Raspberry Pi"
-    email = secureData.variable("email")
-
     hrs = response.json()["results"]["sunset"].split("T")[1].split(":")[0]
     mns = response.json()["results"]["sunset"].split("T")[1].split(":")[1]
 
@@ -50,8 +45,7 @@ if(int(secureData.variable("walkAlertSent")) < (time.time() - 43200) and tempera
                     <li>It's """ + str(temperature) + """°- a perfectly nice temperature!</li>
                     <li>It's not raining</li>
                     <li>The wind isn't bad</li>
-                    <li>It's a nice time of day</li>
-                    <br><br>Thanks,<br><br>- """ + sentFrom
+                    <li>It's a nice time of day</li>"""
         
-        os.system("bash /home/pi/Git/Tools/sendEmail.sh " + email + " \"Take a walk, please!\" \"" + message + "\" " + "\"" + sentFrom + "\"")
+        mail.send("Take a walk today, please!", message)
         secureData.write("walkAlertSent",str(int(time.time())))

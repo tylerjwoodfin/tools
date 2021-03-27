@@ -28,13 +28,7 @@ cp -r $cron "$logPath/Cron/Cron $today.txt"
 chmod 777 -R "$logPath/Cron"
 echo "Tasks and Cron copied to Log folder."
 
-body="
-<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">
-<html>
-<head><title></title>
-</head>
-<body>
-Dear Tyler,<br><br>"
+body="Dear Tyler,<br><br>"
 
 # Replace \n with <br> and replace ' ' with &nbsp;
 tasks=$(sed -e 's|^|<br>|' -e 's|\s|\&nbsp;|g' $tasks)
@@ -44,10 +38,10 @@ cd /var/www/html
 gitOutput=$(git show -s --format=%ct HEAD)
 now=$(date +%s)
 result=`expr $now - $gitOutput`
-resultText="Your last Git commit was before today:<br><br>"
+resultText="Your last Git commit to your website was before today:<br><br>"
 gitStatus=$(git log -1)
 gitStatus=$(echo -e ${gitStatus//$'\n'/<br>})
-conclusion="<br><br>Typically, spot.py pushes logs to the website repository on a daily basis. Please double check!<br><br>Thanks,<br>Raspberry Pi</br>"
+conclusion="<br><br>Typically, spot.py pushes logs to the website repository on a daily basis. Please double check!"
 
 body="$body$resultText$gitStatus$conclusion"
 
@@ -56,9 +50,11 @@ body=${body//$\n/<br>}
 # Send Email
 echo "Git commit was $result seconds ago"
 
+cd /home/pi/Git/Tools
+
 if [ $result -gt 7200 ]
 then
-  bash /home/pi/Git/Tools/sendEmail.sh $email "Check Git Commits $today" "$body"
+  python3 -c "import mail; print(mail.send('Check Git Commits $today','$body'))"
 else
-  bash /home/pi/Git/Tools/sendEmail.sh $email "Git Up to Date $today" "$gitStatus"
+  python3 -c "import mail; mail.send('Git up to Date $today','$gitStatus')"
 fi
