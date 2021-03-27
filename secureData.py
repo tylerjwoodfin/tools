@@ -1,8 +1,6 @@
 # ReadMe
 # Returns files from my SecureData folder
 
-import os
-
 fileDir = "/home/pi/Git/SecureData/"
 
 def variable(item):
