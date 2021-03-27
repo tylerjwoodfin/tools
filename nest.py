@@ -7,6 +7,7 @@
 import requests
 import secureData
 import os
+import datetime
 
 # Use only to log in manually
 # url = 'https://nestservices.google.com/partnerconnections/'+project_id+'/auth?redirect_uri='+redirect_uri+'&access_type=offline&prompt=consent&client_id='+client_id+'&response_type=code&scope=https://www.googleapis.com/auth/sdm.service'
@@ -91,7 +92,11 @@ print('Temperature:', temperature)
 
 renewAccessToken()
 
-if(humidity > 35):
+# Log to File
+with open('/var/www/html/Logs/Humidity/humidity.csv','a') as fd:
+    fd.write(str(datetime.datetime.now()) + "," + str(humidity))
+
+if(humidity < 35):
     # Email Variables
     sentFrom = "Raspberry Pi"
     email = secureData.variable("email")
