@@ -4,7 +4,7 @@ currentdir = os.path.dirname(os.path.realpath(__file__))
 parentdir = os.path.dirname(currentdir)
 sys.path.append(parentdir)
 
-import secureData
+import secureData, mail
 
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.connect(("8.8.8.8", 80))
@@ -19,6 +19,6 @@ if myIP == "192.168.1.123":
 response = os.system("ping -c 1 " + hostname)
 
 if response != 0:
-  email = secureData.variable("email")
-  message = "Your server at " + hostname + " is down."
-  os.system("bash /home/pi/Git/Tools/sendEmail.sh " + email + " \"" + hostname + " is Down\" \"" + message + "\" " + "\"" + "Raspberry Pi" + "\"")
+    email = secureData.variable("email")
+    message = "Your server at " + hostname + " is down."
+    mail.send(hostname + " is down", message)
