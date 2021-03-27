@@ -6,6 +6,7 @@
 
 import requests
 import secureData
+import mail
 import os
 import datetime
 
@@ -98,13 +99,9 @@ with open('/var/www/html/Logs/Humidity/humidity.csv','a') as fd:
 
 if(humidity < 35):
     # Email Variables
-    sentFrom = "Raspberry Pi"
-    email = secureData.variable("email")
     message = """\
     Hi Tyler,<br><br>
-    Your humidity at home is %s. I recommend turning on your humidifier.
-    <br><br>Thanks,
-    <br><br>- %s"""
+    Your humidity at home is %s%%. I recommend turning on your humidifier."""
     
-    message = message % (str(humidity) + "%",sentFrom)
-    os.system("bash /home/pi/Git/Tools/sendEmail.sh " + email + " \"Low Humidity\" \"" + message + "\" " + "\"" + sentFrom + "\"")
+    message = message % str(humidity)
+    mail.send("Low Humidity", message)
