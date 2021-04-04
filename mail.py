@@ -1,5 +1,7 @@
 import smtplib
+from urllib.parse import unquote
 import ssl
+import sys
 import secureData
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -17,7 +19,7 @@ def send(subject, body, signature="<br><br>Thanks,<br>Raspberry Pi", to=secureDa
     message["Subject"] = subject
     message["From"] = secureData.variable("email_pi")
     message["To"] = secureData.variable("email")
-    message.attach(MIMEText(body, "html"))
+    message.attach(MIMEText(unquote(body), "html"))
 
     # Send Email
     context = ssl.create_default_context()
@@ -26,3 +28,7 @@ def send(subject, body, signature="<br><br>Thanks,<br>Raspberry Pi", to=secureDa
         server.login(message["From"], password)
         server.sendmail(message["From"], message["To"], message.as_string())
         print("Sent Email")
+   
+# By default, mail.send:     
+if(len(sys.argv) == 3):
+	send(sys.argv[1], sys.argv[2])
