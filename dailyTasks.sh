@@ -16,6 +16,7 @@ email=$(</home/pi/Git/SecureData/email)
 
 tasks="/home/pi/Notes/Tasks.txt"
 cron="/var/spool/cron/crontabs/pi"
+bash="/home/pi/.bashrc"
 
 today=$(date +%Y-%m-%d)
 logPath="/var/www/html/Logs/"
@@ -23,10 +24,17 @@ logPath="/var/www/html/Logs/"
 # copy to the Log folder to back up
 mkdir -p $logPath/Tasks 			 # create in case it's not there for some reason
 mkdir -p $logPath/Cron	 			 # create in case it's not there for some reason
+mkdir -p $logPath/Bash 			 # create in case it's not there for some reason
+
 cp -r $tasks "$logPath/Tasks/Tasks $today.txt"
 cp -r $cron "$logPath/Cron/Cron $today.txt"
+cp -r $bash "$logPath/Bash/Bash $today.txt"
+
+chmod 777 -R "$logPath/Tasks"
 chmod 777 -R "$logPath/Cron"
-echo "Tasks and Cron copied to Log folder."
+chmod 777 -R "$logPath/Bash"
+
+echo "Tasks, Cron, and Bash copied to Log folder."
 
 body="Dear Tyler,<br><br>"
 
@@ -54,7 +62,7 @@ cd /home/pi/Git/Tools
 
 if [ $result -gt 7200 ]
 then
-  python3 -c "import mail; print(mail.send('Check Git Commits $today','$body'))"
+  rmail 'Check for Git Commits $today' '$body'
 else
-  python3 -c "import mail; mail.send('Git up to Date $today','$gitStatus')"
+  rmail "Git up-to-date $today" "$gitStatus"
 fi
