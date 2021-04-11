@@ -42,5 +42,6 @@ def send(subject, body, signature="<br><br>Thanks,<br>Raspberry Pi", to=secureDa
 if(len(sys.argv) == 3):
 	send(sys.argv[1], sys.argv[2])
 
-if(len(sys.argv) == 1):
-    print("Usage: sendMail <subject>, <body>, <signature>, <to_email>")
+if __name__ == "__main__":
+	if(len(sys.argv) == 1):
+    		print("Usage: sendMail <subject>, <body>, <signature>, <to_email>")

@@ -62,7 +62,7 @@ cd /home/pi/Git/Tools
 
 if [ $result -gt 7200 ]
 then
-  rmail 'Check for Git Commits $today' '$body'
+  rmail 'Check Git Commits $today' '$body'
 else
   rmail "Git up-to-date $today" "$gitStatus"
 fi
