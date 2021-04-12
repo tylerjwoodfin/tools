@@ -34,31 +34,22 @@ if(int(secureData.variable("walkAlertSent")) < (time.time() - 43200) and now.hou
     low = convertTemperature(response["daily"][1]["temp"]["min"])
     high = convertTemperature(response["daily"][1]["temp"]["max"])
     wind = response["current"]["wind_speed"]
+    sunset = response["daily"][0]["sunset"]
+    
+    timeToSunset = (sunset - time.time()) / 3600
 
-    if(((temperature >= 65 and temperature <= 85) or (high >= 65 and high <=90)) and wind < 10):
-
-        # Get Sunset
-        url_sunset = "https://api.sunrise-sunset.org/json?lat=%s&lng=%s&date=today&formatted=0" % (lat,lon)
-        response = requests.get(url_sunset).json()
-
-        hrs = response["results"]["sunset"].split("T")[1].split(":")[0]
-        mns = response["results"]["sunset"].split("T")[1].split(":")[1]
-
-        sunsetTime = now.replace(hour=int(hrs), minute=int(mns), second=0, microsecond=0)
-        timeToSunset = (datetime_from_utc_to_local(sunsetTime) - now).seconds / 3600
-
-        if(timeToSunset > 2):
-            message = """\
-                Hi Tyler,\
-                    <br><br>I hope you try to take a walk today!<br><br>
-                    <ul>
-                        <li>It's {}° right now with a high of {}°- what a promising day to get outside!</li>
-                        <li>It's not raining</li>
-                        <li>The wind isn't bad</li>
-                        <li>It's a nice time of day</li>""".format(temperature,high)
-            
-            mail.send("Take a walk today, please!", message)
-            secureData.write("walkAlertSent",str(int(time.time())))
+    if(((temperature >= 65 and temperature <= 85) or (high >= 65 and high <=90)) and wind < 10 and timeToSunset > 2):
+        message = """\
+            Hi Tyler,\
+                <br><br>I hope you try to take a walk today!<br><br>
+                <ul>
+                    <li>It's {}° right now with a high of {}°- what a promising day to get outside!</li>
+                    <li>It's not raining</li>
+                    <li>The wind isn't bad</li>
+                    <li>It's a nice time of day</li>""".format(temperature,high)
+        
+        mail.send("Take a walk today, please!", message)
+        secureData.write("walkAlertSent",str(int(time.time())))
             
 # Planty Alerts
 if(int(secureData.variable("plantyAlertSent")) < (time.time() - 43200)):
