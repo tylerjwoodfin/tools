@@ -1,24 +1,49 @@
 # ReadMe
-# Returns files from my SecureData folder
+# Returns files from my SecureData folder (and other folders as needed)
+# Dependencies: rclone
 
-fileDir = "/home/pi/Git/SecureData/"
+import os, time
 
-def variable(item):
-    f = open(fileDir + item, "a+")
+secure = "/home/pi/Git/SecureData/"
+noteDir = "/home/pi/Dropbox/Notes/"
+
+# prepares files for other functions
+def __initialize(item, path, action="a+"):
+    if(path == "notes"):
+        path = noteDir
+    if not os.path.exists(path):
+        os.makedirs(path)
+
+    # pull from Dropbox
+    if(path == noteDir):
+        os.system("rclone copyto Dropbox:Notes/{} {}".format(item, path + item))
+    return open(path + item, action)
+
+# reads the first line of a file
+def variable(item, path=secure):
+    f = __initialize(item, path)
     f.seek(0,0)
     return f.read().rstrip().split('\n')[0]
 
-def array(item):
-    f = open(fileDir + item, "a+")
+# returns the file as an array
+def array(item, path=secure):
+    f = __initialize(item, path)
     f.seek(0,0)
     return f.read().rstrip().split('\n')
 
-def file(item):
-    f = open(fileDir + item, "a+")
+# returns the file as a string without splitting
+def file(item, path=secure):
+    f = __initialize(item, path)
     f.seek(0,0)
     return f.read().rstrip()
 
-def write(item, content):
-    f = open(fileDir + item, "w")
+# writes a file
+def write(item, content, path=secure):
+    f = __initialize(item, path, "w")
     f.write(content)
-    f.close
+    f.close()
+
+    # Push to Dropbox
+    if(path == noteDir or path == "notes"):
+        path = noteDir
+        os.system("rclone copyto {} Dropbox:Notes/{}".format(path + item, item))
