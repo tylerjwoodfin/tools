@@ -4,8 +4,9 @@
 
 import os, time
 
+# don't forget the ending /
 secure = "/home/pi/Git/SecureData/"
-noteDir = "/home/pi/Dropbox/Notes/"
+noteDir = "/home/pi/Dropbox/Notes/" 
 
 # prepares files for other functions
 def __initialize(item, path, action="a+"):
