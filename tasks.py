@@ -4,9 +4,11 @@
 import os
 import sys
 import subprocess
+import json
 
 sys.path.insert(0, '../google-reminders-cli')
-from secureData import *
+from secureData import noteDir, writeUnique
+from remind import tasks
 
 helpText = """\nUsage: rp t <command>\n\n<command>:
 	add <taskInfo>
@@ -48,10 +50,24 @@ def help():
 
 def pull(s=None):
 	if(s == "help"):
-		return f"Pull reminders from Google Calendar and add them to Tasks.txt in secureData.noteDir (currently {noteDir})"
+		return f"Pull reminders from Google Calendar, delete them, and add them to Tasks.txt in secureData.noteDir (currently {noteDir})"
 		
-	print("Pulling things")
-	subprocess.call(['../google-reminders-cli/remind.py', '-l', '5'])
+	print("Pulling from Google...")
+	items = tasks()
+
+	# for each reminder, write to Tasks.txt if not there already
+	titlesToAdd = []
+	for item in items:
+		print(item)
+		if(not item["done"]):
+			titlesToAdd.append(item['title'])
+			print(f"Moving {item['title']} to {noteDir}Tasks.txt")
+		print(f"Deleting {item['title']}")
+		print(subprocess.check_output(['../google-reminders-cli/remind.py', '-d', item['id']]))
+
+	if(len(titlesToAdd) > 0):
+		writeUnique("Tasks.txt", '\n'.join(titlesToAdd), "notes")
+		
 	
 params = {
 	"add": add,
