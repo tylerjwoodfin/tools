@@ -24,13 +24,13 @@ def __initialize(item, path, action="a+"):
 def variable(item, path=secure):
     f = __initialize(item, path)
     f.seek(0,0)
-    return f.read().rstrip().split('\n')[0]
+    return f.read().rstrip().splitlines()[0]
 
 # returns the file as an array
 def array(item, path=secure):
     f = __initialize(item, path)
     f.seek(0,0)
-    return f.read().rstrip().split('\n')
+    return f.read().rstrip().splitlines()
 
 # returns the file as a string without splitting
 def file(item, path=secure):
@@ -38,7 +38,7 @@ def file(item, path=secure):
     f.seek(0,0)
     return f.read().rstrip()
 
-# writes a file
+# writes a file, replacing the contents entirely
 def write(item, content, path=secure):
     f = __initialize(item, path, "w")
     f.write(content)
@@ -48,3 +48,12 @@ def write(item, content, path=secure):
     if(path == noteDir or path == "notes"):
         path = noteDir
         os.system("rclone copyto {} Dropbox:Notes/{}".format(path + item, item))
+
+# appends a file where duplicate lines in 'content' will be removed
+def writeUnique(item, content, path=secure):
+    content = file(item, path) + '\n' + content
+    lines = content.splitlines()
+    lines = list(dict.fromkeys(lines))
+    content = '\n'.join(lines)
+    print(content)
+    write(item, content, path)
