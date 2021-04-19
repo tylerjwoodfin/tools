@@ -7,7 +7,7 @@ import subprocess
 import json
 
 sys.path.insert(0, '/home/pi/Git/google-reminders-cli')
-from secureData import notesDir, secureDir, write, writeUnique, array, directory
+from secureData import notesDir, secureDir, write, appendUnique, array, directory
 from remind import tasks
 
 helpText = f"""\nUsage: rp t <command>\n\n<command>:
@@ -42,7 +42,7 @@ def add(s=None):
 		print(rm("help"))
 		return
 
-	writeUnique("Tasks.txt", sys.argv[2], "notes")
+	appendUnique("Tasks.txt", sys.argv[2], "notes")
 	print(f"Added {sys.argv[2]} to {notesDir}Tasks.txt")
 	
 def rm(s=None):
@@ -103,7 +103,7 @@ def pull(s=None):
 		print(subprocess.check_output(['../google-reminders-cli/remind.py', '-d', item['id']]))
 
 	if(len(titlesToAdd) > 0):
-		writeUnique("Tasks.txt", '\n'.join(titlesToAdd), "notes")
+		appendUnique("Tasks.txt", '\n'.join(titlesToAdd), "notes")
 
 def config(s=None):
 	if(s == "help"):
