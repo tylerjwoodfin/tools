@@ -6,7 +6,7 @@ import sys
 import subprocess
 import json
 
-sys.path.insert(0, '../google-reminders-cli')
+sys.path.insert(0, '/home/pi/Git/google-reminders-cli')
 from secureData import notesDir, secureDir, write, writeUnique, array, directory
 from remind import tasks
 
@@ -38,12 +38,17 @@ def __toLower(arr):
 def add(s=None):
 	if(s == "help"):
 		return "Add something"
-	print("Adding things")
+	if(len(sys.argv) < 3):
+		print(rm("help"))
+		return
+
+	writeUnique("Tasks.txt", sys.argv[2], "notes")
+	print(f"Added {sys.argv[2]} to {notesDir}Tasks.txt")
 	
 def rm(s=None):
 	if(s == "help"):
 		return f"Pulls latest Tasks.txt in secureData.notesDir (currently {notesDir}), then removes the selected string or index in the file.\n\ne.g. 'rp t rm 3' removes the third line.\n\nUsage: rp t rm <string matching task title, or integer of a line to remove>"
-	if(len(sys.argv) == 2):
+	if(len(sys.argv) < 3):
 		print(rm("help"))
 		return
 
@@ -69,7 +74,7 @@ def ls(s=None):
 	if(s == "help"):
 		return "Displays the latest Tasks.txt in secureData.notesDir (currently {notesDir}), as well as line numbers\n\nUsage: rp t ls"
 	
-	os.system(f"cat -n {notesDir}Tasks.txt")
+	os.system(f"rclone copyto Dropbox:Notes/Tasks.txt {notesDir}Tasks.txt; cat -n {notesDir}Tasks.txt")
 	print("\n")
 	
 def help():
