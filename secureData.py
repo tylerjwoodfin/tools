@@ -65,7 +65,7 @@ def write(item, content, path=secureDir):
         os.system("rclone copyto {} Dropbox:Notes/{}".format(path + item, item))
 
 # appends a file where duplicate lines in 'content' will be removed
-def writeUnique(item, content, path=secureDir):
+def appendUnique(item, content, path=secureDir):
     content = file(item, path) + '\n' + content
     lines = content.splitlines()
     lines = list(dict.fromkeys(lines))
