@@ -5,7 +5,7 @@
 from pathlib import Path
 import os, time
 
-secureDir = str(Path(__file__).parent.absolute()) + "/SecureData"
+secureDir = "/home/pi/Git/SecureData/"
 
 # don't modify notesDir here- modify by changing {secureDir}/NotesDir
 notesDir = "/home/pi/Dropbox/Notes"
