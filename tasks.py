@@ -100,7 +100,7 @@ def pull(s=None):
 			titlesToAdd.append(item['title'])
 			print(f"Moving {item['title']} to {notesDir}Tasks.txt")
 		print(f"Deleting {item['title']}")
-		print(subprocess.check_output(['../google-reminders-cli/remind.py', '-d', item['id']]))
+		print(subprocess.check_output(['/home/pi/Git/google-reminders-cli/remind.py', '-d', item['id']]))
 
 	if(len(titlesToAdd) > 0):
 		appendUnique("Tasks.txt", '\n'.join(titlesToAdd), "notes")
