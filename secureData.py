@@ -72,7 +72,6 @@ def appendUnique(item, content, path=secureDir):
     lines = content.splitlines()
     lines = list(dict.fromkeys(lines))
     content = '\n'.join(lines)
-    print(content)
     write(item, content, path)
 
 # appends to a daily Log file, sent and reset at the end of each day

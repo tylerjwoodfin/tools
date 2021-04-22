@@ -15,8 +15,11 @@ email_pi=$(</home/pi/Git/SecureData/email_pi)
 email=$(</home/pi/Git/SecureData/email)
 
 dailyLog=$(</home/pi/Git/SecureData/dailyLog)
-dailyLog="<b>Daily Log:</b><br>$dailyLog"
 dailyLog=$(echo -e ${dailyLog//$'\n'/<br>})
+dailyLog="<font face='monospace'>$dailyLog</font>"
+dailyLog="<b>Daily Log:</b><br>$dailyLog"
+
+echo "\n\n$dailyLog\n\n\n"
 
 tasks="/home/pi/Notes/Tasks.txt"
 getTasks=$(<$tasks)
@@ -29,9 +32,9 @@ today=$(date +%Y-%m-%d)
 logPath="/var/www/html/Logs"
 
 # copy to the Log folder to back up
-mkdir -p $logPath/Tasks 			 # create in case it's not there for some reason
-mkdir -p $logPath/Cron	 			 # create in case it's not there for some reason
-mkdir -p $logPath/Bash 			 # create in case it's not there for some reason
+mkdir -p $logPath/tasks       # create in case it's not there for some reason
+mkdir -p $logPath/Cron        # create in case it's not there for some reason
+mkdir -p $logPath/Bash        # create in case it's not there for some reason
 
 cp -r $tasks "$logPath/Tasks/Tasks $today.txt"
 cp -r $cron "$logPath/Cron/Cron $today.txt"
