@@ -14,12 +14,19 @@ split() {
 email_pi=$(</home/pi/Git/SecureData/email_pi)
 email=$(</home/pi/Git/SecureData/email)
 
+dailyLog=$(</home/pi/Git/SecureData/dailyLog)
+dailyLog="<b>Daily Log:</b><br>$dailyLog"
+dailyLog=$(echo -e ${dailyLog//$'\n'/<br>})
+
 tasks="/home/pi/Notes/Tasks.txt"
+getTasks=$(<$tasks)
+getTasks=$(echo -e ${getTasks//$'\n'/<br>})
+getTasks="<font face='monospace'>$getTasks</font>"
 cron="/var/spool/cron/crontabs/pi"
 bash="/home/pi/.bashrc"
 
 today=$(date +%Y-%m-%d)
-logPath="/var/www/html/Logs/"
+logPath="/var/www/html/Logs"
 
 # copy to the Log folder to back up
 mkdir -p $logPath/Tasks 			 # create in case it's not there for some reason
@@ -36,8 +43,6 @@ chmod 777 -R "$logPath/Bash"
 
 echo "Tasks, Cron, and Bash copied to Log folder."
 
-body="Dear Tyler,<br><br>"
-
 # Replace \n with <br> and replace ' ' with &nbsp;
 tasks=$(sed -e 's|^|<br>|' -e 's|\s|\&nbsp;|g' $tasks)
 
@@ -45,24 +50,27 @@ tasks=$(sed -e 's|^|<br>|' -e 's|\s|\&nbsp;|g' $tasks)
 cd /var/www/html
 gitOutput=$(git show -s --format=%ct HEAD)
 now=$(date +%s)
-result=`expr $now - $gitOutput`
-resultText="Your last Git commit to your website was before today:<br><br>"
+lastGitPush=`expr $now - $gitOutput`
 gitStatus=$(git log -1)
 gitStatus=$(echo -e ${gitStatus//$'\n'/<br>})
-conclusion="<br><br>Typically, spot.py pushes logs to the website repository on a daily basis. Please double check!"
 
-body="$body$resultText$gitStatus$conclusion"
-
-body=${body//$\n/<br>}
+# compose email
+emailBody="Dear Tyler,<br><br>This is your daily status report.<br><br>"
+emailBody="$emailBody$dailyLog"
+emailBody="$emailBody<br><br><b>Tasks:</b><br>$getTasks"
+gitErrorText="Your last Git commit to your website was before today:<br><br>${gitStatus}<br><br>Please double check spot.py."
 
 # Send Email
-echo "Git commit was $result seconds ago"
+echo "Git commit was $lastGitPush seconds ago"
 
-cd /home/pi/Git/Tools
-
-if [ $result -gt 7200 ]
+if [ $lastGitPush -gt 7200 ]
 then
-  rmail "Check Git Commits $today" "$body"
+  emailBody="$gitErrorText<br><br>$emailBody"
+  rmail "Daily Status - Check Git Commits - $today" "$emailBody"
 else
-  rmail "Git up-to-date $today" "$gitStatus"
+  emailBody="$emailBody<br><br><b>✔ Git Up to Date:</b><br>$gitStatus"
+  rmail "Daily Status - $today" "$emailBody"
 fi
+
+# clear daily Log
+echo "" > /home/pi/Git/SecureData/dailyLog

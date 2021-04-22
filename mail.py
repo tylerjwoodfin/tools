@@ -40,7 +40,8 @@ def send(subject, body, signature="<br><br>Thanks,<br>Raspberry Pi", to=secureDa
    
 # By default, mail.send:     
 if(len(sys.argv) == 3):
-	send(sys.argv[1], sys.argv[2])
+    send(sys.argv[1], sys.argv[2])
+    secureData.log(f"Sent Email: {sys.argv[1]}")
 
 if __name__ == "__main__":
 	if(len(sys.argv) == 1):

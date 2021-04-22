@@ -73,8 +73,10 @@ if __name__ == '__main__':
             while tracks['next']:
                 tracks = sp.next(tracks)
                 f.write(str(show_tracks(tracks)))
+    secureData.log("Updated Spotify Log")
     print("\n\nDone. Updating Git:")
     f.close()
 
     # Push the new log file (and anything else from today) to Github
     os.system("cd /var/www/html; git pull; git add -A; git commit -m 'Updated Logs'; git push")
+    secureData.log("Updated Git")

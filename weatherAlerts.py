@@ -22,6 +22,7 @@ plantyStatus = secureData.variable("plantyStatus")
 lat = str(secureData.array("weatherLatLong")[0])
 lon = str(secureData.array("weatherLatLong")[1])
 now = datetime.datetime.now()
+secureData.log("Walk Alert Checked")
 
 if(int(secureData.variable("walkAlertSent")) < (time.time() - 43200) and now.hour >= 10):
     # Call API
@@ -50,14 +51,16 @@ if(int(secureData.variable("walkAlertSent")) < (time.time() - 43200) and now.hou
         
         mail.send("Take a walk today, please!", message)
         secureData.write("walkAlertSent",str(int(time.time())))
+        secureData.log("Walk Alert Sent")
             
-# Planty Alerts
-if(int(secureData.variable("plantyAlertSent")) < (time.time() - 43200)):
-    if(low < 55 and plantyStatus == "out"):
-        mail.send("Take Planty In", "Hi Tyler,<br><br>The low tonight is {}°. Please take Planty in!".format(low))
-        secureData.write("plantyStatus", "in")
-        secureData.write("plantyAlertSent", str(int(time.time())))
-    if(high > 80 and plantyStatus == "in"):
-        mail.send("Take Planty Out", "Hi Tyler,<br><br>It looks like a nice day! It's going to be around {}°. Please take Planty out.".format(high))
-        secureData.write("plantyStatus", "out")
-        secureData.write("plantyAlertSent", str(int(time.time())))
+    # Planty Alerts
+    if(int(secureData.variable("plantyAlertSent")) < (time.time() - 43200)):
+        secureData.log("Checked Planty")
+        if(low < 55 and plantyStatus == "out"):
+            mail.send("Take Planty In", "Hi Tyler,<br><br>The low tonight is {}°. Please take Planty in!".format(low))
+            secureData.write("plantyStatus", "in")
+            secureData.write("plantyAlertSent", str(int(time.time())))
+        if(high > 80 and plantyStatus == "in"):
+            mail.send("Take Planty Out", "Hi Tyler,<br><br>It looks like a nice day! It's going to be around {}°. Please take Planty out.".format(high))
+            secureData.write("plantyStatus", "out")
+            secureData.write("plantyAlertSent", str(int(time.time())))

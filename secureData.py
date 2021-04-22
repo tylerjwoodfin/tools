@@ -3,7 +3,7 @@
 # Dependencies: rclone
 
 from pathlib import Path
-import os, time
+import os, datetime
 
 secureDir = "/home/pi/Git/SecureData/"
 
@@ -67,8 +67,14 @@ def write(item, content, path=secureDir):
 # appends a file where duplicate lines in 'content' will be removed
 def appendUnique(item, content, path=secureDir):
     content = file(item, path) + '\n' + content
+    if(content[0] == '\n'):
+        content = content[1:]
     lines = content.splitlines()
     lines = list(dict.fromkeys(lines))
     content = '\n'.join(lines)
     print(content)
     write(item, content, path)
+
+# appends to a daily Log file, sent and reset at the end of each day
+def log(content):
+    appendUnique("dailyLog", f"{datetime.datetime.now().strftime('%H:%M:%S')}: {content}")
