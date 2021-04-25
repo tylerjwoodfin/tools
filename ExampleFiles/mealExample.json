@@ -1,0 +1,88 @@
+[
+    {
+        "breakfast": [
+            {
+                "name": "Cereal and Milk",
+                "ingredients": [
+                    "cereal",
+                    "milk"
+                ]
+            },
+            {
+                "name": "Oatmeal",
+                "ingredients": [
+                    "oatmeal",
+                    "milk"
+                ]
+            },
+            {
+                "name": "Soylent",
+                "ingredients": [
+                    "soylent"
+                ]
+            }
+        ]
+    },
+    {
+        "lunch": [
+            {
+                "name": "HEB Salad and Tea",
+                "ingredients": [
+                    "HEB Salad",
+                    "Tea"
+                ]
+            },
+            {
+                "name": "Turkey/Cheese Sandwich Lunch",
+                "ingredients": [
+                    "bread",
+                    "turkey",
+                    "sliced cheese",
+                    "yogurt",
+                    "fresh fruit"
+                ]
+            },
+            {
+                "name": "Soylent",
+                "ingredients": [
+                    "Soylent"
+                ]
+            }
+        ]
+    },
+    {
+        "dinner": [
+            {
+                "name": "Baked Potato and Vegetables",
+                "ingredients": [
+                    "large potato",
+                    "shredded cheese",
+                    "frozen vegetables"
+                ]
+            },
+            {
+                "name": "Turkey/Cheese Sandwich Lunch",
+                "ingredients": [
+                    "bread",
+                    "turkey",
+                    "sliced cheese",
+                    "yogurt",
+                    "fresh fruit"
+                ]
+            },
+            {
+                "name": "Frozen Dinner",
+                "ingredients": [
+                    "frozen dinner"
+                ]
+            },
+            {
+                "name": "baked chicken",
+                "ingredients": [
+                    "frozen chicken",
+                    "season salt"
+                ]
+            }
+        ]
+    }
+]
