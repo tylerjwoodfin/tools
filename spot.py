@@ -1,79 +1,70 @@
 # ReadMe
 # Uses Spotipy.
 # Mail was installed using msmtp. sudo apt-get install msmtp msmtp-mta
-# Config file: sudo nano /etc/msmtprc
+# Config file: /etc/msmtprc
 
 from spotipy.oauth2 import SpotifyClientCredentials
 import os
 from os import path
 import datetime
-from datetime import timedelta
 import sys
 import subprocess
 import spotipy
 import codecs
 import secureData
+from statistics import mean
 
 
 # set environment variables needed by Spotipy
 os.environ['SPOTIPY_CLIENT_ID'] = secureData.variable("SPOTIPY_CLIENT_ID")
 os.environ['SPOTIPY_CLIENT_SECRET'] = secureData.variable("SPOTIPY_CLIENT_SECRET")
 os.environ['SPOTIPY_REDIRECT_URI'] = 'http://localhost:8888'
+spotipy_username = secureData.variable("SPOTIPY_USERNAME")
+spotipy_playlist_id = secureData.variable("SPOTIPY_PLAYLIST_ID")
 
-# /
-
-inc = 0
-yesterdayCount = 0
+songYears = []
+totalTracks = -1
+index = 0
 
 def show_tracks(tracks):
-    global inc
-    global yesterdayCount
+    global index
     toReturn = u""
 
     for i, item in enumerate(tracks['items']):
         track = item['track']
-        inc+=1
-        line = str(inc) + "::" + (track['artists'][0]['name']) + "::" + track['name'] + "::" + str(track['album']['release_date']) + "::" + (track['external_urls']['spotify'] if track['is_local'] == False else "") + "\n"
+        index+=1
+        print(f"{index} of {totalTracks}...")
+        line = f"{str(index)}::{track['artists'][0]['name']}::{track['name']}::{str(track['album']['release_date'])}::{(track['external_urls']['spotify'] if track['is_local'] == False else '')}\n"
         toReturn += line
-        if(inc > yesterdayCount):
-                print(line.encode("utf-8"))
+
+        if(track['album']['release_date']):
+            songYears.append(int(track['album']['release_date'].split("-")[0]))
     
     return toReturn
 
-
-# this if statement prevents the code from running if it's imported instead of run directly
 if __name__ == '__main__':
 
-    yesterday = str(datetime.date.today() - timedelta(days=1))
-    newSongs = bytes("", "utf-8")
     client_credentials_manager = SpotifyClientCredentials()
     sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+    filePath = f"/var/www/html/Logs/Songs/{str(datetime.date.today())}.csv"
 
-    filePath = "/var/www/html/Logs/Songs/"
-    fullPath = filePath + "Songs " + str(datetime.date.today()) + ".csv"
+    f = open(filePath, 'w+')
 
-    # get number of songs from yesterday
-    if (path.exists(os.getcwd() + os.path.join(filePath, "Songs " + yesterday + ".csv"))):
-        print("Path Exists")
-        with codecs.open(filePath + "Songs " + yesterday + ".csv", 'r', encoding='Latin-1', errors='ignore') as f:
-            for line in f:
-                yesterdayCount += 1
-            print("Yesterday Count: " + str(yesterdayCount))
-    
-    f = open(fullPath, 'w+')
+    # parse playlist by ID
+    results = sp.playlist(spotipy_playlist_id)
+    tracks = results['tracks']
+    totalTracks = results['tracks']['total']
+    secureData.write("SPOTIPY_SONG_COUNT", str(totalTracks))
 
-    playlists = sp.user_playlists(secureData.variable("SPOTIPY_USERNAME"))
-    for playlist in playlists['items']:
-        if playlist['name'] == "Tyler Radio":
-            print(playlist['name'])
-            print ('  total tracks', playlist['tracks']['total'])
-            results = sp.playlist(playlist['id'])
-            tracks = results['tracks']
-            f.write(str(show_tracks(tracks)))
-            while tracks['next']:
-                tracks = sp.next(tracks)
-                f.write(str(show_tracks(tracks)))
+    # go through each set of songs, 100 at a time (due to API limits)
+    f.write(str(show_tracks(tracks)))
+    while tracks['next']:
+        tracks = sp.next(tracks)
+        f.write(str(show_tracks(tracks)))
+
+    print(f"Average Year: {str(mean(songYears))}")
     secureData.log("Updated Spotify Log")
+    secureData.write("SPOTIPY_AVERAGE_YEAR", str(mean(songYears)))
     print("\n\nDone. Updating Git:")
     f.close()
 
