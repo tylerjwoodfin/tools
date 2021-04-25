@@ -10,19 +10,22 @@ split() {
   echo "${strarr[$3]}"
 }
 
-# Read certain variables from the secure data folder
+# Read certain variables from secureData
 email_pi=$(</home/pi/Git/SecureData/email_pi)
 email=$(</home/pi/Git/SecureData/email)
-
 dailyLog=$(</home/pi/Git/SecureData/dailyLog)
+tasks="/home/pi/Notes/Tasks.txt"
+getTasks=$(<$tasks)
+spotify_count=$(</home/pi/Git/SecureData/SPOTIPY_SONG_COUNT)
+spotify_avg_year=$(</home/pi/Git/SecureData/SPOTIPY_AVERAGE_YEAR)
+
+# format styling
 dailyLog=$(echo -e ${dailyLog//$'\n'/<br>})
 dailyLog="<font face='monospace'>$dailyLog</font>"
 dailyLog="<b>Daily Log:</b><br>$dailyLog"
 
-echo "\n\n$dailyLog\n\n\n"
+spotifyStats="<b>Spotify Stats:</b><br>You have $spotify_count songs; the mean song is from $spotify_avg_year."
 
-tasks="/home/pi/Notes/Tasks.txt"
-getTasks=$(<$tasks)
 getTasks=$(echo -e ${getTasks//$'\n'/<br>})
 getTasks="<font face='monospace'>$getTasks</font>"
 cron="/var/spool/cron/crontabs/pi"
@@ -60,7 +63,7 @@ gitStatus=$(echo -e ${gitStatus//$'\n'/<br>})
 # compose email
 emailBody="Dear Tyler,<br><br>This is your daily status report.<br><br>"
 emailBody="$emailBody$dailyLog"
-emailBody="$emailBody<br><br><b>Tasks:</b><br>$getTasks"
+emailBody="$emailBody<br><br><b>Tasks:</b><br>$getTasks<br><br>$spotifyStats"
 gitErrorText="Your last Git commit to your website was before today:<br><br>${gitStatus}<br><br>Please double check spot.py."
 
 # Send Email
