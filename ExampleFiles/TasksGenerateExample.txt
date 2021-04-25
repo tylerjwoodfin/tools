@@ -1,0 +1,6 @@
+[MON] This task is added if today is Monday.
+[THU] This task is added if today is Thursday.
+[D01] This task is added if today is the 1st of the month.
+[D31] This task is added if today is the 31st of the month.
+[12-31] This task is added if today is December 31.
+[1-5] This task is added if today is January 5. (not tested on non-US systems)

@@ -1,37 +1,22 @@
 # ReadMe
-# A tool for editing Tasks.txt in Dropbox; to be integrated with Raspberry Pilot
+# A tool for generating meals; to be integrated with Raspberry Pilot
 
 import os
 import sys
 import subprocess
 import json
-from datetime import datetime as date
 
-sys.path.insert(0, '/home/pi/Git/google-reminders-cli')
 from secureData import notesDir, secureDir, write, appendUnique, array, directory
-from remind import tasks
 
-helpText = f"""\nUsage: rp t <command>\n\n<command>:
-	add <taskInfo>
-	add <taskInfo> <line number>
-	rm  <taskInfo>
-	rm  <line number>
+helpText = """\nUsage: rp t <command>\n\n<command>:
 	ls
 	pull
-	config notes <notesDirectory>
+	config mealFile <directory>
 	
 	For help with a specific command: help <command>
-	
-Parameters:
-	taskInfo: enter any task you want to complete. Enclose in quotes, e.g. rp t add 'take the trash out'
-	notesDirectory: Currently {notesDir}. Setting is stored at {secureDir}/NotesDir.
 
-Notes Directory:
-	Tasks.txt and TasksGenerate.txt in {notesDir}. Change the directory by running rp t config notes <directory> or modifying {secureDir}/NotesDir.
-
-TasksGenerate.txt:
-	when generate() is run (from crontab or similar task scheduler; not intended to be run directly), matching tasks are added to Tasks.txt.
-	See the provided TasksGenerate.txt file in ExampleFiles for examples.
+<directory>:
+	Full path to JSON file containing meals/ingredients. See example structure in mealExample.json
 	
 	"""
 
@@ -40,17 +25,6 @@ def __toLower(arr):
 		arr[i] = arr[i].lower()
 	
 	return arr
-
-# generates tasks from the TasksGenerate.txt file in {notesDir}. Not intended to be run directly (try 'crontab -e')
-def generate():
-	today = date.today()
-	dayOfMonthEnclosed = "[D{:02d}]".format(today.day)
-	dayOfWeekEnclosed = f"[{today.strftime('%a').upper()}]"
-	dateMMdashDDEnclosed = f"[{today.strftime('%m-%d')}]"
-	for item in array("TasksGenerate.txt", "notes"):
-		if(item.startswith(dayOfMonthEnclosed) or item.startswith(dayOfWeekEnclosed) or item.startswith(dateMMdashDDEnclosed)):
-			appendUnique("Tasks.txt", item, "notes")
-
 
 def add(s=None):
 	if(s == "help"):
@@ -130,9 +104,9 @@ def config(s=None):
 		return
 
 	if(sys.argv[2].lower() == "notes"):
-		newDir = sys.argv[3] if sys.argv[3][-1] == '/' else sys.argv[3] + '/'
+		newDir = sys.argv[3] if sys.argv[-1] == '/' else sys.argv[3] + '/'
 		write("NotesDir", newDir)
-		print(f"Tasks.txt and TasksGenerate.txt should now be stored in {newDir}.")
+		print(f"Tasks will now be stored in {newDir}Tasks.txt.")
 		
 	
 params = {
@@ -141,11 +115,11 @@ params = {
 	"ls": ls,
 	"help": help,
 	"pull": pull,
-	"config": config,
-	"generate": generate
+	"config": config
 }
 
 if(len(sys.argv)) == 1:
+	print(f"Oops: {sys.argv[0]}")
 	print(helpText)
 	quit()
 	
