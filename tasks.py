@@ -35,6 +35,9 @@ TasksGenerate.txt:
 	
 	"""
 
+
+today = date.today()
+
 def __toLower(arr):
 	for i in range(len(arr)):
 		arr[i] = arr[i].lower()
@@ -43,9 +46,8 @@ def __toLower(arr):
 
 # generates tasks from the TasksGenerate.txt file in {notesDir}. Not intended to be run directly (try 'crontab -e')
 def generate():
-	today = date.today()
 	dayOfMonthEnclosed = "[D{:02d}]".format(today.day)
-	dayOfWeekEnclosed = f"[{today.strftime('%a').upper()}]"
+	dayOfWeekEnclosed = f"[{today.strftime('%a').lower()}]"
 	dateMMdashDDEnclosed = f"[{today.strftime('%m-%d')}]"
 	for item in array("TasksGenerate.txt", "notes"):
 		if(item.startswith(dayOfMonthEnclosed) or item.startswith(dayOfWeekEnclosed) or item.startswith(dateMMdashDDEnclosed)):
@@ -59,7 +61,9 @@ def add(s=None):
 		print(rm("help"))
 		return
 
-	appendUnique("Tasks.txt", sys.argv[2], "notes")
+	dayOfWeekEnclosed = f"[{today.strftime('%a').lower()}]"
+
+	appendUnique("Tasks.txt", f"{dayOfWeekEnclosed} {sys.argv[2]}", "notes")
 	print(f"Added {sys.argv[2]} to {notesDir}Tasks.txt")
 	
 def rm(s=None):
