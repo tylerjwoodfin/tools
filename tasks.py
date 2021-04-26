@@ -54,12 +54,6 @@ def generate():
 	epochWeek = int(time.time()/60/60/24/7)
 	epochMonth = int(date.today().month)
 
-	tokenSplitter = {
-		"d": epochDay,
-		"w": epochWeek,
-		"m": epochMonth
-	}
-
 	if(timeSinceTasksGenerated < 43200):
 		secureData.log("Generating tasks")
 		dayOfMonthEnclosed = "[D{:02d}]".format(today.day)
@@ -70,15 +64,23 @@ def generate():
 				secureData.appendUnique("Tasks.txt", item, "notes")
 			elif(item.startswith("[") and ("%" in item) and ("]" in item)):
 				splitType = item[1].lower() # d, w, m
-				splitFactor = int(item.split("%")[1].split("]")[0])
+				splitFactor = item.split("%")[1].split("]")[0]
+				splitOffset = 0
+
+				if("+" in splitFactor):
+					splitOffset = int(splitFactor.split("+")[1])
+					splitFactor = int(splitFactor.split("+")[0])
+				else:
+					splitFactor = int(splitFactor)
+
 				if(splitType == "d"):
-					if(epochDay % splitFactor == 0):
+					if(epochDay % splitFactor == splitOffset):
 						secureData.appendUnique("Tasks.txt", item, "notes")
 				elif(splitType == "w"):
-					if(date.today().strftime("%a") == 'Sun' and epochWeek % splitFactor == 0):
+					if(date.today().strftime("%a") == 'Sun' and epochWeek % splitFactor == splitOffset):
 						secureData.appendUnique("Tasks.txt", item, "notes")
 				elif(splitType == "m"):
-					if(date.today().day == 1 and epochMonth % splitFactor == 0):
+					if(date.today().day == 1 and epochMonth % splitFactor == splitOffset):
 						secureData.appendUnique("Tasks.txt", item, "notes")
 
 		secureData.write("tasksGenerated", str(time.time()))
