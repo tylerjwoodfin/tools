@@ -21,7 +21,7 @@ Bad Examples:
 {thu} You must use brackets.
   [W%3] You must start tasks on the first column.
 [W%3-1] This is invalid. To add an offset, you MUST use +.
-[W%3+4] This is also invalid. An offset of 4 makes no sense because [W%3+1] offsets 1 week, [W%3+2] offsets 2 weeks, and [W%3+3] is the same thing as [W%3]. [W%3+4] is the same as [W%3+1].
+[W%3+4] This is also invalid and mathematically impossible. An offset of 4 makes no sense because [W%3+1] offsets 1 week, [W%3+2] offsets 2 weeks, and [W%3+3] is the same thing as [W%3]. [W%3+4] is the same as [W%3+1]- you should use this instead.
 ```
 
 # How to use, assuming Linux:
