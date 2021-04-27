@@ -6,7 +6,8 @@ import sys
 import subprocess
 import json
 
-from secureData import notesDir, secureDir, write, appendUnique, array, directory
+sys.path.insert(0, '/home/pi/Git/SecureData')
+import secureData
 
 helpText = """\nUsage: rp t <command>\n\n<command>:
 	ls

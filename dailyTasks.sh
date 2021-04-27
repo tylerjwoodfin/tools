@@ -11,13 +11,13 @@ split() {
 }
 
 # Read certain variables from secureData
-email_pi=$(</home/pi/Git/SecureData/email_pi)
-email=$(</home/pi/Git/SecureData/email)
-dailyLog=$(</home/pi/Git/SecureData/dailyLog)
+email_pi=$(</home/pi/SecureData-Data/email_pi)
+email=$(</home/pi/SecureData-Data/email)
+dailyLog=$(</home/pi/SecureData-Data/dailyLog)
 tasks="/home/pi/Notes/Tasks.txt"
 getTasks=$(<$tasks)
-spotify_count=$(</home/pi/Git/SecureData/SPOTIPY_SONG_COUNT)
-spotify_avg_year=$(</home/pi/Git/SecureData/SPOTIPY_AVERAGE_YEAR)
+spotify_count=$(</home/pi/SecureData-Data/SPOTIPY_SONG_COUNT)
+spotify_avg_year=$(</home/pi/SecureData-Data/SPOTIPY_AVERAGE_YEAR)
 
 # format styling
 dailyLog=$(echo -e ${dailyLog//$'\n'/<br>})
@@ -79,4 +79,4 @@ else
 fi
 
 # clear daily Log
-echo "" > /home/pi/Git/SecureData/dailyLog
+echo "" > /home/pi/SecureData-Data/dailyLog
