@@ -2,9 +2,11 @@ import smtplib
 from urllib.parse import unquote
 import ssl
 import sys
-import secureData
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+
+sys.path.insert(0, '/home/pi/Git/SecureData')
+import secureData
 
 # ReadMe
 # This is a simple module to send mail through smtplib.

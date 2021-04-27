@@ -11,8 +11,10 @@ import sys
 import subprocess
 import spotipy
 import codecs
-import secureData
 from statistics import mean
+
+sys.path.insert(0, '/home/pi/Git/SecureData')
+import secureData
 
 
 # set environment variables needed by Spotipy
