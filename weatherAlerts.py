@@ -6,10 +6,13 @@
 import requests
 import datetime
 import time
-import secureData
 import mail
 from decimal import Decimal as d
 import random
+import sys
+
+sys.path.insert(0, '/home/pi/Git/SecureData')
+import secureData
 
 lat = str(secureData.array("weatherLatLong")[0])
 lon = str(secureData.array("weatherLatLong")[1])
