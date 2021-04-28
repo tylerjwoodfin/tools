@@ -46,7 +46,7 @@ if(int(secureData.variable("walkAlertSent")) < (time.time() - 43200) and now.hou
     
     temperature = convertTemperature(response["current"]["temp"])
     low = convertTemperature(response["daily"][1]["temp"]["min"])
-    high = convertTemperature(response["daily"][1]["temp"]["max"])
+    high = convertTemperature(response["daily"][0]["temp"]["max"])
     wind = response["current"]["wind_speed"]
     sunset = response["daily"][0]["sunset"]
     
