@@ -1,129 +1,44 @@
-# ReadMe
-# A tool for generating meals; to be integrated with Raspberry Pilot
-
-import os
 import sys
-import subprocess
 import json
+import datetime
 
 sys.path.insert(0, '/home/pi/Git/SecureData')
 import secureData
 
-helpText = """\nUsage: rp t <command>\n\n<command>:
-	ls
-	pull
-	config mealFile <directory>
-	
-	For help with a specific command: help <command>
+# ReadMe
+# Imports meal data from a JSON file and generates a shopping list and schedules meals for each day.
+# Designed to be used with SecureData.
 
-<directory>:
-	Full path to JSON file containing meals/ingredients. See example structure in mealExample.json
-	
-	"""
+def generate():
+	meals = json.loads(secureData.file("mealExample.json", "/home/pi/Git/Tools/ExampleFiles"))
+	ingredients = []
+	plannedMeals = []
 
-def __toLower(arr):
-	for i in range(len(arr)):
-		arr[i] = arr[i].lower()
-	
-	return arr
+	# iterate through each meal set and write to file
 
-def add(s=None):
-	if(s == "help"):
-		return "Add something"
-	if(len(sys.argv) < 3):
-		print(rm("help"))
-		return
+	key_index = -1
+	for key in meals.keys():
+		key_index += 1
+		for i in range(7):
+			day_w = (datetime.datetime.today() + datetime.timedelta(days=i+1)).strftime("%A")
+			if(key_index == 0):
+				print(day_w)
+				plannedMeals.append({day_w: [{}, {}, {}]})
+			mod_i = i % len(meals[key])
+			if i < 7:
+				plannedMeals[i][day_w][key_index] = {key: (meals[key][mod_i])}
+				# print(f"{day_w}: {meals[key][mod_i]}")
+				for ingredient in meals[key][mod_i]["ingredients"]:
+					ingredients.append(ingredient)
 
-	appendUnique("Tasks.txt", sys.argv[2], "notes")
-	print(f"Added {sys.argv[2]} to {notesDir}Tasks.txt")
-	
-def rm(s=None):
-	if(s == "help"):
-		return f"Pulls latest Tasks.txt in secureData.notesDir (currently {notesDir}), then removes the selected string or index in the file.\n\ne.g. 'rp t rm 3' removes the third line.\n\nUsage: rp t rm <string matching task title, or integer of a line to remove>"
-	if(len(sys.argv) < 3):
-		print(rm("help"))
-		return
+	print("\n\n\n")
+	print(plannedMeals)
+	ingredients = list(dict.fromkeys(ingredients))
+	# print(ingredients)
+	# add ingredients
 
-	# convert list and query to lowercase to avoid false negatives
-	tasks = __toLower(array("Tasks.txt", "notes"))
-	sys.argv[2] = sys.argv[2].lower()
+	secureData.write("WeeklyMeals.json", json.dumps(plannedMeals), "notes")
+	secureData.appendUnique("Shopping.txt", '\n'.join(ingredients), "notes")
 
-	try:
-		del tasks[int(sys.argv[2])-1]
-		write("Tasks.txt", '\n'.join(tasks), "notes")
-		print(f"Removed {sys.argv[2]}. New Tasks:\n")
-		ls()
-	except:
-		if(sys.argv[2] in tasks):
-			tasks.remove(sys.argv[2])
-			write("Tasks.txt", '\n'.join(tasks), "notes")
-			print(f"Removed {sys.argv[2]}. New Tasks:\n")
-			ls()
-		else:
-			print(f"'{sys.argv[2]}' isn't in {notesDir}Tasks.txt.")
-
-def ls(s=None):
-	if(s == "help"):
-		return "Displays the latest Tasks.txt in secureData.notesDir (currently {notesDir}), as well as line numbers\n\nUsage: rp t ls"
-	
-	os.system(f"rclone copyto Dropbox:Notes/Tasks.txt {notesDir}Tasks.txt; cat -n {notesDir}Tasks.txt")
-	print("\n")
-	
-def help():
-	if(len(sys.argv) > 2):
-		func = params.get(sys.argv[2])
-		if(hasattr(func, '__name__')):
-			print(func("help"))
-	else:
-		print(helpText)
-
-def pull(s=None):
-	if(s == "help"):
-		return f"Pull reminders from Google Calendar, delete them, and add them to Tasks.txt in secureData.notesDir (currently {notesDir})"
-		
-	print("Pulling from Google...")
-	items = tasks()
-
-	# for each reminder, write to Tasks.txt if not there already
-	titlesToAdd = []
-	for item in items:
-		print(item)
-		if(not item["done"]):
-			titlesToAdd.append(item['title'])
-			print(f"Moving {item['title']} to {notesDir}Tasks.txt")
-		print(f"Deleting {item['title']}")
-		print(subprocess.check_output(['/home/pi/Git/google-reminders-cli/remind.py', '-d', item['id']]))
-
-	if(len(titlesToAdd) > 0):
-		appendUnique("Tasks.txt", '\n'.join(titlesToAdd), "notes")
-
-def config(s=None):
-	if(s == "help"):
-		return f"rp t config notes <dir>: Set your notes directory\ne.g. rp t config notes /home/pi/Dropbox/Notes"
-	if(len(sys.argv) < 4):
-		print(config("help"))
-		return
-
-	if(sys.argv[2].lower() == "notes"):
-		newDir = sys.argv[3] if sys.argv[-1] == '/' else sys.argv[3] + '/'
-		write("NotesDir", newDir)
-		print(f"Tasks will now be stored in {newDir}Tasks.txt.")
-		
-	
-params = {
-	"add": add,
-	"rm": rm,
-	"ls": ls,
-	"help": help,
-	"pull": pull,
-	"config": config
-}
-
-if(len(sys.argv)) == 1:
-	print(f"Oops: {sys.argv[0]}")
-	print(helpText)
-	quit()
-	
-if __name__ == '__main__':
-	func = params.get(sys.argv[1], lambda: print(helpText))
-	func()
+if(__name__ == "__main__"):
+	generate()
