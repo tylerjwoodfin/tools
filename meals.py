@@ -38,6 +38,7 @@ def generate():
 	secureData.appendUnique("Shopping.txt", '\n'.join(ingredients), "notes")
 	print(f"Meals have been saved to {secureData.notesDir}WeeklyMeals.json.")
 	print(f"Ingredients from WeeklyMeals.json have been added to {secureData.notesDir}Shopping.txt.")
+
 	secureData.log("Generated meals, shopping list, and WeeklyMeals.json")
 	ls(plannedMeals)
 
@@ -57,4 +58,7 @@ if(__name__ == "__main__"):
 	if(sys.argv[1] == 'ls'):
 		ls()
 	if(sys.argv[1] == 'generate'):
-		generate()
+		if(secureData.file("dailyLog")).__contains__("Generated meals, shopping list, and WeeklyMeals.json"):
+			print("Meals have already been generated today. To override, modify the Daily Log file.")
+		else:
+			generate()
