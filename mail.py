@@ -1,3 +1,11 @@
+# ReadMe
+# This is a simple module to send mail through smtplib.
+# For Gmail, you will need to enable "less secure apps".
+# 
+# This is called from a wrapper function in /usr/sbin/rmail. 
+# I'm using unquote (a.k.a. URL decode) for each parameter in case this is being called from web servers or from other
+# scripts with the need to escape quotation characters.
+
 import smtplib
 from urllib.parse import unquote
 import ssl
@@ -7,14 +15,6 @@ from email.mime.multipart import MIMEMultipart
 
 sys.path.insert(0, '/home/pi/Git/SecureData')
 import secureData
-
-# ReadMe
-# This is a simple module to send mail through smtplib.
-# For Gmail, you will need to enable "less secure apps".
-# 
-# This is called from a wrapper function in /usr/sbin/rmail. 
-# I'm using unquote (a.k.a. URL decode) for each parameter in case this is being called from web servers or from other
-# scripts with the need to escape quotation characters.
 
 # Parameters
 port = 465

@@ -1,5 +1,6 @@
 # ReadMe
-# Uses Spotipy.
+# Takes a backup of my Spotify music library, including title, artist, and year, and places the csv in a log folder in my Dropbox directory.
+# Uses "Spotipy", a great tool to use the Spotify APIs.
 # Mail was installed using msmtp. sudo apt-get install msmtp msmtp-mta
 # Config file: /etc/msmtprc
 
