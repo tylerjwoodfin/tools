@@ -47,27 +47,36 @@ def show_tracks(tracks):
 
 if __name__ == '__main__':
 
-    client_credentials_manager = SpotifyClientCredentials()
-    sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
-    filePath = f"/var/www/html/Logs/Songs/{str(datetime.date.today())}.csv"
+    secureData.log("Started spot.py")
 
-    f = open(filePath, 'w+')
+    try:
+        client_credentials_manager = SpotifyClientCredentials()
+        sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+        filePath = f"/var/www/html/Logs/Songs/{str(datetime.date.today())}.csv"
+        f = open(filePath, 'w+')
+    except Exception as e:
+        secureData.log(f"Caught Spotify Initialization Error: {str(e)}")
 
-    # parse playlist by ID
-    results = sp.playlist(spotipy_playlist_id)
-    tracks = results['tracks']
-    totalTracks = results['tracks']['total']
-    secureData.write("SPOTIPY_SONG_COUNT", str(totalTracks))
+    try:
+        # parse playlist by ID
+        results = sp.playlist(spotipy_playlist_id)
+        tracks = results['tracks']
+        totalTracks = results['tracks']['total']
+        secureData.write("SPOTIPY_SONG_COUNT", str(totalTracks))
 
-    # go through each set of songs, 100 at a time (due to API limits)
-    f.write(str(show_tracks(tracks)))
-    while tracks['next']:
-        tracks = sp.next(tracks)
+        # go through each set of songs, 100 at a time (due to API limits)
         f.write(str(show_tracks(tracks)))
+        while tracks['next']:
+            tracks = sp.next(tracks)
+            f.write(str(show_tracks(tracks)))
 
-    print(f"Average Year: {str(mean(songYears))}")
-    secureData.log("Updated Spotify Log")
-    secureData.write("SPOTIPY_AVERAGE_YEAR", str(mean(songYears)))
+        print(f"Average Year: {str(mean(songYears))}")
+
+        secureData.log("Updated Spotify Log")
+        secureData.write("SPOTIPY_AVERAGE_YEAR", str(mean(songYears)))
+    except Exception as e:
+        secureData.log(f"Caught Spotify error when creating csv: {str(e)}")
+
     print("\n\nDone. Updating Git:")
     f.close()
 
