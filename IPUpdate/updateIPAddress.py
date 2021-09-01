@@ -37,6 +37,6 @@ else:
     # Send email
     message = """
     Your public IP was updated from %s to %s. To keep tyler.cloud, update your Namecheap settings.<br><br>
-    To keep TylerVPN, please switch your OVPN file to the one located in SecureData.""" % (currentIP, discoveredIP)
+    To keep TylerVPN, please switch your OVPN file to the one located in (probably) Dropbox/Backups/SecureData.""" % (currentIP, discoveredIP)
     
     mail.send("IP Updated - new OVPN file", message)
