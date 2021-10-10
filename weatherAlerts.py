@@ -10,8 +10,11 @@ import mail
 from decimal import Decimal as d
 import random
 import sys
+import pwd
 
-sys.path.insert(0, '/home/pi/Git/SecureData')
+userDir = pwd.getpwuid( os.getuid() )[ 0 ]
+
+sys.path.insert(0, f'/home/{userDir}/Git/SecureData')
 import secureData
 
 lat = str(secureData.array("weatherLatLong")[0])

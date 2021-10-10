@@ -11,10 +11,13 @@ import datetime
 import sys
 import subprocess
 import spotipy
+import pwd
 import codecs
 from statistics import mean
 
-sys.path.insert(0, '/home/pi/Git/SecureData')
+userDir = pwd.getpwuid( os.getuid() )[ 0 ]
+
+sys.path.insert(0, f'/home/{userDir}/Git/SecureData')
 import secureData
 
 
