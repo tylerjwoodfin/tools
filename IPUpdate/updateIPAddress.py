@@ -27,12 +27,12 @@ else:
     print("New IP! Updating and sending email.")
     secureData.write("currentIP", discoveredIP)
     
-    # Replace OVPN file with new IP and email it
+    # Replace OVPN file with new IP
     newLine = "remote " + discoveredIP + " 1194"
-    vpnFile = secureData.file("tyler.cloud.ovpn")
+    vpnFile = secureData.file("tyler.cloud.ovpn", "/home/pi/ovpns")
     
     vpnFile = vpnFile.split("remote ")[0] + newLine + vpnFile.split(" 1194")[1]
-    secureData.write("tyler.cloud.ovpn", vpnFile)
+    secureData.write("tyler.cloud.ovpn", vpnFile, "/home/pi/ovpns")
     
     # Send email
     message = """

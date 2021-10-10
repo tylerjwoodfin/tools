@@ -6,14 +6,19 @@
 # I'm using unquote (a.k.a. URL decode) for each parameter in case this is being called from web servers or from other
 # scripts with the need to escape quotation characters.
 
+# Dependency: https://github.com/tylerjwoodfin/SecureData
+
 import smtplib
 from urllib.parse import unquote
 import ssl
 import sys
+import pwd
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-sys.path.insert(0, '/home/pi/Git/SecureData')
+userDir = pwd.getpwuid( os.getuid() )[ 0 ]
+
+sys.path.insert(0, f'/home/{userDir}/Git/SecureData')
 import secureData
 
 # Parameters
@@ -38,7 +43,7 @@ def send(subject, body, signature="<br><br>Thanks,<br>Raspberry Pi", to=secureDa
     with smtplib.SMTP_SSL(smtp_server, port, context=context) as server:
         server.login(username, password)
         server.sendmail(message["From"], message["To"], message.as_string())
-        print("Sent Email")
+        secureData.log(f"Sent Email: {sys.argv[1]}")
    
 # By default, mail.send:     
 if(len(sys.argv) == 3):
