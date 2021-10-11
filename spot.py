@@ -77,6 +77,8 @@ if __name__ == '__main__':
 
         secureData.log("Updated Spotify Log")
         secureData.write("SPOTIPY_AVERAGE_YEAR", str(mean(songYears)))
+        secureData.appendUnique("SPOTIPY_AVERAGE_YEAR_LOG", datetime.datetime.now().strftime('%Y-%m-%d') + "," + str(mean(songYears)))
+
     except Exception as e:
         secureData.log(f"Caught Spotify error when creating csv: {str(e)}")
 
