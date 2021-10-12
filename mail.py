@@ -68,14 +68,14 @@ def check():
         data = mail.search(None, 'ALL')
         mail_ids = data[1]
         id_list = mail_ids[0].split()
-        latest_email_id = int(id_list[-1])
+        latest_email_id = str(int(id_list[-1]))
 
         return mail.fetch(latest_email_id, '(RFC822)' )
                     
 
     except Exception as e:
         traceback.print_exc() 
-        secureData.log(f"Ran into a problem with mail.py.check:\n\n{str(e)}\n\n")
+        secureData.log(f"Ran into a problem with mail.py.check:{str(e).strip()}")
    
 # By default, mail.send:     
 if(len(sys.argv) == 3):
