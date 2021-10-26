@@ -43,9 +43,9 @@ cp -r $tasks "$logPath/Tasks/Tasks $today.txt"
 cp -r $cron "$logPath/Cron/Cron $today.txt"
 cp -r $bash "$logPath/Bash/Bash $today.txt"
 
-chmod 777 -R "$logPath/Tasks"
-chmod 777 -R "$logPath/Cron"
-chmod 777 -R "$logPath/Bash"
+# chmod 777 -R "$logPath/Tasks"
+# chmod 777 -R "$logPath/Cron"
+# chmod 777 -R "$logPath/Bash"
 
 echo "Tasks, Cron, and Bash copied to Log folder."
 
