@@ -23,7 +23,7 @@ secureData.log("Started Daily Tasks")
 spotify_count = secureData.variable("SPOTIPY_SONG_COUNT")
 spotify_avg_year = secureData.variable("SPOTIPY_AVERAGE_YEAR")
 
-daily_log = '<br>'.join(secureData.array("dailyLog"))
+daily_log = '<br>'.join(secureData.array("LOG_DAILY"))
 daily_log = f"<font face='monospace'>{daily_log}</font>"
 daily_log = f"<b>Daily Log:</b><br>{daily_log}<br><br>"
 daily_log = "Dear Tyler,<br><br>This is your daily status report.<br><br>" + daily_log
@@ -40,6 +40,10 @@ os.system(f"mkdir -p {logPath}/Cron")
 os.system(f"mkdir -p {logPath}/Bash")
 
 secureData.log("Tasks, Cron, and Bash copied to Log folder.")
+
+# Push today's Log files to Github
+os.system("cd /var/www/html; git pull; git add -A; git commit -m 'Updated Logs'; git push")
+secureData.log("Updated Git")
 
 # chmod 777 -R "$logPath/Tasks"
 # chmod 777 -R "$logPath/Cron"
@@ -59,5 +63,5 @@ else:
     mail.send(f"Daily Status - {today}", daily_log)
 
 # clear daily log
-secureData.write("dailyLog", "")
-secureData.log("Cleared Daily Log")
+secureData.log(clear=True)
+secureData.log(clear=True, logName="LOG_SPOTIFY")
