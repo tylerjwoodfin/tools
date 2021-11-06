@@ -48,20 +48,21 @@ def convertTemperature(temp):
 plantyStatus = secureData.variable("plantyStatus")
 now = datetime.datetime.now()
 
+
+secureData.log("Walk Alert Checked")
+# Call API
+url_request = f"https://api.openweathermap.org/data/2.5/onecall?lat={lat}&lon={lon}&appid={secureData.variable('weatherAPIKey')}"
+response = requests.get(url_request).json()
+
+temperature = convertTemperature(response["current"]["temp"])
+low = convertTemperature(response["daily"][1]["temp"]["min"])
+high = convertTemperature(response["daily"][0]["temp"]["max"])
+wind = response["current"]["wind_speed"]
+sunset = response["daily"][0]["sunset"]
+
+timeToSunset = (sunset - time.time()) / 3600
+    
 if(int(secureData.variable("walkAlertSent")) < (time.time() - 43200) and now.hour >= 10):
-    secureData.log("Walk Alert Checked")
-    # Call API
-    url_request = f"https://api.openweathermap.org/data/2.5/onecall?lat={lat}&lon={lon}&appid={secureData.variable('weatherAPIKey')}"
-    response = requests.get(url_request).json()
-
-    temperature = convertTemperature(response["current"]["temp"])
-    low = convertTemperature(response["daily"][1]["temp"]["min"])
-    high = convertTemperature(response["daily"][0]["temp"]["max"])
-    wind = response["current"]["wind_speed"]
-    sunset = response["daily"][0]["sunset"]
-
-    timeToSunset = (sunset - time.time()) / 3600
-
     if(((temperature >= 65 and temperature <= 85) or (high >= 65 and high <= 90)) and wind < 10 and timeToSunset > 2):
         message = f"""\
             Hi Tyler,\
@@ -78,15 +79,14 @@ if(int(secureData.variable("walkAlertSent")) < (time.time() - 43200) and now.hou
         secureData.log("Walk Alert Sent")
 
     # Planty Alerts
-    if(int(secureData.variable("plantyAlertSent")) < (time.time() - 43200)):
-        secureData.log("Checked Planty")
-        if(low < 55 and plantyStatus == "out"):
-            mail.send(
-                f"""Take Planty In", "Hi Tyler,<br><br>The low tonight is {low}°. Please take Planty in!""")
-            secureData.write("plantyStatus", "in")
-            secureData.write("plantyAlertSent", str(int(time.time())))
-        if(high > 80 and plantyStatus == "in"):
-            mail.send(
-                f"""Take Planty Out", "Hi Tyler,<br><br>It looks like a nice day! It's going to be around {high}°. Please take Planty out.""")
-            secureData.write("plantyStatus", "out")
-            secureData.write("plantyAlertSent", str(int(time.time())))
+    print("OK")
+if(int(secureData.variable("plantyAlertSent")) < (time.time() - 43200)):
+    secureData.log("Checked Planty")
+    if(low < 55 and plantyStatus == "out"):
+        mail.send("Take Planty In", f"Hi Tyler,<br><br>The low tonight is {low}°. Please take Planty in!")
+        secureData.write("plantyStatus", "in")
+        secureData.write("plantyAlertSent", str(int(time.time())))
+    if(high > 80 and plantyStatus == "in"):
+        mail.send("Take Planty Out", "Hi Tyler,<br><br>It looks like a nice day! It's going to be around {high}°. Please take Planty out.""")
+        secureData.write("plantyStatus", "out")
+        secureData.write("plantyAlertSent", str(int(time.time())))
