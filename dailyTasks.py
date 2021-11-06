@@ -20,24 +20,22 @@ import secureData
 
 secureData.log("Started Daily Tasks")
 
-spotify_count = secureData.variable("SPOTIPY_SONG_COUNT")
-spotify_avg_year = secureData.variable("SPOTIPY_AVERAGE_YEAR")
+status_email_warnings = []
+status_email = "Dear Tyler,<br><br>This is your daily status report.<br><br>"
 
-daily_log = '<br>'.join(secureData.array("LOG_DAILY"))
-daily_log = f"<font face='monospace'>{daily_log}</font>"
-daily_log = f"<b>Daily Log:</b><br>{daily_log}<br><br>"
-daily_log = "Dear Tyler,<br><br>This is your daily status report.<br><br>" + daily_log
-
-daily_log += f"<b>Spotify Stats:</b><br>You have {spotify_count} songs; the mean song is from {spotify_avg_year}.<br><br>"
-
+# Run Backups
 logPath="/var/www/html/Logs"
+cron=f"/var/spool/cron/crontabs/{userDir}"
+bash=f"/home/{userDir}/.bashrc"
+today = os.popen("date +%Y-%m-%d").read().strip()
 
-today = os.popen("date +%Y-%m-%d").read()
-
-# create these folders in case they don't exist for some reason
 os.system(f"mkdir -p {logPath}/tasks")
 os.system(f"mkdir -p {logPath}/Cron")
 os.system(f"mkdir -p {logPath}/Bash")
+
+os.system(f"cp -r {secureData.piTasksNotesPath + 'Tasks.txt'} '{logPath}/Tasks/Tasks {today}.txt'")
+os.system(f"cp -r {cron} '{logPath}/Cron/Cron {today}.txt'")
+os.system(f"cp -r {bash} '{logPath}/Bash/Bash {today}.txt'")
 
 secureData.log("Tasks, Cron, and Bash copied to Log folder.")
 
@@ -45,9 +43,25 @@ secureData.log("Tasks, Cron, and Bash copied to Log folder.")
 os.system("cd /var/www/html; git pull; git add -A; git commit -m 'Updated Logs'; git push")
 secureData.log("Updated Git")
 
-# chmod 777 -R "$logPath/Tasks"
-# chmod 777 -R "$logPath/Cron"
-# chmod 777 -R "$logPath/Bash"
+# Spotify Stats
+spotify_count = secureData.variable("SPOTIPY_SONG_COUNT")
+spotify_avg_year = secureData.variable("SPOTIPY_AVERAGE_YEAR")
+spotify_log = "<font face='monospace'>" + '<br>'.join(secureData.array("LOG_SPOTIFY")) + "</font>"
+spotify_stats = "<b>Spotify Stats:</b><br>"
+
+if "Error: " in spotify_log:
+    status_email_warnings.append('Spotify')
+    spotify_stats += "Please review your songs! We found some errors.<br><br>"
+
+spotify_stats += spotify_log + f"You have {spotify_count} songs; the mean song is from {spotify_avg_year}.<br><br>"
+
+# Daily Log
+daily_log = "<b>Daily Log:</b><br><font face='monospace'>" + '<br>'.join(secureData.array("LOG_DAILY")) + "</font><br><br>"
+
+
+status_email += daily_log
+status_email += spotify_log
+status_email += spotify_stats
 
 # Git Status
 git_status = os.popen('cd /var/www/html; git log -1').read().replace("\n", "<br>")
@@ -56,11 +70,14 @@ lastCommitTime = int(os.popen('cd /var/www/html; git log -1 --format="%at"').rea
 now = int(os.popen("date +%s").read())
 
 if(now - lastCommitTime > 7200):
-    daily_log = f"Your last Git commit to your website was before today:<br><br>{git_status}<br><br>Please double check spot.py.<br><br>" + daily_log
-    mail.send(f"Daily Status - Check Git Commits - {today}", daily_log)
+    status_email_warnings.append("Git")
+    status_email = f"Your last Git commit to your website was before today:<br><br>{git_status}<br><br>Please double check dailyTasks.py.<br><br>" + status_email
 else:
-    daily_log += f"<br><br><br><b>✔ Git Up to Date:</b><br>{git_status}"
-    mail.send(f"Daily Status - {today}", daily_log)
+    status_email += f"<br><br><br><b>✔ Git Up to Date:</b><br>{git_status}"
+
+status_email_warnings_text = "- Check " + ', '.join(status_email_warnings) + " " if len(status_email_warnings) else ""
+
+mail.send(f"Daily Status {status_email_warnings_text}- {today}", status_email)
 
 # clear daily log
 secureData.log(clear=True)
