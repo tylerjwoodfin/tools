@@ -29,7 +29,7 @@ cron=f"/var/spool/cron/crontabs/{userDir}"
 bash=f"/home/{userDir}/.bashrc"
 today = os.popen("date +%Y-%m-%d").read().strip()
 
-os.system(f"mkdir -p {logPath}/tasks")
+os.system(f"mkdir -p {logPath}/Tasks")
 os.system(f"mkdir -p {logPath}/Cron")
 os.system(f"mkdir -p {logPath}/Bash")
 
@@ -37,7 +37,7 @@ os.system(f"cp -r {secureData.piTasksNotesPath + 'Tasks.txt'} '{logPath}/Tasks/T
 os.system(f"cp -r {cron} '{logPath}/Cron/Cron {today}.txt'")
 os.system(f"cp -r {bash} '{logPath}/Bash/Bash {today}.txt'")
 
-secureData.log("Tasks, Cron, and Bash copied to Log folder.")
+secureData.log(f"Tasks, Cron, and Bash copied to {logPath}.")
 
 # Push today's Log files to Github
 os.system("cd /var/www/html; git pull; git add -A; git commit -m 'Updated Logs'; git push")
@@ -71,7 +71,7 @@ now = int(os.popen("date +%s").read())
 
 if(now - lastCommitTime > 7200):
     status_email_warnings.append("Git")
-    status_email = f"Your last Git commit to your website was before today:<br><br>{git_status}<br><br>Please double check dailyTasks.py.<br><br>" + status_email
+    status_email = f"<b>❌ Check Git:</b><br>Your last Git commit to your website was before today:<br><br>{git_status}<br><hr><br><br>{status_email}"
 else:
     status_email += f"<br><br><br><b>✔ Git Up to Date:</b><br>{git_status}"
 
