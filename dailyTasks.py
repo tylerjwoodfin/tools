@@ -46,14 +46,14 @@ secureData.log("Updated Git")
 # Spotify Stats
 spotify_count = secureData.variable("SPOTIPY_SONG_COUNT")
 spotify_avg_year = secureData.variable("SPOTIPY_AVERAGE_YEAR")
-spotify_log = "<font face='monospace'>" + '<br>'.join(secureData.array("LOG_SPOTIFY")) + "</font>"
+spotify_log = "<font face='monospace'>" + '<br>'.join(secureData.array("LOG_SPOTIFY")) + "</font><br><br>"
 spotify_stats = "<b>Spotify Stats:</b><br>"
 
 if "Error: " in spotify_log:
     status_email_warnings.append('Spotify')
     spotify_stats += "Please review your songs! We found some errors.<br><br>"
 
-spotify_stats += spotify_log + f"You have {spotify_count} songs; the mean song is from {spotify_avg_year}.<br><br>"
+spotify_stats += f"You have {spotify_count} songs; the mean song is from {spotify_avg_year}.<br><br>"
 
 # Daily Log
 daily_log = "<b>Daily Log:</b><br><font face='monospace'>" + '<br>'.join(secureData.array("LOG_DAILY")) + "</font><br><br>"
