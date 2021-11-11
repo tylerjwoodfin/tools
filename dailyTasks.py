@@ -53,6 +53,7 @@ if "Error: " in spotify_log:
     status_email_warnings.append('Spotify')
     spotify_stats += "Please review your songs! We found some errors.<br><br>"
 
+spotify_stats += spotify_log
 spotify_stats += f"You have {spotify_count} songs; the mean song is from {spotify_avg_year}.<br><br>"
 
 # Daily Log
@@ -60,7 +61,6 @@ daily_log = "<b>Daily Log:</b><br><font face='monospace'>" + '<br>'.join(secureD
 
 
 status_email += daily_log
-status_email += spotify_log
 status_email += spotify_stats
 
 # Git Status

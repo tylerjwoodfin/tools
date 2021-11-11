@@ -48,8 +48,6 @@ def convertTemperature(temp):
 plantyStatus = secureData.variable("plantyStatus")
 now = datetime.datetime.now()
 
-
-secureData.log("Walk Alert Checked")
 # Call API
 url_request = f"https://api.openweathermap.org/data/2.5/onecall?lat={lat}&lon={lon}&appid={secureData.variable('weatherAPIKey')}"
 response = requests.get(url_request).json()
