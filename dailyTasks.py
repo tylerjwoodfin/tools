@@ -3,15 +3,12 @@
 # Dependencies: requests (pip install requests), secureData (my internal function to grab nonpublic variables from a secure folder)
 # Note: weatherAPIKey should be obtained for free through openweathermap.org.
 
-import requests
-import datetime
-import time
 import mail
 from decimal import Decimal as d
-import random
 import sys
 import pwd
 import os
+import json
 
 userDir = pwd.getpwuid(os.getuid())[0]
 
@@ -53,15 +50,23 @@ if "Error: " in spotify_log:
     status_email_warnings.append('Spotify')
     spotify_stats += "Please review your songs! We found some errors.<br><br>"
 
-spotify_stats += spotify_log
 spotify_stats += f"You have {spotify_count} songs; the mean song is from {spotify_avg_year}.<br><br>"
+spotify_stats += spotify_log
 
 # Daily Log
 daily_log = "<b>Daily Log:</b><br><font face='monospace'>" + '<br>'.join(secureData.array("LOG_DAILY")) + "</font><br><br>"
 
-
 status_email += daily_log
 status_email += spotify_stats
+
+# Weather
+weather_data = json.loads(secureData.variable("WEATHER_DATA"))
+weather_data_text = "Unavailable"
+if(weather_data):
+    weather_data_text = f""" <b>Weather Tomorrow:</b><br>{weather_data['high']}° and {weather_data['conditions']}.<br> Sunrise:
+                        {weather_data['sunrise']}<br>Sunset: {weather_data['sunset']}<br><br>"""
+
+status_email += weather_data_text
 
 # Git Status
 git_status = os.popen('cd /var/www/html; git log -1').read().replace("\n", "<br>")
@@ -74,6 +79,8 @@ if(now - lastCommitTime > 7200):
     status_email = f"<b>❌ Check Git:</b><br>Your last Git commit to your website was before today:<br><br>{git_status}<br><hr><br><br>{status_email}"
 else:
     status_email += f"<br><br><br><b>✔ Git Up to Date:</b><br>{git_status}"
+
+status_email.replace("<br><br><br><br>", "<br><br>")
 
 status_email_warnings_text = "- Check " + ', '.join(status_email_warnings) + " " if len(status_email_warnings) else ""
 

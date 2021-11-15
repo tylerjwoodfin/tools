@@ -11,6 +11,7 @@ from decimal import Decimal as d
 import random
 import sys
 import pwd
+import json
 import os
 
 userDir = pwd.getpwuid(os.getuid())[0]
@@ -71,7 +72,7 @@ weatherData = {"high": high_tomorrow,
     "sunrise": sunrise_tomorrow_formatted,
     "sunset": sunset_tomorrow_formatted}
 
-secureData.write("WEATHER_DATA", str(weatherData))
+secureData.write("WEATHER_DATA", json.dumps(weatherData))
     
 if(int(secureData.variable("walkAlertSent")) < (time.time() - 43200) and now.hour >= 10):
     if(((temperature >= 65 and temperature <= 85) or (high >= 72 and high <= 90)) and wind < 10 and timeToSunset > 2):
@@ -91,7 +92,7 @@ if(int(secureData.variable("walkAlertSent")) < (time.time() - 43200) and now.hou
 
 plantyAlertSent = secureData.variable("PLANTY_ALERT_SENT")
 
-if(plantyAlertSent and int(plantyAlertSent) < (time.time() - 43200)):
+if(not plantyAlertSent or int(plantyAlertSent) < (time.time() - 43200)):
     secureData.log(f"Checked Planty (currently {plantyStatus}): low {low_tomorrow}, high {high}")
     if(low_tomorrow < 55 and plantyStatus == "out"):
         mail.send("Take Planty In", f"Hi Tyler,<br><br>The low tonight is {low_tomorrow}°. Please take Planty in!")
