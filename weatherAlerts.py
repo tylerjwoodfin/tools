@@ -98,6 +98,6 @@ if(plantyAlertSent and int(plantyAlertSent) < (time.time() - 43200)):
         secureData.write("PLANTY_STATUS", "in")
         secureData.write("PLANTY_ALERT_SENT", str(int(time.time())))
     if((high > 80 or low_tomorrow > 60) and plantyStatus == "in"):
-        mail.send("Take Planty Out", "Hi Tyler,<br><br>It looks like a nice day! It's going to be around {high}°. Please take Planty out.""")
+        mail.send("Take Planty Out", f"Hi Tyler,<br><br>It looks like a nice day! It's going to be around {high}°. Please take Planty out.""")
         secureData.write("PLANTY_STATUS", "out")
         secureData.write("PLANTY_ALERT_SENT", str(int(time.time())))
