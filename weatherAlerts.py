@@ -91,9 +91,11 @@ if(int(secureData.variable("walkAlertSent")) < (time.time() - 43200) and now.hou
         secureData.log("Walk Alert Sent")
 
 plantyAlertSent = secureData.variable("PLANTY_ALERT_SENT")
+plantyAlertChecked = secureData.variable("PLANTY_ALERT_CHECKED")
 
-if(not plantyAlertSent or int(plantyAlertSent) < (time.time() - 43200)):
+if(not plantyAlertSent or not plantyAlertChecked or (int(plantyAlertSent) < (time.time() - 43200) and int(plantyAlertChecked) < (time.time() - 21600))):
     secureData.log(f"Checked Planty (currently {plantyStatus}): low {low_tomorrow}, high {high}")
+    secureData.write("PLANTY_ALERT_CHECKED", str(int(time.time())))
     if(low_tomorrow < 55 and plantyStatus == "out"):
         mail.send("Take Planty In", f"Hi Tyler,<br><br>The low tonight is {low_tomorrow}°. Please take Planty in!")
         secureData.write("PLANTY_STATUS", "in")
