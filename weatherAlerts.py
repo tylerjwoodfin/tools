@@ -67,12 +67,14 @@ sunset = response["daily"][0]["sunset"]
 timeToSunset = (sunset - time.time()) / 3600
 
 # set WEATHER_DATA
-weatherData = {"high": high_tomorrow,
-    "current": f"{temperature}° and {conditions_now}",
-    "low": low_tomorrow,
-    "conditions": conditions_tomorrow,
-    "sunrise": sunrise_tomorrow_formatted,
-    "sunset": sunset_tomorrow_formatted}
+weatherData = {
+    "current_temperature": temperature,
+    "current_conditions": conditions_now,
+    "tomorrow_high": high_tomorrow,
+    "tomorrow_low": low_tomorrow,
+    "tomorrow_conditions": conditions_tomorrow,
+    "tomorrow_sunrise": sunrise_tomorrow_formatted,
+    "tomorrow_sunset": sunset_tomorrow_formatted}
 
 secureData.write("WEATHER_DATA", json.dumps(weatherData))
     

@@ -63,8 +63,8 @@ status_email += spotify_stats
 weather_data = json.loads(secureData.variable("WEATHER_DATA"))
 weather_data_text = "Unavailable"
 if(weather_data):
-    weather_data_text = f""" <b>Weather Tomorrow:</b><br>{weather_data['high']}° and {weather_data['conditions']}.<br> Sunrise:
-                        {weather_data['sunrise']}<br>Sunset: {weather_data['sunset']}<br><br>"""
+    weather_data_text = f""" <b>Weather Tomorrow:</b><br>{weather_data['tomorrow_high']}° and {weather_data['tomorrow_conditions']}.<br> Sunrise:
+                        {weather_data['tomorrow_sunrise']}<br>Sunset: {weather_data['tomorrow_sunset']}<br><br>"""
 
 status_email += weather_data_text
 
