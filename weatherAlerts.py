@@ -54,6 +54,7 @@ url_request = f"https://api.openweathermap.org/data/2.5/onecall?lat={lat}&lon={l
 response = requests.get(url_request).json()
 
 temperature = convertTemperature(response["current"]["temp"])
+conditions_now = response["current"]["weather"][0]["description"]
 conditions_tomorrow = response["daily"][1]["weather"][0]["description"]
 high_tomorrow = convertTemperature(response["daily"][0]["temp"]["max"])
 low_tomorrow = convertTemperature(response["daily"][1]["temp"]["min"])
@@ -67,6 +68,7 @@ timeToSunset = (sunset - time.time()) / 3600
 
 # set WEATHER_DATA
 weatherData = {"high": high_tomorrow,
+    "current": f"{temperature}° and {conditions_now}",
     "low": low_tomorrow,
     "conditions": conditions_tomorrow,
     "sunrise": sunrise_tomorrow_formatted,
