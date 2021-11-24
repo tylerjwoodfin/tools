@@ -103,10 +103,10 @@ if(not plantyAlertSent or not plantyAlertChecked or (int(plantyAlertSent) < (tim
     secureData.log(f"Checked Planty ({plantyStatus}): low {low_tomorrow}, high {high}")
     secureData.write("PLANTY_ALERT_CHECKED", str(int(time.time())))
     if(low_tomorrow < 55 and plantyStatus == "out"):
-        mail.send("Take Planty In", f"Hi Tyler,<br><br>The low tonight is {low_tomorrow}°. Please take Planty in!")
+        mail.send("Take Planty In", f"Hi Tyler,<br><br>The low tonight is {low_tomorrow}°. Please take Planty in!", to=secureData.variable("PLANTY_ALERT_EMAILS"))
         secureData.write("PLANTY_STATUS", "in")
         secureData.write("PLANTY_ALERT_SENT", str(int(time.time())))
     if((high > 80 or low_tomorrow > 60) and plantyStatus == "in"):
-        mail.send("Take Planty Out", f"Hi Tyler,<br><br>It looks like a nice day! It's going to be around {high}°. Please take Planty out.""")
+        mail.send("Take Planty Out", f"Hi Tyler,<br><br>It looks like a nice day! It's going to be around {high}°. Please take Planty out.""", to=secureData.variable("PLANTY_ALERT_EMAILS"))
         secureData.write("PLANTY_STATUS", "out")
         secureData.write("PLANTY_ALERT_SENT", str(int(time.time())))
