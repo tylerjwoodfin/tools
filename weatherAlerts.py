@@ -55,6 +55,7 @@ response = requests.get(url_request).json()
 
 temperature = convertTemperature(response["current"]["temp"])
 conditions_now = response["current"]["weather"][0]["description"]
+conditions_now_icon = response["current"]["weather"][0]["icon"]
 conditions_tomorrow = response["daily"][1]["weather"][0]["description"]
 high_tomorrow = convertTemperature(response["daily"][0]["temp"]["max"])
 low_tomorrow = convertTemperature(response["daily"][1]["temp"]["min"])
@@ -70,6 +71,7 @@ timeToSunset = (sunset - time.time()) / 3600
 weatherData = {
     "current_temperature": temperature,
     "current_conditions": conditions_now,
+    "current_conditions_icon": conditions_now_icon,
     "tomorrow_high": high_tomorrow,
     "tomorrow_low": low_tomorrow,
     "tomorrow_conditions": conditions_tomorrow,
