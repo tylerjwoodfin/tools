@@ -8,9 +8,14 @@ Rather than go through the Windows display settings each time, I've made these s
 This means that I can switch between two displays and one display by just clicking the icons on the taskbar.
 
 # Dependencies
-- Windows 10
-- A previous version of this plugin required Display Changer to be installed somewhere, but this is no longer necessary. Just note that the scripts reference dc2.exe.
-- Note that ThreeMonitors.xml is a config file and needs to stay with the exe.
+- Windows
+- Autohotkey
+
+# Setup
+
+## enableGrayscale
+- Refer to https://active-directory-wp.com/docs/Usage/How_to_add_a_cron_job_on_Windows/Scheduled_tasks_and_cron_jobs_on_Windows/
+    - Add a scheduled task with the Action: `"C:\Program Files\AutoHotkey\AutoHotkey.exe" <path to enableGrayscale.ahk>`
 
 # Supplemental Info
 dc2.exe (short for Display Changer II) is provided free for personal use by 12Noon. https://12noon.com/?page_id=641
