@@ -99,14 +99,16 @@ if(int(secureData.variable("walkAlertSent")) < (time.time() - 43200) and now.hou
 plantyAlertSent = secureData.variable("PLANTY_ALERT_SENT")
 plantyAlertChecked = secureData.variable("PLANTY_ALERT_CHECKED")
 
+print(secureData.file("PLANTY_ALERT_EMAILS").replace('\n', ','))
+
 if(not plantyAlertSent or not plantyAlertChecked or (int(plantyAlertSent) < (time.time() - 43200) and int(plantyAlertChecked) < (time.time() - 21600))):
     secureData.log(f"Checked Planty ({plantyStatus}): low {low_tomorrow}, high {high}")
     secureData.write("PLANTY_ALERT_CHECKED", str(int(time.time())))
     if(low_tomorrow < 55 and plantyStatus == "out"):
-        mail.send("Take Planty In", f"Hi Tyler,<br><br>The low tonight is {low_tomorrow}°. Please take Planty in!", to=secureData.variable("PLANTY_ALERT_EMAILS"))
+        mail.send("Take Planty In", f"Hi Tyler,<br><br>The low tonight is {low_tomorrow}°. Please take Planty in!", to=secureData.file("PLANTY_ALERT_EMAILS").replace('\n', ','))
         secureData.write("PLANTY_STATUS", "in")
         secureData.write("PLANTY_ALERT_SENT", str(int(time.time())))
     if((high > 80 or low_tomorrow > 60) and plantyStatus == "in"):
-        mail.send("Take Planty Out", f"Hi Tyler,<br><br>It looks like a nice day! It's going to be around {high}°. Please take Planty out.""", to=secureData.variable("PLANTY_ALERT_EMAILS"))
+        mail.send("Take Planty Out", f"Hi Tyler,<br><br>It looks like a nice day! It's going to be around {high}°. Please take Planty out.""", to=secureData.file("PLANTY_ALERT_EMAILS").replace('\n', ','))
         secureData.write("PLANTY_STATUS", "out")
         secureData.write("PLANTY_ALERT_SENT", str(int(time.time())))
