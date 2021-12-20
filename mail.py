@@ -23,17 +23,17 @@ from email.mime.multipart import MIMEMultipart
 userDir = pwd.getpwuid( os.getuid() )[ 0 ]
 
 sys.path.insert(0, f'/home/{userDir}/Git/SecureData')
-import secureData
+import secureDataNew as secureData
 
 # Parameters
 port = 465
 smtp_server = "smtp.gmail.com"
 smtp_server_imap = "imap.gmail.com"
-username = secureData.variable("email_pi")
-password = secureData.variable("email_pi_pw")
+username = secureData.getItem("email_pi")
+password = secureData.getItem("email_pi_pw")
 
 # Sends email from Gmail account described above
-def send(subject, body, signature="<br><br>Thanks,<br>Raspberry Pi", to=secureData.variable("email"), from_name="Raspberry Pi"):    
+def send(subject, body, signature="<br><br>Thanks,<br>Raspberry Pi", to=secureData.getItem("email"), from_name="Raspberry Pi"):    
     
     from_name = from_name + f" <{username}>"
 

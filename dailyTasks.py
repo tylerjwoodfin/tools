@@ -13,7 +13,7 @@ import json
 userDir = pwd.getpwuid(os.getuid())[0]
 
 sys.path.insert(0, f'/home/{userDir}/Git/SecureData')
-import secureData
+import secureDataNew as secureData
 
 secureData.log("Started Daily Tasks")
 
@@ -30,7 +30,7 @@ os.system(f"mkdir -p {logPath}/Tasks")
 os.system(f"mkdir -p {logPath}/Cron")
 os.system(f"mkdir -p {logPath}/Bash")
 
-os.system(f"cp -r {secureData.piTasksNotesPath + 'Tasks.txt'} '{logPath}/Tasks/Tasks {today}.txt'")
+os.system(f"cp -r {secureData.getItem('path_tasks_notes') + '/Tasks.txt'} '{logPath}/Tasks/Tasks {today}.txt'")
 os.system(f"cp -r {cron} '{logPath}/Cron/Cron {today}.txt'")
 os.system(f"cp -r {bash} '{logPath}/Bash/Bash {today}.txt'")
 
@@ -41,9 +41,9 @@ os.system("cd /var/www/html; git pull; git add -A; git commit -m 'Updated Logs';
 secureData.log("Updated Git")
 
 # Spotify Stats
-spotify_count = secureData.variable("SPOTIPY_SONG_COUNT")
-spotify_avg_year = secureData.variable("SPOTIPY_AVERAGE_YEAR")
-spotify_log = "<font face='monospace'>" + '<br>'.join(secureData.array("LOG_SPOTIFY")) + "</font><br><br>"
+spotify_count = secureData.getItem("spotipy", "total_tracks")
+spotify_avg_year = secureData.getItem("spotipy", "average_year")
+spotify_log = "<font face='monospace'>" + '<br>'.join(secureData.getFileAsArray("LOG_SPOTIFY")) + "</font><br><br>"
 spotify_stats = "<b>Spotify Stats:</b><br>"
 
 if "Error: " in spotify_log:
@@ -54,13 +54,13 @@ spotify_stats += f"You have {spotify_count} songs; the mean song is from {spotif
 spotify_stats += spotify_log
 
 # Daily Log
-daily_log = "<b>Daily Log:</b><br><font face='monospace'>" + '<br>'.join(secureData.array("LOG_DAILY")) + "</font><br><br>"
+daily_log = "<b>Daily Log:</b><br><font face='monospace'>" + '<br>'.join(secureData.getFileAsArray("LOG_DAILY")) + "</font><br><br>"
 
 status_email += daily_log
 status_email += spotify_stats
 
 # Weather
-weather_data = json.loads(secureData.variable("WEATHER_DATA"))
+weather_data = secureData.getItem("weather", "data")
 weather_data_text = "Unavailable"
 if(weather_data):
     weather_data_text = f""" <b>Weather Tomorrow:</b><br>{weather_data['tomorrow_high']}° and {weather_data['tomorrow_conditions']}.<br> Sunrise:

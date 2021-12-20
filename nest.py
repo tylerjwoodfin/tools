@@ -11,7 +11,7 @@ import datetime
 import sys
 
 sys.path.insert(0, '/home/pi/Git/SecureData')
-import secureData
+import secureDataNew as secureData
 
 # Use only to log in manually
 # url = 'https://nestservices.google.com/partnerconnections/'+project_id+'/auth?redirect_uri='+redirect_uri+'&access_type=offline&prompt=consent&client_id='+client_id+'&response_type=code&scope=https://www.googleapis.com/auth/sdm.service'
@@ -19,21 +19,21 @@ import secureData
 # print(url)
 
 # Constants
-project_id = secureData.array("NestIDs")[0]
-client_id = secureData.array("NestIDs")[1]
-client_secret = secureData.array("NestIDs")[2]
-code = secureData.array("NestIDs")[3]
+project_id = secureData.getItem("nest", "project_id")
+client_id = secureData.getItem("nest", "client_id")
+client_secret = secureData.getItem("nest", "client_secret")
+code = secureData.getItem("nest", "code")
 redirect_uri = 'https://www.tyler.cloud'
 
 # Access token- do we need to refresh?
-access_token = secureData.variable("NestAccessToken")
+access_token = secureData.getItem("nest", "access_token")
 
 # Get new Access Token by Passing the Refresh Token
 def renewAccessToken():
     params = (
         ('client_id', client_id),
         ('client_secret', client_secret),
-        ('refresh_token', secureData.variable("NestRefreshToken")),
+        ('refresh_token', secureData.getItem("nest", "refresh_token")),
         ('grant_type', 'refresh_token')
     )
 
@@ -46,7 +46,7 @@ def renewAccessToken():
     access_token = response_json['token_type'] + ' ' + response_json['access_token']
     print('Access token: ' + access_token)
       
-    secureData.write("NestAccessToken", access_token)
+    secureData.setItem("nest", "refresh_token", access_token)
 
 # Get structures
 
