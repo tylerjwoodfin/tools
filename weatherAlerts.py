@@ -98,14 +98,14 @@ if(secureData.getItem("weather", "alert_walk_sent") < (time.time() - 43200) and 
 plantyAlertSent = secureData.getItem("weather", "alert_planty_sent")
 plantyAlertChecked = secureData.getItem("weather", "alert_planty_checked")
 
-if(not plantyAlertSent or not plantyAlertChecked or (int(plantyAlertSent) < (time.time() - 43200) and int(plantyAlertChecked) < (time.time() - 21600))):
+if(len(sys.argv) > 1 and sys.argv[1] == 'force' or (not plantyAlertSent or not plantyAlertChecked or (int(plantyAlertSent) < (time.time() - 43200) and int(plantyAlertChecked) < (time.time() - 21600)))):
     secureData.log(f"Checked Planty ({plantyStatus}): low {low_tomorrow}, high {high}")
     secureData.setItem("weather", "alert_planty_checked", int(time.time()))
     if(low_tomorrow < 55 and plantyStatus == "out"):
         mail.send("Take Planty In", f"Hi Tyler,<br><br>The low tonight is {low_tomorrow}°. Please take Planty in!", to=secureData.getItem("weather", "alert_planty_emails").join(','))
         secureData.setItem("planty", "status", "in")
         secureData.setItem("weather", "alert_planty_sent", int(time.time()))
-    if((high > 80 or low_tomorrow > 60) and plantyStatus == "in"):
-        mail.send("Take Planty Out", f"Hi Tyler,<br><br>It looks like a nice day! It's going to be around {high}°. Please take Planty out.""", to=secureData.getItem("weather", "alert_planty_emails").join(','))
+    if((high > 80 or low_tomorrow >= 56) and plantyStatus == "in"):
+        mail.send("Take Planty Out", f"Hi Tyler,<br><br>It looks like a nice day! It's going to be around {high}°. Please take Planty out.""", to=','.join(secureData.getItem("weather", "alert_planty_emails")))
         secureData.setItem("planty", "status", "out")
-        secureData.write("weather", "alert_planty_sent", int(time.time()))
+        secureData.setItem("weather", "alert_planty_sent", int(time.time()))
