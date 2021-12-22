@@ -13,7 +13,7 @@ import json
 userDir = pwd.getpwuid(os.getuid())[0]
 
 sys.path.insert(0, f'/home/{userDir}/Git/SecureData')
-import secureDataNew as secureData
+import secureData
 
 secureData.log("Started Daily Tasks")
 

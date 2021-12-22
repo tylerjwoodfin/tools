@@ -23,7 +23,7 @@ from email.mime.multipart import MIMEMultipart
 userDir = pwd.getpwuid( os.getuid() )[ 0 ]
 
 sys.path.insert(0, f'/home/{userDir}/Git/SecureData')
-import secureDataNew as secureData
+import secureData
 
 # Parameters
 port = 465

@@ -16,7 +16,7 @@ import os
 userDir = pwd.getpwuid(os.getuid())[0]
 
 sys.path.insert(0, f'/home/{userDir}/Git/SecureData')
-import secureDataNew as secureData
+import secureData
 
 lat = secureData.getItem("latitude")
 lon = secureData.getItem("longitude")

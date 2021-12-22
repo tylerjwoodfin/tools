@@ -19,6 +19,6 @@ if myIP == "192.168.1.123":
 response = os.system("ping -c 1 " + hostname)
 
 if response != 0:
-    email = secureData.variable("email")
+    email = secureData.getItem("email")
     message = "Your server at " + hostname + " is down."
     mail.send(hostname + " is down", message)
