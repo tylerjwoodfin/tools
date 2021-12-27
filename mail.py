@@ -19,21 +19,19 @@ import email
 import traceback
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from securedata import securedata
 
 userDir = pwd.getpwuid( os.getuid() )[ 0 ]
-
-sys.path.insert(0, f'/home/{userDir}/Git/SecureData')
-import secureData
 
 # Parameters
 port = 465
 smtp_server = "smtp.gmail.com"
 smtp_server_imap = "imap.gmail.com"
-username = secureData.getItem("email_pi")
-password = secureData.getItem("email_pi_pw")
+username = securedata.getItem("email_pi")
+password = securedata.getItem("email_pi_pw")
 
 # Sends email from Gmail account described above
-def send(subject, body, signature="<br><br>Thanks,<br>Raspberry Pi", to=secureData.getItem("email"), from_name="Raspberry Pi"):    
+def send(subject, body, signature="<br><br>Thanks,<br>Raspberry Pi", to=securedata.getItem("email"), from_name="Raspberry Pi"):    
     
     from_name = from_name + f" <{username}>"
 
@@ -56,7 +54,7 @@ def send(subject, body, signature="<br><br>Thanks,<br>Raspberry Pi", to=secureDa
     with smtplib.SMTP_SSL(smtp_server, port, context=context) as server:
         server.login(username, password)
         server.sendmail(message["From"], message["To"], message.as_string())
-        secureData.log(f"Sent Email to {to} as {message['From']}: {subject}")
+        securedata.log(f"Sent Email to {to} as {message['From']}: {subject}")
 
 # Returns raw, possibly-encoded emails from the Inbox of the Gmail account described above
 def check():
@@ -75,12 +73,12 @@ def check():
 
     except Exception as e:
         traceback.print_exc() 
-        secureData.log(f"Ran into a problem with mail.py.check:{str(e).strip()}")
+        securedata.log(f"Ran into a problem with mail.py.check:{str(e).strip()}")
    
 # By default, mail.send:     
 if(len(sys.argv) == 3):
     send(sys.argv[1], sys.argv[2])
-    secureData.log(f"Sent Email: {sys.argv[1]}")
+    securedata.log(f"Sent Email: {sys.argv[1]}")
 
 if __name__ == "__main__":
 	if(len(sys.argv) == 1):

@@ -12,14 +12,12 @@ import random
 import sys
 import pwd
 import os
+from securedata import securedata
 
 userDir = pwd.getpwuid(os.getuid())[0]
 
-sys.path.insert(0, f'/home/{userDir}/Git/SecureData')
-import secureData
-
-lat = secureData.getItem("latitude")
-lon = secureData.getItem("longitude")
+lat = securedata.getItem("latitude")
+lon = securedata.getItem("longitude")
 
 
 def datetime_from_utc_to_local(utc_datetime):
@@ -45,11 +43,11 @@ def convertTemperature(temp):
 
 
 # context variables
-plantyStatus = secureData.getItem("planty", "status")
+plantyStatus = securedata.getItem("planty", "status")
 now = datetime.datetime.now()
 
 # Call API
-url_request = f"https://api.openweathermap.org/data/2.5/onecall?lat={lat}&lon={lon}&appid={secureData.getItem('weather', 'api_key')}"
+url_request = f"https://api.openweathermap.org/data/2.5/onecall?lat={lat}&lon={lon}&appid={securedata.getItem('weather', 'api_key')}"
 response = requests.get(url_request).json()
 
 temperature = convertTemperature(response["current"]["temp"])
@@ -77,9 +75,9 @@ weatherData = {
     "tomorrow_sunrise": sunrise_tomorrow_formatted,
     "tomorrow_sunset": sunset_tomorrow_formatted}
 
-secureData.setItem("weather", "data", weatherData)
+securedata.setItem("weather", "data", weatherData)
     
-if(secureData.getItem("weather", "alert_walk_sent") < (time.time() - 43200) and now.hour >= 10):
+if(securedata.getItem("weather", "alert_walk_sent") < (time.time() - 43200) and now.hour >= 10):
     if(((temperature >= 65 and temperature <= 85) or (high >= 72 and high <= 90)) and wind < 10 and timeToSunset > 2):
         message = f"""\
             Hi Tyler,\
@@ -92,20 +90,20 @@ if(secureData.getItem("weather", "alert_walk_sent") < (time.time() - 43200) and 
                     <br><br><h2><a href='{getBikeLink()}'>Here's a random place for you to go.</a></h2>"""
 
         mail.send("Particularly good weather today!", message)
-        secureData.setItem("weather", "alert_walk_sent", int(time.time()))
-        secureData.log("Walk Alert Sent")
+        securedata.setItem("weather", "alert_walk_sent", int(time.time()))
+        securedata.log("Walk Alert Sent")
 
-plantyAlertSent = secureData.getItem("weather", "alert_planty_sent")
-plantyAlertChecked = secureData.getItem("weather", "alert_planty_checked")
+plantyAlertSent = securedata.getItem("weather", "alert_planty_sent")
+plantyAlertChecked = securedata.getItem("weather", "alert_planty_checked")
 
 if(len(sys.argv) > 1 and sys.argv[1] == 'force' or (not plantyAlertSent or not plantyAlertChecked or (int(plantyAlertSent) < (time.time() - 43200) and int(plantyAlertChecked) < (time.time() - 21600)))):
-    secureData.log(f"Checked Planty ({plantyStatus}): low {low_tomorrow}, high {high}")
-    secureData.setItem("weather", "alert_planty_checked", int(time.time()))
+    securedata.log(f"Checked Planty ({plantyStatus}): low {low_tomorrow}, high {high}")
+    securedata.setItem("weather", "alert_planty_checked", int(time.time()))
     if(low_tomorrow < 55 and plantyStatus == "out"):
-        mail.send("Take Planty In", f"Hi Tyler,<br><br>The low tonight is {low_tomorrow}°. Please take Planty in!", to=secureData.getItem("weather", "alert_planty_emails").join(','))
-        secureData.setItem("planty", "status", "in")
-        secureData.setItem("weather", "alert_planty_sent", int(time.time()))
+        mail.send("Take Planty In", f"Hi Tyler,<br><br>The low tonight is {low_tomorrow}°. Please take Planty in!", to=securedata.getItem("weather", "alert_planty_emails").join(','))
+        securedata.setItem("planty", "status", "in")
+        securedata.setItem("weather", "alert_planty_sent", int(time.time()))
     if((high > 80 or low_tomorrow >= 56) and plantyStatus == "in"):
-        mail.send("Take Planty Out", f"Hi Tyler,<br><br>It looks like a nice day! It's going to be around {high}°. Please take Planty out.""", to=','.join(secureData.getItem("weather", "alert_planty_emails")))
-        secureData.setItem("planty", "status", "out")
-        secureData.setItem("weather", "alert_planty_sent", int(time.time()))
+        mail.send("Take Planty Out", f"Hi Tyler,<br><br>It looks like a nice day! It's going to be around {high}°. Please take Planty out.""", to=','.join(securedata.getItem("weather", "alert_planty_emails")))
+        securedata.setItem("planty", "status", "out")
+        securedata.setItem("weather", "alert_planty_sent", int(time.time()))
