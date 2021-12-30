@@ -6,6 +6,7 @@
 import mail
 import pwd
 import os
+import datetime
 from securedata import securedata
 
 userDir = pwd.getpwuid(os.getuid())[0]
@@ -19,7 +20,8 @@ status_email = "Dear Tyler,<br><br>This is your daily status report.<br><br>"
 logPath="/var/www/html/Logs"
 cron=f"/var/spool/cron/crontabs/{userDir}"
 bash=f"/home/{userDir}/.bashrc"
-today = os.popen("date +%Y-%m-%d").read().strip()
+today = datetime.date.today()
+filePath = f"{securedata.getItem('path_log')}/{today}/"
 
 os.system(f"mkdir -p {logPath}/Tasks")
 os.system(f"mkdir -p {logPath}/Cron")
@@ -38,7 +40,7 @@ securedata.log("Updated Git")
 # Spotify Stats
 spotify_count = securedata.getItem("spotipy", "total_tracks")
 spotify_avg_year = securedata.getItem("spotipy", "average_year")
-spotify_log = "<font face='monospace'>" + '<br>'.join(securedata.getFileAsArray("LOG_SPOTIFY")) + "</font><br><br>"
+spotify_log = "<font face='monospace'>" + '<br>'.join(securedata.getFileAsArray(f"LOG_SPOTIFY {today}", filePath=filePath)) + "</font><br><br>"
 spotify_stats = "<b>Spotify Stats:</b><br>"
 
 if "Error: " in spotify_log:
@@ -49,7 +51,7 @@ spotify_stats += f"You have {spotify_count} songs; the mean song is from {spotif
 spotify_stats += spotify_log
 
 # Daily Log
-daily_log = "<b>Daily Log:</b><br><font face='monospace'>" + '<br>'.join(securedata.getFileAsArray("LOG_DAILY")) + "</font><br><br>"
+daily_log = "<b>Daily Log:</b><br><font face='monospace'>" + '<br>'.join(securedata.getFileAsArray(f"LOG_DAILY {today}", filePath=filePath)) + "</font><br><br>"
 
 status_email += daily_log
 status_email += spotify_stats
@@ -80,7 +82,3 @@ status_email.replace("<br><br><br><br>", "<br><br>")
 status_email_warnings_text = "- Check " + ', '.join(status_email_warnings) + " " if len(status_email_warnings) else ""
 
 mail.send(f"Daily Status {status_email_warnings_text}- {today}", status_email)
-
-# clear daily log
-securedata.log(clear=True)
-securedata.log(clear=True, logName="LOG_SPOTIFY")
