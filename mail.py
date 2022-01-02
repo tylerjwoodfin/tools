@@ -76,7 +76,7 @@ def check():
         securedata.log(f"Ran into a problem with mail.py.check:{str(e).strip()}")
    
 # By default, mail.send:     
-if(len(sys.argv) == 3):
+if len(sys.argv) == 3 and sys.argv[0].endswith('mail.py'):
     send(sys.argv[1], sys.argv[2])
     securedata.log(f"Sent Email: {sys.argv[1]}")
 
