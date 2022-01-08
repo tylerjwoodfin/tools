@@ -2,11 +2,11 @@
 # This is a simple module to send mail through smtplib.
 # For Gmail, you will need to enable "less secure apps".
 # 
-# This is called from a wrapper function in /usr/sbin/rmail. 
+# This is called from a wrapper function at /usr/sbin/rmail. 
 # I'm using unquote (a.k.a. URL decode) for each parameter in case this is being called from web servers or from other
 # scripts with the need to escape quotation characters.
 
-# Dependency: https://github.com/tylerjwoodfin/SecureData
+# Dependency: https://github.com/tylerjwoodfin/securedata
 
 import smtplib
 import imaplib
@@ -15,7 +15,6 @@ import ssl
 import sys
 import pwd
 import os
-import email
 import traceback
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -73,7 +72,7 @@ def check():
 
     except Exception as e:
         traceback.print_exc() 
-        securedata.log(f"Ran into a problem with mail.py.check:{str(e).strip()}")
+        securedata.log(f"Ran into a problem with mail.py.check:{str(e).strip()}", level="error")
    
 # By default, mail.send:     
 if len(sys.argv) == 3 and sys.argv[0].endswith('mail.py'):
