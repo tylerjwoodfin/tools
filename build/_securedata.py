@@ -4,11 +4,6 @@ import os
 import sys
 import os.path
 
-# README
-# This is a deployment script; to install securedata as an end user, see https://pypi.org/project/securedata
-# Increments the version number and deploys on PyPi using my credentials
-# see https://betterscientificsoftware.github.io/python-for-hpc/tutorials/python-pypi-packaging/ for specific instructions
-
 DEFAULT_CONFIG_FILE = f'{securedata.getItem("path_securedata")}/setup.cfg' or f'{os.path.expanduser("~")}/securedata/setup.cfg'
 
 def main():
