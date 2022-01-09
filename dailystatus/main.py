@@ -28,9 +28,9 @@ os.system(f"mkdir -p {logPath}/Tasks")
 os.system(f"mkdir -p {logPath}/Cron")
 os.system(f"mkdir -p {logPath}/Bash")
 
-os.system(f"cp -r {securedata.getItem('path_tasks_notes') + '/Tasks.txt'} '{logPath}/Tasks/Tasks {today}.txt'")
-os.system(f"cp -r {cron} '{logPath}/Cron/Cron {today}.txt'")
-os.system(f"cp -r {bash} '{logPath}/Bash/Bash {today}.txt'")
+os.system(f"cp -r {securedata.getItem('path_tasks_notes') + '/Tasks.md'} '{logPath}/Tasks/Tasks {today}.md'")
+os.system(f"cp -r {cron} '{logPath}/Cron/Cron {today}.md'")
+os.system(f"cp -r {bash} '{logPath}/Bash/Bash {today}.md'")
 
 securedata.log(f"Tasks, Cron, and Bash copied to {logPath}.")
 
