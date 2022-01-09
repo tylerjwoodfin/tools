@@ -1,10 +1,10 @@
+# checkwebsite
+- My website is hosted on my Raspberry Pi 4 at 192.168.1.123. I have a second Raspberry Pi at 192.168.1.124. 
+- This tool pings the sister device, and if after 3 attempts, it cannot be reached, it sends an email.
 # Dependencies
-Python 3
-msmtp (sudo apt-get install msmtp msmtp-mta) (config file: sudo nano /etc/msmtprc)
+- `../mail.py` should be configured using [securedata](https://pypi.org/project/securedata)
+    - Otherwise, you can comment out `mail` lines and use `print`.
 
-# Description
-My website is hosted on my Raspberry Pi 4 at 192.168.1.123. I have a second Raspberry Pi as an alarm system at 192.168.1.124. 
-This tool should be added to my Crontab on both devices to periodically ping each other and send an email if the other is down.
-
-# Usage (recommended to use full path in crontab)
-python3 /path/to/main.py
+# Usage
+- `python3 /path/to/main.py`
+- I recommend putting this in your crontab (`crontab -e`)

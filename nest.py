@@ -6,11 +6,7 @@
 
 import requests
 import mail
-import os
 import datetime
-import sys
-
-sys.path.insert(0, '/home/pi/Git/SecureData')
 from securedata import securedata
 
 # Use only to log in manually
