@@ -44,17 +44,28 @@ spotify_avg_year = securedata.getItem("spotipy", "average_year")
 spotify_log = "<font face='monospace'>" + '<br>'.join(securedata.getFileAsArray(f"LOG_SPOTIFY", filePath=filePath)) + "</font><br><br>"
 spotify_stats = "<b>Spotify Stats:</b><br>"
 
-if "Error: " in spotify_log:
+if "ERROR —" in spotify_log:
     status_email_warnings.append('Spotify')
     spotify_stats += "Please review your songs! We found some errors.<br><br>"
 
 spotify_stats += f"You have {spotify_count} songs; the mean song is from {spotify_avg_year}.<br><br>"
-spotify_stats += spotify_log
+
+if 'Spotify' in status_email_warnings:      
+    spotify_stats += spotify_log
 
 # Daily Log
-daily_log = "<b>Daily Log:</b><br><font face='monospace'>" + '<br>'.join(securedata.getFileAsArray(f"LOG_DAILY {today}", filePath=filePath)) + "</font><br><br>"
+daily_log_file = '<br>'.join(securedata.getFileAsArray(f"LOG_DAILY {today}", filePath=filePath))
 
-status_email += daily_log
+if "ERROR —" in daily_log_file or "CRITICAL —" in daily_log_file:
+    status_email_warnings.append("Errors")
+if "WARNING —" in daily_log_file:
+    status_email_warnings.append("Warnings")
+
+daily_log = f"<b>Daily Log:</b><br><font face='monospace'>{daily_log_file}</font><br><br>"
+
+if 'Errors' or 'Warnings' in status_email_warnings:
+    status_email += daily_log
+
 status_email += spotify_stats
 
 # Weather
