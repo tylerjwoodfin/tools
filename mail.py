@@ -35,7 +35,7 @@ def send(subject, body, signature="<br><br>Thanks,<br>Raspberry Pi", to=secureda
     from_name = from_name + f" <{username}>"
 
     # Handle multiple emails
-    if(',' in to):
+    if ',' in to:
         send(subject, body, signature, to.replace(to.split(',')[0]+ ',', ''), from_name)
         to = to.split(',')[0]
 
@@ -80,5 +80,5 @@ if len(sys.argv) == 3 and sys.argv[0].endswith('mail.py'):
     securedata.log(f"Sent Email: {sys.argv[1]}")
 
 if __name__ == "__main__":
-	if(len(sys.argv) == 1):
+	if len(sys.argv) == 1:
     		print(f"sys.argv usage: send <subject>, <body>")

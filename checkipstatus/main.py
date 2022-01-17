@@ -22,7 +22,7 @@ discoveredIP = json.loads(ip)["ip"]
 print ("Found " + discoveredIP + ", currently " + currentIP + ".")
 
 # IP was updated
-if(currentIP == discoveredIP):
+if currentIP == discoveredIP:
     print("No change.")
 else:
     print("New IP! Updating and sending email.")

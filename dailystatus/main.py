@@ -71,7 +71,7 @@ status_email += spotify_stats
 # Weather
 weather_data = securedata.getItem("weather", "data")
 weather_data_text = "Unavailable"
-if(weather_data):
+if weather_data:
     weather_data_text = f""" <b>Weather Tomorrow:</b><br>{weather_data['tomorrow_high']}° and {weather_data['tomorrow_conditions']}.<br> Sunrise:
                         {weather_data['tomorrow_sunrise']}<br>Sunset: {weather_data['tomorrow_sunset']}<br><br>"""
 
@@ -83,7 +83,7 @@ git_status = os.popen('cd /var/www/html; git log -1').read().replace("\n", "<br>
 lastCommitTime = int(os.popen('cd /var/www/html; git log -1 --format="%at"').read())
 now = int(os.popen("date +%s").read())
 
-if(now - lastCommitTime > 7200):
+if now - lastCommitTime > 7200:
     status_email_warnings.append("Git")
     status_email = f"<b>❌ Check Git:</b><br>Your last Git commit to your website was before today:<br><br>{git_status}<br><hr><br><br>{status_email}"
 else:

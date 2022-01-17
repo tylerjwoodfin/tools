@@ -96,7 +96,7 @@ renewAccessToken()
 with open('/var/www/html/Logs/Humidity/humidity.csv','a') as fd:
     fd.write("\n" + str(datetime.datetime.now()) + "," + str(humidity))
 
-if(humidity < 35):
+if humidity < 35:
     # Email Variables
     message = """\
     Hi Tyler,<br><br>
