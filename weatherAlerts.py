@@ -6,14 +6,11 @@
 import requests
 import datetime
 import time
-import mail
 import random
 import sys
 import pwd
 import os
-from securedata import securedata
-
-userDir = pwd.getpwuid(os.getuid())[0]
+from securedata import securedata, mail
 
 lat = securedata.getItem("latitude")
 lon = securedata.getItem("longitude")

@@ -1,16 +1,9 @@
 import pwd
 import os
-from sys import path
 import datetime
-from securedata import securedata
+from securedata import securedata, mail
 
 userDir = pwd.getpwuid(os.getuid())[0]
-
-# for mail
-currentdir = os.path.dirname(os.path.realpath(__file__))
-parentdir = os.path.dirname(currentdir)
-path.append(parentdir)
-import mail
 
 securedata.log("Started Daily Tasks")
 

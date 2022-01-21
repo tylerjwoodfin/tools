@@ -5,9 +5,8 @@
 # Make sure redirect_uri is the same in this file as in the Google Device Access Console account.
 
 import requests
-import mail
 import datetime
-from securedata import securedata
+from securedata import securedata, mail
 
 # Use only to log in manually
 # url = 'https://nestservices.google.com/partnerconnections/'+project_id+'/auth?redirect_uri='+redirect_uri+'&access_type=offline&prompt=consent&client_id='+client_id+'&response_type=code&scope=https://www.googleapis.com/auth/sdm.service'
