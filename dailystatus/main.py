@@ -34,7 +34,7 @@ securedata.log("Updated Git")
 # Spotify Stats
 spotify_count = securedata.getItem("spotipy", "total_tracks")
 spotify_avg_year = securedata.getItem("spotipy", "average_year")
-spotify_log = "<font face='monospace'>" + '<br>'.join(securedata.getFileAsArray(f"LOG_SPOTIFY", filePath=filePath)) + "</font><br><br>"
+spotify_log = "<font face='monospace'>" + '<br>'.join(securedata.getFileAsArray(f"LOG_SPOTIFY.log", filePath=filePath)) + "</font><br><br>"
 spotify_stats = "<b>Spotify Stats:</b><br>"
 
 if "ERROR —" in spotify_log:
@@ -47,7 +47,7 @@ if 'Spotify' in status_email_warnings:
     spotify_stats += spotify_log
 
 # Daily Log
-daily_log_file = '<br>'.join(securedata.getFileAsArray(f"LOG_DAILY {today}", filePath=filePath))
+daily_log_file = '<br>'.join(securedata.getFileAsArray(f"LOG_DAILY {today}.log", filePath=filePath))
 
 if "ERROR —" in daily_log_file or "CRITICAL —" in daily_log_file:
     status_email_warnings.append("Errors")
