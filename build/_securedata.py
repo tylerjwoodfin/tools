@@ -30,16 +30,16 @@ def main():
 
     # delete `dist` directory
     try:
-        os.system("rm -rf /home/pi/Git/securedata/dist")
+        os.system("rm -rf /home/pi/git/securedata/dist")
     except Exception as e:
         print(f"Warning: {e}")
 
     # build
     print("Building... this will take a few minutes")
-    os.system("cd /home/pi/Git/securedata; python3 -m build")
+    os.system("cd /home/pi/git/securedata; python3 -m build")
 
     # push to PyPi
-    os.system("cd /home/pi/Git/securedata; python3 -m twine upload dist/*")
+    os.system("cd /home/pi/git/securedata; python3 -m twine upload dist/*")
 
     print("Finished! Remember to commit any new changes.")
 
