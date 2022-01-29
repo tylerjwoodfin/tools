@@ -17,6 +17,9 @@ bash=f"/home/{userDir}/.bashrc"
 today = datetime.date.today()
 filePath = f"{securedata.getItem('path_log')}/{today}/"
 
+# copy settings.json to root
+os.system(f"cp {securedata.getConfigItem('path_securedata')}/settings.json {securedata.getItem('path_securedata_all_users')}/settings.json")
+
 os.system(f"mkdir -p {logPath}/Tasks")
 os.system(f"mkdir -p {logPath}/Cron")
 os.system(f"mkdir -p {logPath}/Bash")
@@ -56,7 +59,7 @@ if "WARNING —" in daily_log_file:
 
 daily_log = f"<b>Daily Log:</b><br><font face='monospace'>{daily_log_file}</font><br><br>"
 
-if 'Errors' or 'Warnings' in status_email_warnings:
+if 'Errors' in status_email_warnings or 'Warnings' in status_email_warnings:
     status_email += daily_log
 
 status_email += spotify_stats
