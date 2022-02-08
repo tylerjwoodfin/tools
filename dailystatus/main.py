@@ -11,9 +11,9 @@ status_email_warnings = []
 status_email = "Dear Tyler,<br><br>This is your daily status report.<br><br>"
 
 # Run Backups
-logPath="/var/www/html/Logs"
-cron=f"/var/spool/cron/crontabs/{userDir}"
-bash=f"/home/{userDir}/.bashrc"
+logPath = "/var/www/html/Logs"
+cron = f"/var/spool/cron/crontabs/{userDir}"
+bash = f"/home/{userDir}/.bashrc"
 today = datetime.date.today()
 filePath = f"{securedata.getItem('path_log')}/{today}/"
 
@@ -24,20 +24,24 @@ os.system(f"mkdir -p {logPath}/Tasks")
 os.system(f"mkdir -p {logPath}/Cron")
 os.system(f"mkdir -p {logPath}/Bash")
 
-os.system(f"cp -r {securedata.getItem('path_tasks_notes') + '/Tasks.md'} '{logPath}/Tasks/Tasks {today}.md'")
+os.system(
+    f"cp -r {securedata.getItem('path_tasks_notes') + '/Tasks.md'} '{logPath}/Tasks/Tasks {today}.md'")
 os.system(f"cp -r {cron} '{logPath}/Cron/Cron {today}.md'")
 os.system(f"cp -r {bash} '{logPath}/Bash/Bash {today}.md'")
 
 securedata.log(f"Tasks, Cron, and Bash copied to {logPath}.")
 
 # Push today's Log files to Github
-os.system("cd /var/www/html; git pull; git add -A; git commit -m 'Updated Logs'; git push")
+os.system(
+    "cd /var/www/html; git pull; git add -A; git commit -m 'Updated Logs'; git push")
 securedata.log("Updated Git")
 
 # Spotify Stats
 spotify_count = securedata.getItem("spotipy", "total_tracks")
 spotify_avg_year = securedata.getItem("spotipy", "average_year")
-spotify_log = "<font face='monospace'>" + '<br>'.join(securedata.getFileAsArray(f"LOG_SPOTIFY.log", filePath=filePath)) + "</font><br><br>"
+spotify_log = "<font face='monospace'>" + \
+    '<br>'.join(securedata.getFileAsArray(
+        f"LOG_SPOTIFY.log", filePath=filePath)) + "</font><br><br>"
 spotify_stats = "<b>Spotify Stats:</b><br>"
 
 if "ERROR —" in spotify_log:
@@ -46,11 +50,12 @@ if "ERROR —" in spotify_log:
 
 spotify_stats += f"You have {spotify_count} songs; the mean song is from {spotify_avg_year}.<br><br>"
 
-if 'Spotify' in status_email_warnings:      
+if 'Spotify' in status_email_warnings:
     spotify_stats += spotify_log
 
 # Daily Log
-daily_log_file = '<br>'.join(securedata.getFileAsArray(f"LOG_DAILY {today}.log", filePath=filePath))
+daily_log_file = '<br>'.join(securedata.getFileAsArray(
+    f"LOG_DAILY {today}.log", filePath=filePath))
 
 if "ERROR —" in daily_log_file or "CRITICAL —" in daily_log_file:
     status_email_warnings.append("Errors")
@@ -74,9 +79,15 @@ if weather_data:
 status_email += weather_data_text
 
 # Git Status
-git_status = os.popen('cd /var/www/html; git log -1').read().replace("\n", "<br>")
+git_status = os.popen(
+    'cd /var/www/html; git log -1').read().replace("\n", "<br>")
 
-lastCommitTime = int(os.popen('cd /var/www/html; git log -1 --format="%at"').read())
+try:
+    lastCommitTime = int(
+        os.popen('cd /var/www/html; git log -1 --format="%at"').read())
+except Exception as e:
+    lastCommitTime = 0
+
 now = int(os.popen("date +%s").read())
 
 if now - lastCommitTime > 7200:
@@ -87,6 +98,8 @@ else:
 
 status_email.replace("<br><br><br><br>", "<br><br>")
 
-status_email_warnings_text = "- Check " + ', '.join(status_email_warnings) + " " if len(status_email_warnings) else ""
+status_email_warnings_text = "- Check " + \
+    ', '.join(status_email_warnings) + \
+    " " if len(status_email_warnings) else ""
 
 mail.send(f"Daily Status {status_email_warnings_text}- {today}", status_email)
