@@ -11,7 +11,8 @@ status_email_warnings = []
 status_email = "Dear Tyler,<br><br>This is your daily status report.<br><br>"
 
 # Run Backups
-logPath = "/var/www/html/Logs"
+backendPath = securedata.getItem("path_log_backup")
+logPath = f"{backendPath}/log"
 cron = f"/var/spool/cron/crontabs/{userDir}"
 bash = f"/home/{userDir}/.bashrc"
 today = datetime.date.today()
@@ -20,20 +21,20 @@ filePath = f"{securedata.getItem('path_log')}/{today}/"
 # copy settings.json to root
 os.system(f"cp {securedata.getConfigItem('path_securedata')}/settings.json {securedata.getItem('path_securedata_all_users')}/settings.json")
 
-os.system(f"mkdir -p {logPath}/Tasks")
-os.system(f"mkdir -p {logPath}/Cron")
-os.system(f"mkdir -p {logPath}/Bash")
+os.system(f"mkdir -p {logPath}/tasks")
+os.system(f"mkdir -p {logPath}/cron")
+os.system(f"mkdir -p {logPath}/bash")
 
 os.system(
-    f"cp -r {securedata.getItem('path_tasks_notes') + '/Tasks.md'} '{logPath}/Tasks/Tasks {today}.md'")
-os.system(f"cp -r {cron} '{logPath}/Cron/Cron {today}.md'")
-os.system(f"cp -r {bash} '{logPath}/Bash/Bash {today}.md'")
+    f"cp -r {securedata.getItem('path_tasks_notes') + '/Tasks.md'} '{logPath}/tasks/Tasks {today}.md'")
+os.system(f"cp -r {cron} '{logPath}/cron/Cron {today}.md'")
+os.system(f"cp -r {bash} '{logPath}/bash/Bash {today}.md'")
 
 securedata.log(f"Tasks, Cron, and Bash copied to {logPath}.")
 
 # Push today's Log files to Github
 os.system(
-    "cd /var/www/html; git pull; git add -A; git commit -m 'Updated Logs'; git push")
+    f"cd {backendPath}; git pull; git add -A; git commit -m 'Updated Logs'; git push")
 securedata.log("Updated Git")
 
 # Spotify Stats
@@ -80,11 +81,11 @@ status_email += weather_data_text
 
 # Git Status
 git_status = os.popen(
-    'cd /var/www/html; git log -1').read().replace("\n", "<br>")
+    f"cd {backendPath}; git log -1").read().replace("\n", "<br>")
 
 try:
     lastCommitTime = int(
-        os.popen('cd /var/www/html; git log -1 --format="%at"').read())
+        os.popen(f'cd {backendPath}; git log -1 --format="%at"').read())
 except Exception as e:
     lastCommitTime = 0
 
