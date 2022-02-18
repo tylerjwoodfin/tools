@@ -1,4 +1,6 @@
-import os, sys, socket
+import os
+import sys
+import socket
 
 from securedata import mail
 
@@ -7,10 +9,10 @@ s.connect(("8.8.8.8", 80))
 myIP = s.getsockname()[0]
 s.close()
 
-hostname = "192.168.1.123"
+hostname = "192.168.0.123"
 
-if myIP == "192.168.1.123":
-    hostname = "192.168.1.124"
+if myIP == "192.168.0.123":
+    hostname = "192.168.0.124"
 
 response = -1
 
