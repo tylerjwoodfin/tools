@@ -30,7 +30,7 @@ class App:
 
         while(self.timeremaining > 0):
             self.text.set(
-                f"Please get ready for bed.\nYour bedtime is 11:30 tonight.\nThis message will remain for {self.timeremaining} more {'second' if self.timeremaining == 1 else 'seconds'}.")
+                f"Please get ready for bed.\nYour bedtime is 11:30 tonight.\nMelatonin is a good idea.\nThis message will remain for {self.timeremaining} more {'second' if self.timeremaining == 1 else 'seconds'}.")
             root.update()
             self.timeremaining -= 1
             time.sleep(1)
