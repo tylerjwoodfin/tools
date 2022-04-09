@@ -1,12 +1,18 @@
+#!/usr/bin/env python
 import tkinter as tk
 from tkinter.ttk import Label, Style
 import time
 
 """
-About
-
+About:
 Sometimes I find myself spending too much time on my desktop; I set this to run each evening at 10PM to
 hopefully convince myself to go to bed at an appropriate hour.
+
+Dependencies for Crontab:
+xvfb
+
+Example Crontab:
+0 22 * * * cd /home/tyler/git/tools/ubuntu && XAUTHORITY=/home/tyler/.Xauthority DISPLAY=:0 python3 bedtime.py
 """
 
 
