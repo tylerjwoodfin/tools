@@ -10,31 +10,30 @@ securedata.log("Started Daily Tasks")
 status_email_warnings = []
 status_email = "Dear Tyler,<br><br>This is your daily status report.<br><br>"
 
-# Run Backups
-backendPath = securedata.getItem("path_log_backup")
-logPath = f"{backendPath}/log"
-cron = f"/var/spool/cron/crontabs/{userDir}"
-bash = f"/home/{userDir}/.bashrc"
-today = datetime.date.today()
-filePath = f"{securedata.getItem('path_log')}/{today}/"
+TODAY = datetime.date.today()
+PATH_BACKEND = securedata.getItem("path", "securedata", "backup")
+PATH_LOG_BACKEND = f"{PATH_BACKEND}/log"
+PATH_CRON = f"/var/spool/cron/crontabs/{userDir}"
+PATH_BASHRC = f"/home/{userDir}/.bashrc"
+PATH_LOG_TODAY = f"{securedata.getItem('path', 'log')}/{TODAY}/"
 
 # copy settings.json to root
-os.system(f"cp {securedata.getConfigItem('path_securedata')}/settings.json {securedata.getItem('path_securedata_all_users')}/settings.json")
+os.system(f"cp {securedata.getConfigItem('path_securedata')}/settings.json {securedata.getItem('path', 'securedata', 'all-users')}/settings.json")
 
-os.system(f"mkdir -p {logPath}/tasks")
-os.system(f"mkdir -p {logPath}/cron")
-os.system(f"mkdir -p {logPath}/bash")
+os.system(f"mkdir -p {PATH_LOG_BACKEND}/tasks")
+os.system(f"mkdir -p {PATH_LOG_BACKEND}/cron")
+os.system(f"mkdir -p {PATH_LOG_BACKEND}/bash")
 
 os.system(
-    f"cp -r {securedata.getItem('path_tasks_notes') + '/Tasks.md'} '{logPath}/tasks/Tasks {today}.md'")
-os.system(f"cp -r {cron} '{logPath}/cron/Cron {today}.md'")
-os.system(f"cp -r {bash} '{logPath}/bash/Bash {today}.md'")
+    f"cp -r {securedata.getItem('path', 'notes', 'local') + '/Tasks.md'} '{PATH_LOG_BACKEND}/tasks/Tasks {TODAY}.md'")
+os.system(f"cp -r {PATH_CRON} '{PATH_LOG_BACKEND}/cron/Cron {TODAY}.md'")
+os.system(f"cp -r {PATH_BASHRC} '{PATH_LOG_BACKEND}/bash/Bash {TODAY}.md'")
 
-securedata.log(f"Tasks, Cron, and Bash copied to {logPath}.")
+securedata.log(f"Tasks, Cron, and Bash copied to {PATH_LOG_BACKEND}.")
 
 # Push today's Log files to Github
 os.system(
-    f"cd {backendPath}; git pull; git add -A; git commit -m 'Updated Logs'; git push")
+    f"cd {PATH_BACKEND}; git pull; git add -A; git commit -m 'Updated Logs'; git push")
 securedata.log("Updated Git")
 
 # Spotify Stats
@@ -42,7 +41,7 @@ spotify_count = securedata.getItem("spotipy", "total_tracks")
 spotify_avg_year = securedata.getItem("spotipy", "average_year")
 spotify_log = "<font face='monospace'>" + \
     '<br>'.join(securedata.getFileAsArray(
-        f"LOG_SPOTIFY.log", filePath=filePath)) + "</font><br><br>"
+        f"LOG_SPOTIFY.log", filePath=PATH_LOG_TODAY)) + "</font><br><br>"
 spotify_stats = "<b>Spotify Stats:</b><br>"
 
 if "ERROR —" in spotify_log:
@@ -56,7 +55,7 @@ if 'Spotify' in status_email_warnings:
 
 # Daily Log
 daily_log_file = '<br>'.join(securedata.getFileAsArray(
-    f"LOG_DAILY {today}.log", filePath=filePath))
+    f"LOG_DAILY {TODAY}.log", filePath=PATH_LOG_TODAY))
 
 if "ERROR —" in daily_log_file or "CRITICAL —" in daily_log_file:
     status_email_warnings.append("Errors")
@@ -81,11 +80,11 @@ status_email += weather_data_text
 
 # Git Status
 git_status = os.popen(
-    f"cd {backendPath}; git log -1").read().replace("\n", "<br>")
+    f"cd {PATH_BACKEND}; git log -1").read().replace("\n", "<br>")
 
 try:
     lastCommitTime = int(
-        os.popen(f'cd {backendPath}; git log -1 --format="%at"').read())
+        os.popen(f'cd {PATH_BACKEND}; git log -1 --format="%at"').read())
 except Exception as e:
     lastCommitTime = 0
 
@@ -103,4 +102,4 @@ status_email_warnings_text = "- Check " + \
     ', '.join(status_email_warnings) + \
     " " if len(status_email_warnings) else ""
 
-mail.send(f"Daily Status {status_email_warnings_text}- {today}", status_email)
+mail.send(f"Daily Status {status_email_warnings_text}- {TODAY}", status_email)

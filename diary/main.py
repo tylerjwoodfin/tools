@@ -6,9 +6,10 @@ from subprocess import call
 from securedata import securedata
 
 EDITOR = os.environ.get('EDITOR', 'vim')
-FILENAME = f"Archive/Diary Entries/{datetime.datetime.now().strftime('%Y %m %d %H:%M:%S')}.md"
-NOTES_LOCAL = securedata.getItem('path_tasks_notes')
-NOTES_CLOUD = securedata.getItem('path_cloud_notes')
+PATH_DIARY = securedata.getItem("path", "diary")
+PATH_NOTES_LOCAL = securedata.getItem('path', 'notes', 'local')
+PATH_NOTES_CLOUD = securedata.getItem('path', 'notes', 'cloud')
+FILENAME = f"{PATH_DIARY}/{datetime.datetime.now().strftime('%Y %m %d %H:%M:%S')}.md"
 
 with tempfile.NamedTemporaryFile(mode='w+', suffix=".tmp") as tf:
 
@@ -20,7 +21,7 @@ with tempfile.NamedTemporaryFile(mode='w+', suffix=".tmp") as tf:
         data = tf.read()
     else:
         print("Pulling...")
-        os.system(f"rclone sync {NOTES_CLOUD} {NOTES_LOCAL}")
+        os.system(f"rclone sync {PATH_NOTES_CLOUD} {PATH_NOTES_LOCAL}")
         print("Pulled.")
         data = ' '.join(argv[1:])
 
@@ -28,6 +29,5 @@ with tempfile.NamedTemporaryFile(mode='w+', suffix=".tmp") as tf:
         print("Saving...")
         securedata.writeFile(
             FILENAME, "notes", data)
-        print(f"Saved to {securedata.getItem('path_tasks_notes')}/{FILENAME}.")
     else:
         print("No changes made.")

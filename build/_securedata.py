@@ -4,7 +4,7 @@ import os
 import sys
 import os.path
 
-PATH_SECUREDATA = securedata.getItem("path_securedata-src")
+PATH_SECUREDATA = securedata.getItem("path", "securedata", "src")
 DEFAULT_CONFIG_FILE = f'{PATH_SECUREDATA}/setup.cfg' or f'{os.path.expanduser("~")}/securedata/setup.cfg'
 
 
