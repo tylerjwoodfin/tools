@@ -11,7 +11,7 @@ status_email_warnings = []
 status_email = "Dear Tyler,<br><br>This is your daily status report.<br><br>"
 
 TODAY = datetime.date.today()
-PATH_BACKEND = securedata.getItem("path", "securedata", "backup")
+PATH_BACKEND = securedata.getItem("path", "securedata", "log-backup")
 PATH_LOG_BACKEND = f"{PATH_BACKEND}/log"
 PATH_CRON = f"/var/spool/cron/crontabs/{userDir}"
 PATH_BASHRC = f"/home/{userDir}/.bashrc"
@@ -25,7 +25,7 @@ os.system(f"mkdir -p {PATH_LOG_BACKEND}/cron")
 os.system(f"mkdir -p {PATH_LOG_BACKEND}/bash")
 
 os.system(
-    f"cp -r {securedata.getItem('path', 'notes', 'local') + '/Tasks.md'} '{PATH_LOG_BACKEND}/tasks/Tasks {TODAY}.md'")
+    f"cp -r {securedata.getItem('path', 'notes', 'local') + '/tasks.md'} '{PATH_LOG_BACKEND}/tasks/Tasks {TODAY}.md'")
 os.system(f"cp -r {PATH_CRON} '{PATH_LOG_BACKEND}/cron/Cron {TODAY}.md'")
 os.system(f"cp -r {PATH_BASHRC} '{PATH_LOG_BACKEND}/bash/Bash {TODAY}.md'")
 
@@ -92,7 +92,7 @@ now = int(os.popen("date +%s").read())
 
 if now - lastCommitTime > 7200:
     status_email_warnings.append("Git")
-    status_email = f"<b>❌ Check Git:</b><br>Your last Git commit to your website was before today:<br><br>{git_status}<br><hr><br><br>{status_email}"
+    status_email = f"<b>❌ Check Git:</b><br>Your last Git commit to the backend was before today:<br><br>{git_status}<br><hr><br><br>{status_email}"
 else:
     status_email += f"<br><br><br><b>✔ Git Up to Date:</b><br>{git_status}"
 
