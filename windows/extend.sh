@@ -1,1 +1,0 @@
-./dc2.exe -configure="ThreeMonitors.xml"
