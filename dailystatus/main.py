@@ -3,18 +3,18 @@ import os
 import datetime
 from securedata import securedata, mail
 
-userDir = pwd.getpwuid(os.getuid())[0]
 
 securedata.log("Started Daily Tasks")
 
-status_email_warnings = []
+status_email_alerts = []
 status_email = "Dear Tyler,<br><br>This is your daily status report.<br><br>"
 
+DIR_USER = pwd.getpwuid(os.getuid())[0]
 TODAY = datetime.date.today()
 PATH_BACKEND = securedata.getItem("path", "securedata", "log-backup")
 PATH_LOG_BACKEND = f"{PATH_BACKEND}/log"
-PATH_CRON = f"/var/spool/cron/crontabs/{userDir}"
-PATH_BASHRC = f"/home/{userDir}/.bashrc"
+PATH_CRON = f"/var/spool/cron/crontabs/{DIR_USER}"
+PATH_BASHRC = f"/home/{DIR_USER}/.bashrc"
 PATH_LOG_TODAY = f"{securedata.getItem('path', 'log')}/{TODAY}/"
 
 # copy settings.json to root
@@ -45,12 +45,12 @@ spotify_log = "<font face='monospace'>" + \
 spotify_stats = "<b>Spotify Stats:</b><br>"
 
 if "ERROR —" in spotify_log:
-    status_email_warnings.append('Spotify')
+    status_email_alerts.append('Spotify')
     spotify_stats += "Please review your songs! We found some errors.<br><br>"
 
 spotify_stats += f"You have {spotify_count} songs; the mean song is from {spotify_avg_year}.<br><br>"
 
-if 'Spotify' in status_email_warnings:
+if 'Spotify' in status_email_alerts:
     spotify_stats += spotify_log
 
 # Daily Log
@@ -58,13 +58,13 @@ daily_log_file = '<br>'.join(securedata.getFileAsArray(
     f"LOG_DAILY {TODAY}.log", filePath=PATH_LOG_TODAY))
 
 if "ERROR —" in daily_log_file or "CRITICAL —" in daily_log_file:
-    status_email_warnings.append("Errors")
+    status_email_alerts.append("Errors")
 if "WARNING —" in daily_log_file:
-    status_email_warnings.append("Warnings")
+    status_email_alerts.append("Warnings")
 
 daily_log = f"<b>Daily Log:</b><br><font face='monospace'>{daily_log_file}</font><br><br>"
 
-if 'Errors' in status_email_warnings or 'Warnings' in status_email_warnings:
+if 'Errors' in status_email_alerts or 'Warnings' in status_email_alerts:
     status_email += daily_log
 
 status_email += spotify_stats
@@ -91,7 +91,7 @@ except Exception as e:
 now = int(os.popen("date +%s").read())
 
 if now - lastCommitTime > 7200:
-    status_email_warnings.append("Git")
+    status_email_alerts.append("Git")
     status_email = f"<b>❌ Check Git:</b><br>Your last Git commit to the backend was before today:<br><br>{git_status}<br><hr><br><br>{status_email}"
 else:
     status_email += f"<br><br><br><b>✔ Git Up to Date:</b><br>{git_status}"
@@ -99,7 +99,7 @@ else:
 status_email.replace("<br><br><br><br>", "<br><br>")
 
 status_email_warnings_text = "- Check " + \
-    ', '.join(status_email_warnings) + \
-    " " if len(status_email_warnings) else ""
+    ', '.join(status_email_alerts) + \
+    " " if len(status_email_alerts) else ""
 
 mail.send(f"Daily Status {status_email_warnings_text}- {TODAY}", status_email)

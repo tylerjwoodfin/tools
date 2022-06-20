@@ -1,11 +1,28 @@
 from datetime import datetime
 from securedata import securedata
-import os
 import sys
 import os.path
 
-PATH_SECUREDATA = securedata.getItem("path", "securedata", "src")
-DEFAULT_CONFIG_FILE = f'{PATH_SECUREDATA}/setup.cfg' or f'{os.path.expanduser("~")}/securedata/setup.cfg'
+
+"""
+This tool is specific to the original developer and is used to publish to PyPi.
+"""
+
+BUILD_OPTIONS = ['securedata', 'remindmail']
+
+# parse args
+if len(sys.argv) < 2 or sys.argv[1] not in BUILD_OPTIONS:
+    print(f"Invalid argument; please run `...build.py {BUILD_OPTIONS}`")
+
+
+PATH_SRC_SECUREDATA = securedata.getItem("path", "securedata", "src")
+PATH_SRC_REMINDMAIL = securedata.getItem("path", "remindmail", "src")
+DEFAULT_CONFIG_FILE_SECUREDATA = f'{PATH_SRC_SECUREDATA}/setup.cfg' or f'{os.path.expanduser("~")}/securedata/setup.cfg'
+DEFAULT_CONFIG_FILE_REMINDMAIL = f'{PATH_SRC_REMINDMAIL}/setup.cfg' or f'{os.path.expanduser("~")}/remindmail/setup.cfg'
+
+PATH_SRC = PATH_SRC_REMINDMAIL if sys.argv[1] == 'remindmail' else PATH_SRC_SECUREDATA
+DEFAULT_CONFIG_FILE = DEFAULT_CONFIG_FILE_REMINDMAIL if sys.argv[
+    1] == 'remindmail' else DEFAULT_CONFIG_FILE_SECUREDATA
 
 
 def main():
@@ -34,18 +51,18 @@ def main():
 
     # delete `dist` directory
     try:
-        os.system(f"rm -rf {PATH_SECUREDATA}/dist")
+        os.system(f"rm -rf {PATH_SRC}/dist")
     except Exception as e:
         print(f"Warning: {e}")
 
     # build
     print("Building... this will take a few minutes")
-    os.system(f"cd {PATH_SECUREDATA}; python3 -m build")
+    os.system(f"cd {PATH_SRC}; python3 -m build")
 
     # push to PyPi
-    os.system(f"cd {PATH_SECUREDATA}; python3 -m twine upload dist/*")
+    os.system(f"cd {PATH_SRC}; python3 -m twine upload dist/*")
 
-    print("Finished! Remember to commit any new changes.")
+    print("\n\nFinished! Remember to commit any new changes.")
 
 
 if __name__ == "__main__":
