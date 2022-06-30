@@ -55,7 +55,7 @@ async def main():
 
     print(f"Turning {device} {'off' if dimmer.is_on else 'on'}")
 
-    if dimmer.is_on and operation != 'off':
+    if dimmer.is_on and operation != 'on':
         await dimmer.turn_off()
     elif operation != 'off':
         await dimmer.turn_on()

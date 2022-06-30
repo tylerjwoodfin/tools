@@ -2,6 +2,7 @@ import pwd
 import os
 import datetime
 from securedata import securedata, mail
+from sys import exit
 
 
 securedata.log("Started Daily Tasks")
@@ -31,12 +32,12 @@ os.system(f"cp -r {PATH_BASHRC} '{PATH_LOG_BACKEND}/bash/Bash {TODAY}.md'")
 
 securedata.log(f"Tasks, Cron, and Bash copied to {PATH_LOG_BACKEND}.")
 
-# Push today's Log files to Github
+# push daily log to github
 os.system(
     f"cd {PATH_BACKEND}; git pull; git add -A; git commit -m 'Updated Logs'; git push")
 securedata.log("Updated Git")
 
-# Spotify Stats
+# spotify stats
 spotify_count = securedata.getItem("spotipy", "total_tracks")
 spotify_avg_year = securedata.getItem("spotipy", "average_year")
 spotify_log = "<font face='monospace'>" + \
@@ -53,23 +54,25 @@ spotify_stats += f"You have {spotify_count} songs; the mean song is from {spotif
 if 'Spotify' in status_email_alerts:
     spotify_stats += spotify_log
 
-# Daily Log
-daily_log_file = '<br>'.join(securedata.getFileAsArray(
-    f"LOG_DAILY {TODAY}.log", filePath=PATH_LOG_TODAY))
+# daily log
+daily_log_file_array = securedata.getFileAsArray(
+    f"LOG_DAILY {TODAY}.log", filePath=PATH_LOG_TODAY)
+daily_log_file = '<br>'.join(daily_log_file_array)
 
 if "ERROR —" in daily_log_file or "CRITICAL —" in daily_log_file:
     status_email_alerts.append("Errors")
 if "WARNING —" in daily_log_file:
     status_email_alerts.append("Warnings")
 
-daily_log = f"<b>Daily Log:</b><br><font face='monospace'>{daily_log_file}</font><br><br>"
+daily_log_filtered = '<br>'.join([item for item in daily_log_file_array if (
+    "ERROR" in item or "WARN" in item or "CRITICAL" in item)])
 
-if 'Errors' in status_email_alerts or 'Warnings' in status_email_alerts:
-    status_email += daily_log
+if len(daily_log_filtered) > 0:
+    status_email += f"<b>Warning/Error/Critical Log:</b><br><font face='monospace'>{daily_log_filtered}</font><br><br>"
 
 status_email += spotify_stats
 
-# Weather
+# weather
 weather_data = securedata.getItem("weather", "data")
 weather_data_text = "Unavailable"
 if weather_data:
@@ -78,9 +81,9 @@ if weather_data:
 
 status_email += weather_data_text
 
-# Git Status
+# git status
 git_status = os.popen(
-    f"cd {PATH_BACKEND}; git log -1").read().replace("\n", "<br>")
+    f"cd {PATH_BACKEND}; git log -1; git log -1 --pretty=%B").read().replace("\n", "<br>")
 
 try:
     lastCommitTime = int(
