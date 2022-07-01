@@ -46,7 +46,7 @@ async def main():
         if device not in devices_keys and f"{device} light" not in devices_keys:
             print(f"\n\n{device} not in {list(devices_keys)}")
 
-    switch(device, operation or "toggle")
+    await switch(device, operation or "toggle")
 
 
 async def switch(device, operation):
