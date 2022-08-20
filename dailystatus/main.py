@@ -26,11 +26,11 @@ os.system(f"mkdir -p {PATH_LOG_BACKEND}/cron")
 os.system(f"mkdir -p {PATH_LOG_BACKEND}/bash")
 
 os.system(
-    f"cp -r {securedata.getItem('path', 'notes', 'local') + '/tasks.md'} '{PATH_LOG_BACKEND}/tasks/Tasks {TODAY}.md'")
+    f"cp -r {securedata.getItem('path', 'notes', 'local') + '/remind.md'} '{PATH_LOG_BACKEND}/tasks/remind {TODAY}.md'")
 os.system(f"cp -r {PATH_CRON} '{PATH_LOG_BACKEND}/cron/Cron {TODAY}.md'")
 os.system(f"cp -r {PATH_BASHRC} '{PATH_LOG_BACKEND}/bash/Bash {TODAY}.md'")
 
-securedata.log(f"Tasks, Cron, and Bash copied to {PATH_LOG_BACKEND}.")
+securedata.log(f"Cron, Bash, and remind.md copied to {PATH_LOG_BACKEND}.")
 
 # push daily log to github
 os.system(
