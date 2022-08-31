@@ -13,6 +13,7 @@ BUILD_OPTIONS = ['securedata', 'remindmail']
 # parse args
 if len(sys.argv) < 2 or sys.argv[1] not in BUILD_OPTIONS:
     print(f"Invalid argument; please run `...build.py {BUILD_OPTIONS}`")
+    sys.exit(1)
 
 
 PATH_SRC_SECUREDATA = securedata.getItem("path", "securedata", "src")
