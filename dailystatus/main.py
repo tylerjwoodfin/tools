@@ -83,7 +83,8 @@ status_email += weather_data_text
 
 # git status
 git_status = os.popen(
-    f"cd {PATH_BACKEND}; git log -1; git log -1 --pretty=%B").read().replace("\n", "<br>")
+    f"cd {PATH_BACKEND}; git log -1 --pretty='format:%cD<br>%s'").read().replace("\n", "<br>")
+git_status = f"<font face='monospace'>{git_status}</font>"
 
 try:
     lastCommitTime = int(
@@ -97,7 +98,8 @@ if now - lastCommitTime > 7200:
     status_email_alerts.append("Git")
     status_email = f"<b>❌ Check Git:</b><br>Your last Git commit to the backend was before today:<br><br>{git_status}<br><hr><br><br>{status_email}"
 else:
-    status_email += f"<br><br><br><b>✔ Git Up to Date:</b><br>{git_status}"
+    status_email += f"<br><b>✔ Backend Up to Date:</b><br>{git_status}"
+
 
 status_email.replace("<br><br><br><br>", "<br><br>")
 
