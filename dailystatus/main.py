@@ -1,14 +1,16 @@
+''' Used to send daily weather/Spotify/Git updates '''
+
 import pwd
 import os
 import datetime
+import subprocess
 from securedata import securedata, mail
-from sys import exit
 
 
 securedata.log("Started Daily Tasks")
 
 status_email_alerts = []
-status_email = "Dear Tyler,<br><br>This is your daily status report.<br><br>"
+STATUS_EMAIL = "Dear Tyler,<br><br>This is your daily status report.<br><br>"
 
 DIR_USER = pwd.getpwuid(os.getuid())[0]
 TODAY = datetime.date.today()
@@ -19,14 +21,22 @@ PATH_BASHRC = f"/home/{DIR_USER}/.bashrc"
 PATH_LOG_TODAY = f"{securedata.getItem('path', 'log')}/{TODAY}/"
 
 # copy settings.json to root
-os.system(f"cp {securedata.getConfigItem('path_securedata')}/settings.json {securedata.getItem('path', 'securedata', 'all-users')}/settings.json")
+CMD_COPY = f"""
+    cp {securedata.getConfigItem('path_securedata')}/settings.json
+    {securedata.getItem('path', 'securedata', 'all-users')}/settings.json
+    """
+os.system(CMD_COPY)
 
 os.system(f"mkdir -p {PATH_LOG_BACKEND}/tasks")
 os.system(f"mkdir -p {PATH_LOG_BACKEND}/cron")
 os.system(f"mkdir -p {PATH_LOG_BACKEND}/bash")
 
-os.system(
-    f"cp -r {securedata.getItem('path', 'notes', 'local') + '/remind.md'} '{PATH_LOG_BACKEND}/tasks/remind {TODAY}.md'")
+# copy key files to backend
+CMD_COPY_TASKS = f"""
+    cp -r {securedata.getItem('path', 'notes', 'local') + '/remind.md'}
+    '{PATH_LOG_BACKEND}/tasks/remind {TODAY}.md'
+    """
+os.system(CMD_COPY_TASKS)
 os.system(f"cp -r {PATH_CRON} '{PATH_LOG_BACKEND}/cron/Cron {TODAY}.md'")
 os.system(f"cp -r {PATH_BASHRC} '{PATH_LOG_BACKEND}/bash/Bash {TODAY}.md'")
 
@@ -40,46 +50,61 @@ securedata.log("Updated Git")
 # spotify stats
 spotify_count = securedata.getItem("spotipy", "total_tracks")
 spotify_avg_year = securedata.getItem("spotipy", "average_year")
-spotify_log = "<font face='monospace'>" + \
+SPOTIFY_STATS = "<b>Spotify Stats:</b><br>"
+SPOTIFY_LOG = "<font face='monospace'>" + \
     '<br>'.join(securedata.getFileAsArray(
-        f"LOG_SPOTIFY.log", filePath=PATH_LOG_TODAY)) + "</font><br><br>"
-spotify_stats = "<b>Spotify Stats:</b><br>"
+        "LOG_SPOTIFY.log", filePath=PATH_LOG_TODAY)) + "</font><br><br>"
 
-if "ERROR —" in spotify_log:
+if "ERROR —" in SPOTIFY_LOG:
     status_email_alerts.append('Spotify')
-    spotify_stats += "Please review your songs! We found some errors.<br><br>"
+    SPOTIFY_STATS += "Please review your songs! We found some errors.<br><br>"
 
-spotify_stats += f"You have {spotify_count} songs; the mean song is from {spotify_avg_year}.<br><br>"
+SPOTIFY_STATS += f"""
+    You have {spotify_count} songs; the mean song is from {spotify_avg_year}.<br><br>
+    """
 
 if 'Spotify' in status_email_alerts:
-    spotify_stats += spotify_log
+    SPOTIFY_STATS += SPOTIFY_LOG
 
 # daily log
 daily_log_file_array = securedata.getFileAsArray(
     f"LOG_DAILY {TODAY}.log", filePath=PATH_LOG_TODAY)
-daily_log_file = '<br>'.join(daily_log_file_array)
+DAILY_LOG_FILE = '<br>'.join(daily_log_file_array)
 
-if "ERROR —" in daily_log_file or "CRITICAL —" in daily_log_file:
+if "ERROR —" in DAILY_LOG_FILE or "CRITICAL —" in DAILY_LOG_FILE:
     status_email_alerts.append("Errors")
-if "WARNING —" in daily_log_file:
+if "WARNING —" in DAILY_LOG_FILE:
     status_email_alerts.append("Warnings")
 
-daily_log_filtered = '<br>'.join([item for item in daily_log_file_array if (
+DAILY_LOG_FILTERED = '<br>'.join([item for item in daily_log_file_array if (
     "ERROR" in item or "WARN" in item or "CRITICAL" in item)])
 
-if len(daily_log_filtered) > 0:
-    status_email += f"<b>Warning/Error/Critical Log:</b><br><font face='monospace'>{daily_log_filtered}</font><br><br>"
+if len(DAILY_LOG_FILTERED) > 0:
+    STATUS_EMAIL += f"""
+        <b>Warning/Error/Critical Log:</b><br>
+        <font face='monospace'>
+        {DAILY_LOG_FILTERED}
+        </font><br><br>
+        """
 
-status_email += spotify_stats
+STATUS_EMAIL += SPOTIFY_STATS
 
 # weather
 weather_data = securedata.getItem("weather", "data")
-weather_data_text = "Unavailable"
+WEATHER_DATA_TEXT = "Unavailable"
 if weather_data:
-    weather_data_text = f""" <b>Weather Tomorrow:</b><br><font face='monospace'>{weather_data['tomorrow_high']}° and {weather_data['tomorrow_conditions']}.<br> Sunrise:
-                        {weather_data['tomorrow_sunrise']}<br>Sunset: {weather_data['tomorrow_sunset']}<br><br></font>"""
+    WEATHER_DATA_TEXT = f"""
+        <b>Weather Tomorrow:</b><br><font face='monospace'>
+        {weather_data['tomorrow_high']}° and {weather_data['tomorrow_conditions']}.
+        <br> 
+        Sunrise:
+        {weather_data['tomorrow_sunrise']}
+        <br>
+        Sunset: {weather_data['tomorrow_sunset']}
+        <br><br></font>
+        """
 
-status_email += weather_data_text
+STATUS_EMAIL += WEATHER_DATA_TEXT
 
 # git status
 git_status = os.popen(
@@ -87,24 +112,34 @@ git_status = os.popen(
 git_status = f"<font face='monospace'>{git_status}</font>"
 
 try:
-    lastCommitTime = int(
-        os.popen(f'cd {PATH_BACKEND}; git log -1 --format="%at"').read())
-except Exception as e:
-    lastCommitTime = 0
+    CMD_GLOG = subprocess.check_output(
+        f'cd {PATH_BACKEND}; git log -1 --format="%at"', stderr=subprocess.STDOUT)
+    LAST_COMMIT_TIME = int(CMD_GLOG)
+except subprocess.CalledProcessError as e:
+    LAST_COMMIT_TIME = 0
 
-now = int(os.popen("date +%s").read())
+NOW = int(os.popen("date +%s").read())
 
-if now - lastCommitTime > 7200:
+if NOW - LAST_COMMIT_TIME > 7200:
     status_email_alerts.append("Git")
-    status_email = f"<b>❌ Check Git:</b><br>Your last Git commit to the backend was before today:<br><br>{git_status}<br><hr><br><br>{status_email}"
+    STATUS_EMAIL = f"""
+    <b>❌ Check Git:</b><br>
+    Your last Git commit to the backend was before today:
+    <br><br>
+    {git_status}
+    <br>
+    <hr>
+    <br><br>
+    {STATUS_EMAIL}
+    """
 else:
-    status_email += f"<br><b>✔ Backend Up to Date:</b><br>{git_status}"
+    STATUS_EMAIL += f"<br><b>✔ Backend Up to Date:</b><br>{git_status}"
 
 
-status_email.replace("<br><br><br><br>", "<br><br>")
+STATUS_EMAIL.replace("<br><br><br><br>", "<br><br>")
 
-status_email_warnings_text = "- Check " + \
+STATUS_EMAIL_WARNINGS_TEXT = "- Check " + \
     ', '.join(status_email_alerts) + \
-    " " if len(status_email_alerts) else ""
+    " " if len(status_email_alerts) > 0 else ""
 
-mail.send(f"Daily Status {status_email_warnings_text}- {TODAY}", status_email)
+mail.send(f"Daily Status {STATUS_EMAIL_WARNINGS_TEXT}- {TODAY}", STATUS_EMAIL)
