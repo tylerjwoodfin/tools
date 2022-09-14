@@ -3,7 +3,6 @@
 import pwd
 import os
 import datetime
-import subprocess
 from securedata import securedata, mail
 
 
@@ -30,6 +29,7 @@ os.system(CMD_COPY)
 os.system(f"mkdir -p {PATH_LOG_BACKEND}/tasks")
 os.system(f"mkdir -p {PATH_LOG_BACKEND}/cron")
 os.system(f"mkdir -p {PATH_LOG_BACKEND}/bash")
+os.system(f"mkdir -p {PATH_LOG_BACKEND}/securedata")
 
 # copy key files to backend
 CMD_COPY_TASKS = f"""
@@ -112,10 +112,11 @@ git_status = os.popen(
 git_status = f"<font face='monospace'>{git_status}</font>"
 
 try:
-    CMD_GLOG = subprocess.check_output(
-        f'cd {PATH_BACKEND}; git log -1 --format="%at"', stderr=subprocess.STDOUT)
-    LAST_COMMIT_TIME = int(CMD_GLOG)
-except subprocess.CalledProcessError as e:
+    LAST_COMMIT_TIME = int(
+        os.popen(f'cd {PATH_BACKEND}; git log -1 --format="%at"').read())
+except ValueError as e:
+    LAST_COMMIT_TIME = 0
+except AttributeError as e:
     LAST_COMMIT_TIME = 0
 
 NOW = int(os.popen("date +%s").read())
@@ -143,3 +144,9 @@ STATUS_EMAIL_WARNINGS_TEXT = "- Check " + \
     " " if len(status_email_alerts) > 0 else ""
 
 mail.send(f"Daily Status {STATUS_EMAIL_WARNINGS_TEXT}- {TODAY}", STATUS_EMAIL)
+
+# move securedata logs to backend
+CMD_MV_SECUREDATA_LOGS = f"""
+    mv {securedata.getItem('path', 'log')}/* {PATH_LOG_BACKEND}/securedata
+    """
+os.system(CMD_MV_SECUREDATA_LOGS)
