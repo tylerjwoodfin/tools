@@ -1,15 +1,18 @@
-# ReadMe
-# Sends an email alert if it's "nice" outside
-# Dependencies: requests (pip install requests), secureData (my internal function to grab nonpublic variables from a secure folder)
-# Note: weatherAPIKey should be obtained for free through openweathermap.org.
+"""
+Sends an email alert if it's "nice" outside
 
-import requests
+Dependencies:
+- requests (pip install requests)
+- secureData (my internal function to grab nonpublic variables from a secure folder)
+
+Note: weatherAPIKey should be obtained for free through openweathermap.org.
+"""
+
 import datetime
 import time
 import random
 import sys
-import pwd
-import os
+import requests
 from securedata import securedata, mail
 
 lat = securedata.getItem("latitude")
@@ -17,24 +20,36 @@ lon = securedata.getItem("longitude")
 
 
 def datetime_from_utc_to_local(utc_datetime):
+    """
+    converts utc datetime to local timezone on system
+    """
     now_timestamp = time.time()
     offset = datetime.datetime.fromtimestamp(
         now_timestamp) - datetime.datetime.utcfromtimestamp(now_timestamp)
     return utc_datetime + offset
 
 
-def shiftLocation(location):
+def shift_location(location):
+    """
+    generates a random offset from the current location to find a place to walk/bike
+    """
     if random.randrange(2) == 1:
         return float(location) * (.9999) + (random.randrange(1, 100) / 10000)
-    else:
-        return float(location) * (.9999) - (random.randrange(1, 100) / 10000)
+
+    return float(location) * (.9999) - (random.randrange(1, 100) / 10000)
 
 
-def getBikeLink():
-    return f"https://www.google.com/maps/dir/{shiftLocation(lat)},{shiftLocation(lon)}"
+def get_location_link():
+    """
+    returns a Google Maps URL for the shifted location
+    """
+    return f"https://www.google.com/maps/dir/{shift_location(lat)},{shift_location(lon)}"
 
 
-def convertTemperature(temp):
+def convert_temperature_c_to_f(temp):
+    """
+    converts from celsius to fahrenheit
+    """
     return round((temp - 273.15) * 9/5 + 32)
 
 
@@ -43,23 +58,24 @@ plantyStatus = securedata.getItem("planty", "status")
 now = datetime.datetime.now()
 
 # Call API
-url_request = f"https://api.openweathermap.org/data/2.5/onecall?lat={lat}&lon={lon}&appid={securedata.getItem('weather', 'api_key')}"
+url_request = (f"https://api.openweathermap.org/data/2.5/onecall"
+               f"?lat={lat}&lon={lon}&appid={securedata.getItem('weather', 'api_key')}")
 print(f"Calling API at {url_request}")
 
-response = requests.get(url_request).json()
+response = requests.get(url_request, timeout=30).json()
 
-temperature = convertTemperature(response["current"]["temp"])
+temperature = convert_temperature_c_to_f(response["current"]["temp"])
 conditions_now = response["current"]["weather"][0]["description"]
 conditions_now_icon = response["current"]["weather"][0]["icon"]
 conditions_tomorrow = response["daily"][1]["weather"][0]["description"]
-high_tomorrow = convertTemperature(response["daily"][1]["temp"]["max"])
-low_tomorrow = convertTemperature(response["daily"][1]["temp"]["min"])
+high_tomorrow = convert_temperature_c_to_f(response["daily"][1]["temp"]["max"])
+low_tomorrow = convert_temperature_c_to_f(response["daily"][1]["temp"]["min"])
 sunrise_tomorrow_formatted = time.strftime(
     '%Y-%m-%d %H:%M AM', time.localtime(response["daily"][1]["sunrise"]))
 sunset_tomorrow_formatted = time.strftime(
     '%Y-%m-%d %I:%M PM', time.localtime(response["daily"][1]["sunset"]))
 
-high = convertTemperature(response["daily"][0]["temp"]["max"])
+high = convert_temperature_c_to_f(response["daily"][0]["temp"]["max"])
 wind = response["current"]["wind_speed"]
 sunset = response["daily"][0]["sunset"]
 timeToSunset = (sunset - time.time()) / 3600
@@ -78,7 +94,8 @@ weatherData = {
 securedata.setItem("weather", "data", weatherData)
 
 if securedata.getItem("weather", "alert_walk_sent") < (time.time() - 43200) and now.hour >= 10:
-    if ((temperature >= 65 and temperature <= 85) or (high >= 72 and high <= 90)) and wind < 10 and timeToSunset > 2:
+    GOOD_TEMP = (65 <= temperature <= 85) or (72 <= temperature <= 90)
+    if GOOD_TEMP and wind < 10 and timeToSunset > 2:
         message = f"""\
             Hi Tyler,\
                 <br><br>It's very specifically nice outside!<br><br>
@@ -87,7 +104,8 @@ if securedata.getItem("weather", "alert_walk_sent") < (time.time() - 43200) and 
                     <li>It's not raining</li>
                     <li>The wind isn't bad</li>
                     <li>It's a nice time of day</li>
-                    <br><br><h2><a href='{getBikeLink()}'>Here's a close place for you to walk to.</a></h2>"""
+                    <br><br><h2><a href='{get_location_link()}'>
+                    Here's a close place for you to walk to.</a></h2>"""
 
         mail.send("Here's a close place to walk today!", message)
         securedata.setItem("weather", "alert_walk_sent", int(time.time()))
@@ -96,25 +114,33 @@ if securedata.getItem("weather", "alert_walk_sent") < (time.time() - 43200) and 
 plantyAlertSent = securedata.getItem("weather", "alert_planty_sent")
 plantyAlertChecked = securedata.getItem("weather", "alert_planty_checked")
 
-if len(sys.argv) > 1 and sys.argv[1] == 'force' or (not plantyAlertSent or not plantyAlertChecked or (int(plantyAlertSent) < (time.time() - 43200) and int(plantyAlertChecked) < (time.time() - 21600))):
+if len(sys.argv) > 1 and sys.argv[1] == 'force' or \
+    (not plantyAlertSent or not plantyAlertChecked or
+     (int(plantyAlertSent) < (time.time() - 43200) and
+        int(plantyAlertChecked) < (time.time() - 21600))):
     securedata.log(
         f"Checked Planty ({plantyStatus}): low {low_tomorrow}, high {high}")
     securedata.setItem("weather", "alert_planty_checked", int(time.time()))
     if low_tomorrow < 55 and plantyStatus == "out":
         try:
-            mail.send("Take Planty In", f"Hi Tyler,<br><br>The low tonight is {low_tomorrow}°. Please take Planty in!", to=','.join(
-                securedata.getItem("weather", "alert_planty_emails")))
+            mail.send("Take Planty In",
+                      (f"Hi Tyler,<br><br>The low tonight is {low_tomorrow}°."
+                       f" Please take Planty in!"), to=','.join(
+                          securedata.getItem("weather", "alert_planty_emails")))
             securedata.setItem(
                 "weather", "alert_planty_sent", int(time.time()))
-        except Exception as e:
+        except IOError as e:
             securedata.log(f"Could not send Planty email: {e}", level="error")
         securedata.setItem("planty", "status", "in")
     if (high > 80 or low_tomorrow >= 56) and plantyStatus == "in":
         try:
-            mail.send("Take Planty Out", f"Hi Tyler,<br><br>It looks like a nice day! It's going to be around {high}°. Please take Planty out.""", to=','.join(
+            EMAIL = (f"Hi Tyler,<br><br>It looks like a nice day!"
+                     f" It's going to be around {high}°. Please take Planty out.")
+
+            mail.send("Take Planty Out", EMAIL, to=','.join(
                 securedata.getItem("weather", "alert_planty_emails")))
             securedata.setItem(
                 "weather", "alert_planty_sent", int(time.time()))
-        except Exception as e:
+        except IOError as e:
             securedata.log(f"Could not send Planty email: {e}", level="error")
         securedata.setItem("planty", "status", "out")

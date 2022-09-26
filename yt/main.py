@@ -1,5 +1,7 @@
-from sys import argv
-from sys import exit
+"""
+youtube downloader - see README.md
+"""
+import sys
 from os import system
 
 #!/usr/bin/env python
@@ -7,22 +9,25 @@ from os import system
 import yt_dlp
 
 
-def help():
+def help_usage():
+    """
+    describes how to use this script
+    """
     print("Usage: main.py {audio/video} {url}")
-    exit(0)
+    sys.exit(0)
 
 
-is_video = True
-url = ''
+IS_VIDEO = True
+URL = ''
 
-if len(argv) < 3:
-    help()
+if len(sys.argv) < 3:
+    help_usage()
 else:
-    if not argv[2].startswith('http'):
-        help()
+    if not sys.argv[2].startswith('http'):
+        help_usage()
 
-    url = argv[2]
-    is_video = argv[1].lower() == 'video'
+    URL = sys.argv[2]
+    IS_VIDEO = sys.argv[1].lower() == 'video'
 
 ydl_opts = {
     'format': 'mp3/bestaudio/best',
@@ -32,8 +37,8 @@ ydl_opts = {
     }]
 }
 
-with yt_dlp.YoutubeDL(ydl_opts if not is_video else None) as ydl:
-    error_code = ydl.download(url)
+with yt_dlp.YoutubeDL(ydl_opts if not IS_VIDEO else None) as ydl:
+    error_code = ydl.download(URL)
 
 # move all downloads to desktop
 system("mv *.webm ~/Desktop; mv *.mp3 ~/Desktop")

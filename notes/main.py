@@ -14,7 +14,6 @@ if len(sys.argv) < 2:
 elif sys.argv[1].endswith('.md'):
     sys.argv[1] = sys.argv[1].split(".md", maxsplit=1)[0]
 
-# print(securedata.editFile(argv[1],  ))
 PATH_FILE_TO_EDIT = securedata.getItem("path", "notes", "local")
 
 if securedata.editFile(f"{PATH_FILE_TO_EDIT}/{sys.argv[1]}.md", sync=True) == -1:
