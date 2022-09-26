@@ -1,7 +1,10 @@
-from os import system as run
-import kasa
+"""
+kasalights - see README.md
+"""
+
 import sys
 import asyncio
+import kasa
 from securedata import securedata
 
 dimmers = kasa.Discover()
@@ -11,7 +14,12 @@ devices_keys = devices.keys()
 
 
 async def main():
+    """
+    parses the query, typically from something in the terminal like
+    `turn bedroom light off` (where `turn` is aliased)
 
+    then calls `switch()` to make the change
+    """
     # discover devices
     if devices == {}:
         print("Discovering devices...")
@@ -50,6 +58,10 @@ async def main():
 
 
 async def switch(device, operation):
+    """
+    turns device on or off, according to the sys.argv request
+    (or prints a refusal message if the device is already in the requested state)
+    """
     if device not in devices_keys and f"{device} light" not in devices_keys:
         print(f"\n\n{device} not in {list(devices_keys)}")
         return
@@ -64,9 +76,9 @@ async def switch(device, operation):
     # handle toggle
     if operation == 'toggle':
         if dimmer.is_on:
-            operation == 'off'
+            operation = 'off'
         else:
-            operation == 'on'
+            operation = 'on'
 
     # handle already on/off
     if dimmer.is_on and operation == 'on' or dimmer.is_off and operation == 'off':
