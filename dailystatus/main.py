@@ -19,6 +19,9 @@ PATH_CRON = f"/var/spool/cron/crontabs/{DIR_USER}"
 PATH_BASHRC = f"/home/{DIR_USER}/.bashrc"
 PATH_LOG_TODAY = f"{securedata.getItem('path', 'log')}/{TODAY}/"
 
+# sync notes
+os.system(securedata.getItem('securedata', 'sync', 'pull'))
+
 # copy settings.json to root
 CMD_COPY = f"""
     cp {securedata.getConfigItem('path_securedata')}/settings.json
