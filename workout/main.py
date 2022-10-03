@@ -21,10 +21,12 @@ from securedata import securedata, mail
 TODAY = datetime.date.today()
 DAY_EPOCH = int(int(time.time())/60/60/24)
 WORKOUT_FILE = '<br>'.join(securedata.getFileAsArray(
-    "workout.md", "notes")).split("## ")[(TODAY.weekday()) + 1].split("<br>")
+    "workout.md", "notes"))
+WORKOUT_TODAY = WORKOUT_FILE.split(
+    "<br>## ")[(TODAY.weekday())+2].split("<br>")
 
-WORKOUT_MSG = '<br>'.join(WORKOUT_FILE[1:])
-WORKOUT_TYPE = WORKOUT_FILE[0]
+WORKOUT_MSG = '<br>'.join(WORKOUT_TODAY[2:])
+WORKOUT_TYPE = WORKOUT_TODAY[1].replace("### ", "")
 
 securedata.log("Checking workout")
 
