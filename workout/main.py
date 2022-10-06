@@ -22,8 +22,8 @@ TODAY = datetime.date.today()
 DAY_EPOCH = int(int(time.time())/60/60/24)
 WORKOUT_FILE = '<br>'.join(securedata.getFileAsArray(
     "workout.md", "notes"))
-WORKOUT_TODAY = WORKOUT_FILE.split(
-    "<br>## ")[(TODAY.weekday())+2].split("<br>")
+WORKOUT_TODAY = list(filter(None, WORKOUT_FILE.split(
+    "<br>## ")[(TODAY.weekday())+2].split("<br>")))
 
 WORKOUT_MSG = '<br>'.join(WORKOUT_TODAY[2:])
 WORKOUT_TYPE = WORKOUT_TODAY[1].replace("### ", "")
@@ -35,6 +35,6 @@ if TODAY.weekday() == 5:
     securedata.log("Saturday - no workout to be sent")
     sys.exit(0)
 
-message = f"Hi Tyler,\n\nHere's your {WORKOUT_TYPE} workout for today: {WORKOUT_MSG}"
+message = f"Hi Tyler,<br><br>Here's your {WORKOUT_TYPE} workout for today:<br><br>{WORKOUT_MSG}"
 
 mail.send(f"{WORKOUT_TYPE} for {TODAY}", message)
