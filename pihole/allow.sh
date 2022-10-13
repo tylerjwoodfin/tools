@@ -1,6 +1,6 @@
 #!/bin/sh
-blockDomains=$(</home/pi/git/tools/pihole/blocklist)
+blockDomains=$(cat /home/pi/git/tools/pihole/blocklist)
 
-for domain in ${blockDomains[@]}; do
-  pihole --wild -d $domain
+for domain in $blockDomains; do
+  sudo pihole --wild -d $domain
 done
