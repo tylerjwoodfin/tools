@@ -25,6 +25,18 @@ securedata_dst = f"{securedata.getItem('path', 'securedata', 'all-users')}/setti
 print(f"\nCopying {securedata_src} to {securedata_dst}\n")
 os.system(f"cp {securedata_dst} {securedata_dst}")
 
+# get steps
+STEPS_COUNT = -1
+steps_count_file = securedata.getFileAsArray(
+    "securedata/steps.md", filePath=PATH_BACKEND)
+
+if steps_count_file:
+    STEPS_COUNT = steps_count_file[0].split(" ")[0].replace(",", "")
+
+# log steps
+with open(f"{PATH_LOG_BACKEND}/log_steps.csv", "a+", encoding="utf-8") as file_steps:
+    file_steps.write(f"\n{TODAY},{STEPS_COUNT}")
+
 # create backend folders
 print(f"\nCreating folders in {PATH_LOG_BACKEND}\n")
 os.system(f"mkdir -p {PATH_LOG_BACKEND}/tasks")
