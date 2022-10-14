@@ -1,7 +1,7 @@
 #!/bin/sh
 echo "starting"
 
-blockDomains=$(cat /home/pi/git/tools/pihole/blocklist)
+blockDomains=$(cat /home/tyler/git/tools/pihole/blocklist)
 
 echo "${blockDomains}"
 

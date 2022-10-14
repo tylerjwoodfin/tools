@@ -125,7 +125,7 @@ if len(sys.argv) > 1 and sys.argv[1] == 'force' or \
         try:
             mail.send("Take Planty In",
                       (f"Hi Tyler,<br><br>The low tonight is {low_tomorrow}°."
-                       f" Please take Planty in!"), to=','.join(
+                       f" Please take Planty in!"), to_addr=','.join(
                           securedata.getItem("weather", "alert_planty_emails")))
             securedata.setItem(
                 "weather", "alert_planty_sent", int(time.time()))
@@ -137,7 +137,7 @@ if len(sys.argv) > 1 and sys.argv[1] == 'force' or \
             EMAIL = (f"Hi Tyler,<br><br>It looks like a nice day!"
                      f" It's going to be around {high}°. Please take Planty out.")
 
-            mail.send("Take Planty Out", EMAIL, to=','.join(
+            mail.send("Take Planty Out", EMAIL, to_addr=','.join(
                 securedata.getItem("weather", "alert_planty_emails")))
             securedata.setItem(
                 "weather", "alert_planty_sent", int(time.time()))

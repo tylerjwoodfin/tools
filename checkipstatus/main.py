@@ -27,10 +27,11 @@ else:
 
     try:
         FILE_VPN = '\n'.join(securedata.getFileAsArray(
-            "tyler.cloud.ovpn", "/home/pi/ovpns/"))
+            "tyler.cloud.ovpn", "/home/tyler/ovpns/"))
         FILE_VPN = FILE_VPN.split("remote ", maxsplit=1)[
             0] + newLine + FILE_VPN.split(" 1194")[1]
-        securedata.writeFile("tyler.cloud.ovpn", "/home/pi/ovpns/", FILE_VPN)
+        securedata.writeFile("tyler.cloud.ovpn",
+                             "/home/tyler/ovpns/", FILE_VPN)
     except IOError as e:
         securedata.log(f"Could not update VPN: {e}", level="error")
 
