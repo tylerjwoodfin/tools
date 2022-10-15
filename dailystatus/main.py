@@ -1,4 +1,4 @@
-''' Used to send daily weather/Spotify/Git updates '''
+''' Used to send daily weather/Spotify updates '''
 
 import pwd
 import os
@@ -20,32 +20,40 @@ PATH_BASHRC = f"/home/{DIR_USER}/.bashrc"
 PATH_LOG_TODAY = f"{securedata.getItem('path', 'log')}/{TODAY}/"
 
 # copy settings.json to root
-CMD_COPY = f"""
-    cp {securedata.getConfigItem('path_securedata')}/settings.json
-    {securedata.getItem('path', 'securedata', 'all-users')}/settings.json
-    """
-os.system(CMD_COPY)
+securedata_src = f"{securedata.getConfigItem('path_securedata')}/settings.json"
+securedata_dst = f"{securedata.getItem('path', 'securedata', 'all-users')}/settings.json"
+print(f"\nCopying {securedata_src} to {securedata_dst}\n")
+os.system(f"cp {securedata_dst} {securedata_dst}")
 
+# get steps
+STEPS_COUNT = -1
+steps_count_file = securedata.getFileAsArray(
+    "securedata/steps.md", filePath=PATH_BACKEND)
+
+if steps_count_file:
+    STEPS_COUNT = steps_count_file[0].split(" ")[0].replace(",", "")
+
+# log steps
+with open(f"{PATH_LOG_BACKEND}/log_steps.csv", "a+", encoding="utf-8") as file_steps:
+    file_steps.write(f"\n{TODAY},{STEPS_COUNT}")
+
+# create backend folders
+print(f"\nCreating folders in {PATH_LOG_BACKEND}\n")
 os.system(f"mkdir -p {PATH_LOG_BACKEND}/tasks")
 os.system(f"mkdir -p {PATH_LOG_BACKEND}/cron")
 os.system(f"mkdir -p {PATH_LOG_BACKEND}/bash")
 os.system(f"mkdir -p {PATH_LOG_BACKEND}/securedata")
 
 # copy key files to backend
-CMD_COPY_TASKS = f"""
-    cp -r {securedata.getItem('path', 'notes', 'local') + '/remind.md'}
-    '{PATH_LOG_BACKEND}/tasks/remind {TODAY}.md'
-    """
-os.system(CMD_COPY_TASKS)
+print("\nCopying files to backend\n")
+remind_src = f"{securedata.getItem('path', 'notes', 'local')}/remind.md"
+remind_dst = f"{PATH_LOG_BACKEND}/tasks/remind {TODAY}.md"
+os.system(f"cp -r {remind_src} '{remind_dst}'")
+
 os.system(f"cp -r {PATH_CRON} '{PATH_LOG_BACKEND}/cron/Cron {TODAY}.md'")
 os.system(f"cp -r {PATH_BASHRC} '{PATH_LOG_BACKEND}/bash/Bash {TODAY}.md'")
 
 securedata.log(f"Cron, Bash, and remind.md copied to {PATH_LOG_BACKEND}.")
-
-# push daily log to github
-os.system(
-    f"cd {PATH_BACKEND}; git pull; git add -A; git commit -m 'Updated Logs'; git push")
-securedata.log("Updated Git")
 
 # spotify stats
 spotify_count = securedata.getItem("spotipy", "total_tracks")
@@ -106,37 +114,6 @@ if weather_data:
 
 STATUS_EMAIL += WEATHER_DATA_TEXT
 
-# git status
-git_status = os.popen(
-    f"cd {PATH_BACKEND}; git log -1 --pretty='format:%cD<br>%s'").read().replace("\n", "<br>")
-git_status = f"<font face='monospace'>{git_status}</font>"
-
-try:
-    LAST_COMMIT_TIME = int(
-        os.popen(f'cd {PATH_BACKEND}; git log -1 --format="%at"').read())
-except ValueError as e:
-    LAST_COMMIT_TIME = 0
-except AttributeError as e:
-    LAST_COMMIT_TIME = 0
-
-NOW = int(os.popen("date +%s").read())
-
-if NOW - LAST_COMMIT_TIME > 7200:
-    status_email_alerts.append("Git")
-    STATUS_EMAIL = f"""
-    <b>❌ Check Git:</b><br>
-    Your last Git commit to the backend was before today:
-    <br><br>
-    {git_status}
-    <br>
-    <hr>
-    <br><br>
-    {STATUS_EMAIL}
-    """
-else:
-    STATUS_EMAIL += f"<br><b>✔ Backend Up to Date:</b><br>{git_status}"
-
-
 STATUS_EMAIL.replace("<br><br><br><br>", "<br><br>")
 
 STATUS_EMAIL_WARNINGS_TEXT = "- Check " + \
@@ -144,9 +121,3 @@ STATUS_EMAIL_WARNINGS_TEXT = "- Check " + \
     " " if len(status_email_alerts) > 0 else ""
 
 mail.send(f"Daily Status {STATUS_EMAIL_WARNINGS_TEXT}- {TODAY}", STATUS_EMAIL)
-
-# move securedata logs to backend
-CMD_MV_SECUREDATA_LOGS = f"""
-    mv {securedata.getItem('path', 'log')}/* {PATH_LOG_BACKEND}/securedata
-    """
-os.system(CMD_MV_SECUREDATA_LOGS)

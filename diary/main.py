@@ -15,7 +15,7 @@ EDITOR = os.environ.get('EDITOR', 'vim')
 PATH_DIARY = securedata.getItem("path", "diary")
 PATH_NOTES_LOCAL = securedata.getItem('path', 'notes', 'local')
 PATH_NOTES_CLOUD = securedata.getItem('path', 'notes', 'cloud')
-FILENAME = f"{PATH_DIARY}/{datetime.datetime.now().strftime('%Y %m %d %H:%M:%S')}.md"
+FILENAME = f"{PATH_DIARY}/{datetime.datetime.now().strftime('%Y %m %d %H.%M.%S')}.md"
 
 with tempfile.NamedTemporaryFile(mode='w+', suffix=".tmp") as tf:
 
