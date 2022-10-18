@@ -11,4 +11,4 @@ if len(sys.argv) > 1:
         remind.generate()
     elif sys.argv[1] == 'later':
         securedata.log("Calling remind later")
-        remind.generateRemindersForLater()
+        remind.generate_reminders_for_later()
