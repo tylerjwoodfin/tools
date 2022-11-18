@@ -15,42 +15,45 @@ DIR_USER = pwd.getpwuid(os.getuid())[0]
 TODAY = datetime.date.today()
 PATH_BACKEND = securedata.getItem("path", "securedata", "log-backup")
 PATH_LOG_BACKEND = f"{PATH_BACKEND}/log"
-PATH_CRON = f"/var/spool/cron/crontabs/{DIR_USER}"
 PATH_BASHRC = f"/home/{DIR_USER}/.bashrc"
 PATH_LOG_TODAY = f"{securedata.getItem('path', 'log')}/{TODAY}/"
 
-# copy settings.json to root
-securedata_src = f"{securedata.getConfigItem('path_securedata')}/settings.json"
-securedata_dst = f"{securedata.getItem('path', 'securedata', 'all-users')}/settings.json"
-print(f"\nCopying {securedata_src} to {securedata_dst}\n")
-os.system(f"cp {securedata_dst} {securedata_dst}")
-
 # get steps
 STEPS_COUNT = -1
-steps_count_file = securedata.getFileAsArray(
+STEPS_COUNT_FILE = securedata.getFileAsArray(
     "securedata/steps.md", filePath=PATH_BACKEND)
 
-if steps_count_file:
-    STEPS_COUNT = steps_count_file[0].split(" ")[0].replace(",", "")
+if STEPS_COUNT_FILE:
+    STEPS_COUNT = STEPS_COUNT_FILE[0].split(" ")[0].replace(",", "")
 
 # log steps
 with open(f"{PATH_LOG_BACKEND}/log_steps.csv", "a+", encoding="utf-8") as file_steps:
     file_steps.write(f"\n{TODAY},{STEPS_COUNT}")
 
+# get reminders sent
+REMINDERS_COUNT = securedata.getItem("remindmail", "sent_today") or 0
+securedata.setItem("remindmail", "sent_today", 0)
+
+# log reminders
+with open(f"{PATH_LOG_BACKEND}/log_reminders.csv", "a+", encoding="utf-8") as file_rmm:
+    file_rmm.write(f"\n{TODAY},{REMINDERS_COUNT}")
+
+
 # create backend folders
-print(f"\nCreating folders in {PATH_LOG_BACKEND}\n")
+print(f"\nCreating folders in {PATH_LOG_BACKEND}, if necessary")
 os.system(f"mkdir -p {PATH_LOG_BACKEND}/tasks")
 os.system(f"mkdir -p {PATH_LOG_BACKEND}/cron")
 os.system(f"mkdir -p {PATH_LOG_BACKEND}/bash")
 os.system(f"mkdir -p {PATH_LOG_BACKEND}/securedata")
 
 # copy key files to backend
-print("\nCopying files to backend\n")
+print("Copying files to backend\n")
 remind_src = f"{securedata.getItem('path', 'notes', 'local')}/remind.md"
 remind_dst = f"{PATH_LOG_BACKEND}/tasks/remind {TODAY}.md"
 os.system(f"cp -r {remind_src} '{remind_dst}'")
 
-os.system(f"cp -r {PATH_CRON} '{PATH_LOG_BACKEND}/cron/Cron {TODAY}.md'")
+# copy cron to backup
+os.system(f"crontab -l > '{PATH_LOG_BACKEND}/cron/Cron {TODAY}.md'")
 os.system(f"cp -r {PATH_BASHRC} '{PATH_LOG_BACKEND}/bash/Bash {TODAY}.md'")
 
 securedata.log(f"Cron, Bash, and remind.md copied to {PATH_LOG_BACKEND}.")
@@ -96,6 +99,8 @@ if len(DAILY_LOG_FILTERED) > 0:
         """
 
 STATUS_EMAIL += SPOTIFY_STATS
+
+STATUS_EMAIL += f"""<b>Reminders:</b><br>{REMINDERS_COUNT} reminders were sent today.<br><br>"""
 
 # weather
 weather_data = securedata.getItem("weather", "data")
