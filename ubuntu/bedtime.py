@@ -7,6 +7,9 @@ to bed at an appropriate hour.
 Dependencies for Crontab:
 xvfb
 
+Dependencies for Python:
+tkinter (sudo apt-get install python3-tk)
+
 Example Crontab:
 0 22 * * * cd /home/tyler/git/tools/ubuntu && XAUTHORITY=/home/tyler/.Xauthority
 DISPLAY=:0 python3 bedtime.py
