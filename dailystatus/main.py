@@ -5,17 +5,18 @@ import os
 import datetime
 import sys
 from securedata import securedata, mail
-sys.path.insert(1, securedata.getItem("path", "openai"))
+sys.path.insert(0, securedata.getItem("path", "openai"))
 import main as openai
 
 securedata.log("Started Daily Tasks")
 
 GREETING = ""
 try:
-    GREETING = openai.parse("tell me a good starting sentence for an email to myself")
+    GREETING = openai.submit("tell me a good starting sentence for an email to myself")
 except Exception as error:
     securedata.log(f"Error fetching daily status greeting: {error}", level="warn")
 status_email_alerts = []
+
 STATUS_EMAIL = f"Dear Tyler,<br><br>{GREETING} This is your daily status report.<br><br>"
 
 DIR_USER = pwd.getpwuid(os.getuid())[0]
