@@ -70,7 +70,7 @@ if __name__ == "__main__":
         response_simple = submit(' '.join(sys.argv[1:]), '')
 
         if '\n\n' in response_simple:
-            response_simple = response_simple.split("\n\n")[1]
+            response_simple = response_simple.split("\n\n")[1:]
 
         print(response_simple)
     else:
