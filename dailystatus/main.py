@@ -12,7 +12,7 @@ securedata.log("Started Daily Tasks")
 
 GREETING = ""
 try:
-    GREETING = openai.submit("tell me a good starting sentence for an email to myself")
+    GREETING = openai.submit("give me a cute greeting for an email")
 except Exception as error:
     securedata.log(f"Error fetching daily status greeting: {error}", level="warn")
 status_email_alerts = []
@@ -40,7 +40,10 @@ with open(f"{PATH_LOG_BACKEND}/log_steps.csv", "a+", encoding="utf-8") as file_s
 
 # get reminders sent
 REMINDERS_COUNT = securedata.getItem("remindmail", "sent_today") or 0
+
+securedata.log("Setting remindmail -> sent_today to 0", level="debug")
 securedata.setItem("remindmail", "sent_today", 0)
+securedata.log(f"""remindmail -> sent_today is {securedata.getItem("remindmail", "sent_today")}""")
 
 # log reminders
 with open(f"{PATH_LOG_BACKEND}/log_reminders.csv", "a+", encoding="utf-8") as file_rmm:
