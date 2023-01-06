@@ -25,6 +25,7 @@ DEFAULT_CONFIG_FILE_REMINDMAIL = f'{PATH_SRC_REMINDMAIL}/setup.cfg' or \
 PATH_SRC = PATH_SRC_REMINDMAIL if sys.argv[1] == 'remindmail' else PATH_SRC_SECUREDATA
 DEFAULT_CONFIG_FILE = DEFAULT_CONFIG_FILE_REMINDMAIL if sys.argv[
     1] == 'remindmail' else DEFAULT_CONFIG_FILE_SECUREDATA
+CMD_PIPREQS = "pipreqs --force --savepath requirements.md --mode no-pin;" if sys.argv[1] == 'remindmail' else ""
 
 
 def main():
@@ -65,7 +66,8 @@ def main():
 
     # build
     print("Building... this will take a few minutes")
-    os.system(f"cd {PATH_SRC}; pipreqs --force --savepath requirements.md --mode no-pin; python3 -m build")
+
+    os.system(f"cd {PATH_SRC}; {CMD_PIPREQS} python3 -m build")
 
     # push to PyPi
     os.system(f"cd {PATH_SRC}; python3 -m twine upload dist/*")
