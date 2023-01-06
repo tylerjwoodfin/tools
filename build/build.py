@@ -65,7 +65,7 @@ def main():
 
     # build
     print("Building... this will take a few minutes")
-    os.system(f"cd {PATH_SRC}; python3 -m build")
+    os.system(f"cd {PATH_SRC}; pipreqs --force --savepath requirements.md --mode no-pin; python3 -m build")
 
     # push to PyPi
     os.system(f"cd {PATH_SRC}; python3 -m twine upload dist/*")
