@@ -5,17 +5,18 @@ import os
 import datetime
 import sys
 from securedata import securedata, mail
-sys.path.insert(1, securedata.getItem("path", "openai"))
+sys.path.insert(0, securedata.getItem("path", "openai"))
 import main as openai
 
 securedata.log("Started Daily Tasks")
 
 GREETING = ""
 try:
-    GREETING = openai.parse("tell me a good starting sentence for an email to myself")
+    GREETING = openai.submit("give me a cute greeting for an email")
 except Exception as error:
     securedata.log(f"Error fetching daily status greeting: {error}", level="warn")
 status_email_alerts = []
+
 STATUS_EMAIL = f"Dear Tyler,<br><br>{GREETING} This is your daily status report.<br><br>"
 
 DIR_USER = pwd.getpwuid(os.getuid())[0]
@@ -39,7 +40,10 @@ with open(f"{PATH_LOG_BACKEND}/log_steps.csv", "a+", encoding="utf-8") as file_s
 
 # get reminders sent
 REMINDERS_COUNT = securedata.getItem("remindmail", "sent_today") or 0
+
+securedata.log("Setting remindmail -> sent_today to 0", level="debug")
 securedata.setItem("remindmail", "sent_today", 0)
+securedata.log(f"""remindmail -> sent_today is {securedata.getItem("remindmail", "sent_today")}""")
 
 # log reminders
 with open(f"{PATH_LOG_BACKEND}/log_reminders.csv", "a+", encoding="utf-8") as file_rmm:

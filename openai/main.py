@@ -12,7 +12,7 @@ from securedata import securedata
 openai.api_key = securedata.getItem("keys", "openai")
 
 
-def parse(query, log="", debug=False):
+def submit(query, log="", debug=False):
     """
     submits `query` to openai
     """
@@ -43,7 +43,7 @@ def cli():
     """
 
     log = ""
-    print(f"""{parse("Please greet me.", "")}\n\n""")
+    print(f"""{submit("Please greet me.", "")}\n\n""")
 
     while True:
         try:
@@ -52,7 +52,7 @@ def cli():
             if user_input == 'clear':
                 os.system('clear')
 
-            output = (parse(user_input, log))
+            output = (submit(user_input, log))
             if not output:
                 print("I don't have an answer for that.")
 
@@ -67,10 +67,10 @@ def cli():
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        response_simple = parse(' '.join(sys.argv[1:]), '')
+        response_simple = submit(' '.join(sys.argv[1:]), '')
 
         if '\n\n' in response_simple:
-            response_simple = response_simple.split("\n\n")[1]
+            response_simple = response_simple.split("\n\n")[1:]
 
         print(response_simple)
     else:
