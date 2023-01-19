@@ -124,7 +124,7 @@ if weather_data:
         Sunrise:
         {weather_data['tomorrow_sunrise']}
         <br>
-        Sunset: {weather_data['tomorrow_sunset']}
+        Sunset:  {weather_data['tomorrow_sunset']}
         <br><br></font>
         """
 
