@@ -29,7 +29,7 @@ PATH_LOG_TODAY = f"{cabinet.get('path', 'log')}/{TODAY}/"
 # get steps
 STEPS_COUNT = -1
 STEPS_COUNT_FILE = cabinet.get_file_as_array(
-    "cabinet/steps.md", path=PATH_BACKEND)
+    "cabinet/steps.md", file_path=PATH_BACKEND)
 
 if STEPS_COUNT_FILE:
     STEPS_COUNT = STEPS_COUNT_FILE[0].split(" ")[0].replace(",", "")
@@ -75,7 +75,7 @@ spotify_avg_year = cabinet.get("spotipy", "average_year")
 SPOTIFY_STATS = "<b>Spotify Stats:</b><br>"
 SPOTIFY_LOG = "<font face='monospace'>" + \
     '<br>'.join(cabinet.get_file_as_array(
-        "LOG_SPOTIFY.log", path=PATH_LOG_TODAY)) + "</font><br><br>"
+        "LOG_SPOTIFY.log", file_path=PATH_LOG_TODAY)) + "</font><br><br>"
 
 if "ERROR —" in SPOTIFY_LOG:
     status_email_alerts.append('Spotify')
@@ -90,7 +90,7 @@ if 'Spotify' in status_email_alerts:
 
 # daily log
 daily_log_file_array = cabinet.get_file_as_array(
-    f"LOG_DAILY {TODAY}.log", path=PATH_LOG_TODAY)
+    f"LOG_DAILY {TODAY}.log", file_path=PATH_LOG_TODAY)
 DAILY_LOG_FILE = '<br>'.join(daily_log_file_array)
 
 if "ERROR —" in DAILY_LOG_FILE or "CRITICAL —" in DAILY_LOG_FILE:
