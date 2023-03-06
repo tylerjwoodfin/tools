@@ -5,7 +5,7 @@ import os
 import sys
 import socket
 
-from securedata import mail
+from cabinet import mail
 
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.connect(("8.8.8.8", 80))

@@ -5,7 +5,7 @@
 
 # Dependencies
 
-- `../mail.py` should be configured using [securedata](https://pypi.org/project/securedata)
+- `../mail.py` should be configured using [cabinet](https://pypi.org/project/cabinet)
   - Otherwise, you can comment out `mail` lines and use `print`.
 
 # Usage

@@ -3,9 +3,9 @@ Sends an email alert if it's "nice" outside
 
 Dependencies:
 - requests (pip install requests)
-- secureData (my internal function to grab nonpublic variables from a secure folder)
+- cabinet (my internal function to grab nonpublic variables from a JSON file)
 
-Note: weatherAPIKey should be obtained for free through openweathermap.org.
+Note: the API key should be obtained for free through openweathermap.org.
 """
 
 import datetime
@@ -13,10 +13,10 @@ import time
 import random
 import sys
 import requests
-from securedata import securedata, mail
+from cabinet import cabinet, mail
 
-lat = securedata.getItem("latitude")
-lon = securedata.getItem("longitude")
+lat = cabinet.get("latitude")
+lon = cabinet.get("longitude")
 
 
 def datetime_from_utc_to_local(utc_datetime):
@@ -54,12 +54,12 @@ def convert_temperature_c_to_f(temp):
 
 
 # context variables
-plantyStatus = securedata.getItem("planty", "status")
+plantyStatus = cabinet.get("planty", "status")
 now = datetime.datetime.now()
 
 # Call API
 url_request = (f"https://api.openweathermap.org/data/2.5/onecall"
-               f"?lat={lat}&lon={lon}&appid={securedata.getItem('weather', 'api_key')}")
+               f"?lat={lat}&lon={lon}&appid={cabinet.get('weather', 'api_key')}")
 print(f"Calling API at {url_request}")
 
 response = requests.get(url_request, timeout=30).json()
@@ -91,9 +91,9 @@ weatherData = {
     "tomorrow_sunrise": sunrise_tomorrow_formatted,
     "tomorrow_sunset": sunset_tomorrow_formatted}
 
-securedata.setItem("weather", "data", weatherData)
+cabinet.put("weather", "data", weatherData)
 
-if securedata.getItem("weather", "alert_walk_sent") < (time.time() - 43200) and now.hour >= 10:
+if cabinet.get("weather", "alert_walk_sent") < (time.time() - 43200) and now.hour >= 10:
     GOOD_TEMP = (65 <= temperature <= 85) or (72 <= temperature <= 90)
     if GOOD_TEMP and wind < 10 and timeToSunset > 2:
         message = f"""\
@@ -108,39 +108,39 @@ if securedata.getItem("weather", "alert_walk_sent") < (time.time() - 43200) and 
                     Here's a close place for you to walk to.</a></h2>"""
 
         mail.send("Here's a close place to walk today!", message)
-        securedata.setItem("weather", "alert_walk_sent", int(time.time()))
-        securedata.log("Walk Alert Sent")
+        cabinet.put("weather", "alert_walk_sent", int(time.time()))
+        cabinet.put("Walk Alert Sent")
 
-plantyAlertSent = securedata.getItem("weather", "alert_planty_sent")
-plantyAlertChecked = securedata.getItem("weather", "alert_planty_checked")
+plantyAlertSent = cabinet.get("weather", "alert_planty_sent")
+plantyAlertChecked = cabinet.get("weather", "alert_planty_checked")
 
 if len(sys.argv) > 1 and sys.argv[1] == 'force' or \
     (not plantyAlertSent or not plantyAlertChecked or
      (int(plantyAlertSent) < (time.time() - 43200) and
         int(plantyAlertChecked) < (time.time() - 21600))):
-    securedata.log(
+    cabinet.log(
         f"Checked Planty ({plantyStatus}): low {low_tomorrow}, high {high}")
-    securedata.setItem("weather", "alert_planty_checked", int(time.time()))
+    cabinet.put("weather", "alert_planty_checked", int(time.time()))
     if low_tomorrow < 55 and plantyStatus == "out":
         try:
             mail.send("Take Planty In This Afternoon",
                       (f"Hi Tyler,<br><br>The low tonight is {low_tomorrow}°."
                        f" Please take Planty in!"),
-                      to_addr=securedata.getItem("weather", "alert_planty_emails"))
-            securedata.setItem(
+                      to_addr=cabinet.get("weather", "alert_planty_emails"))
+            cabinet.put(
                 "weather", "alert_planty_sent", int(time.time()))
         except IOError as e:
-            securedata.log(f"Could not send Planty email: {e}", level="error")
-        securedata.setItem("planty", "status", "in")
+            cabinet.log(f"Could not send Planty email: {e}", level="error")
+        cabinet.put("planty", "status", "in")
     if (high > 80 or low_tomorrow >= 56) and plantyStatus == "in":
         try:
             EMAIL = (f"Hi Tyler,<br><br>It looks like a nice day!"
                      f" It's going to be around {high}°. Please take Planty out.")
 
             mail.send("Take Planty Out This Afternoon", EMAIL,
-                      to_addr=securedata.getItem("weather", "alert_planty_emails"))
-            securedata.setItem(
+                      to_addr=cabinet.get("weather", "alert_planty_emails"))
+            cabinet.put(
                 "weather", "alert_planty_sent", int(time.time()))
         except IOError as e:
-            securedata.log(f"Could not send Planty email: {e}", level="error")
-        securedata.setItem("planty", "status", "out")
+            cabinet.log(f"Could not send Planty email: {e}", level="error")
+        cabinet.put("planty", "status", "out")

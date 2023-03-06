@@ -6,7 +6,7 @@
 
 ## Dependencies
 - requests (`pip install requests`)
-- [securedata](https://pypi.org/project/securedata/)
-- Data comes from logs or information in `securedata` produced by modules in this repo or other repos; see the code for details
+- [cabinet](https://pypi.org/project/cabinet/)
+- Data comes from logs or information in `cabinet` produced by modules in this repo or other repos; see the code for details
 
 # Note: weatherAPIKey should be obtained for free through openweathermap.org.

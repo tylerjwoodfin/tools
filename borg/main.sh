@@ -2,8 +2,8 @@
 
 # Setting this, so the repo does not need to be given on the commandline:
 
-borg_repo=`cat /home/tyler/syncthing/securedata/keys/BORG_REPO`
-borg_passphrase=`cat /home/tyler/syncthing/securedata/keys/BORG_PASSPHRASE`
+borg_repo=`cat /home/tyler/syncthing/cabinet/keys/BORG_REPO`
+borg_passphrase=`cat /home/tyler/syncthing/cabinet/keys/BORG_PASSPHRASE`
 export BORG_REPO=$borg_repo
 export BORG_PASSPHRASE=$borg_passphrase
 

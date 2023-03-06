@@ -10,4 +10,4 @@ A simple tool to control my condo's light bulbs
 ## dependencies
 
 - [python-kasa](https://pypi.org/project/python-kasa/)
-- [securedata](https://github.com/tylerjwoodfin/securedata)
+- [cabinet](https://pypi.org/project/cabinet)

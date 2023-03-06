@@ -1,7 +1,7 @@
 """
 Used by tyler.cloud to provide a faster URL shortener
 
-If this is stored in a web server, one could store this in securedata -> shorten_ssh:
+If this is stored in a web server, one could store this in cabinet -> shorten_ssh:
 "ssh -oHostKeyAlgorithms=+ssh-dss -p {portNumber} {username}@{server} "
 """
 
@@ -9,7 +9,7 @@ import sys
 import random
 import string
 from os import system
-from securedata import securedata
+from cabinet import cabinet
 
 
 def get_url():
@@ -29,7 +29,7 @@ if not sys.argv[1].startswith('http'):
     sys.exit(-1)
 
 DIRECTORY = get_url()
-system((f"""{securedata.getItem('shorten_ssh')} "echo '\nRewriteCond"""
+system((f"""{cabinet.get('shorten_ssh')} "echo '\nRewriteCond"""
         f""" %{{REQUEST_URI}} ^/u/{DIRECTORY}.*\nRewriteRule (.*)"""
         f""" {sys.argv[1]}' >> www/.htaccess" """))
 print(f"https://tyler.cloud/u/{DIRECTORY}")

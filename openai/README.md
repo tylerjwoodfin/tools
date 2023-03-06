@@ -2,12 +2,12 @@
 
 ## dependencies
 
-- [securedata](https://pypi.org/project/securedata/)
-  - `securedata config` for setup
+- [cabinet](https://pypi.org/project/cabinet/)
+  - `cabinet config` for setup
 
 ## setup
 
-- using `securedata`, store the API key you generated from the reference website in `keys -> openai`.
+- using `cabinet`, store the API key you generated from the reference website in `keys -> openai`.
 
   - for example, if you have no properties in your settings.json file, it should look like:
 

@@ -7,9 +7,9 @@ see README.md for instructions
 import os
 import sys
 import openai
-from securedata import securedata
+from cabinet import cabinet
 
-openai.api_key = securedata.getItem("keys", "openai")
+openai.api_key = cabinet.get("keys", "openai")
 
 
 def submit(query, log="", debug=False):

@@ -5,27 +5,27 @@ This tool is specific to the original developer and is used to publish to PyPi.
 import sys
 import os.path
 from datetime import datetime
-from securedata import securedata
+from cabinet import cabinet
 
-BUILD_OPTIONS = ['securedata', 'remindmail']
+BUILD_OPTIONS = ['remindmail', 'cabinet']
 
 # parse args
 if len(sys.argv) < 2 or sys.argv[1] not in BUILD_OPTIONS:
     print(f"Invalid argument; please run `...build.py {BUILD_OPTIONS}`")
     sys.exit(1)
 
+if sys.argv[1] == 'remindmail':
+    PATH_SRC = cabinet.put("path", "remindmail", "src") \
+        or f"{os.path.expanduser('~')}/git/remindmail"
+else:
+    PATH_SRC = cabinet.get("path", "cabinet", "src") \
+        or f"{os.path.expanduser('~')}/git/cabinet"
 
-PATH_SRC_SECUREDATA = securedata.getItem("path", "securedata", "src")
-PATH_SRC_REMINDMAIL = securedata.getItem("path", "remindmail", "src")
-DEFAULT_CONFIG_FILE_SECUREDATA = f'{PATH_SRC_SECUREDATA}/setup.cfg' or \
-    f'{os.path.expanduser("~")}/securedata/setup.cfg'
-DEFAULT_CONFIG_FILE_REMINDMAIL = f'{PATH_SRC_REMINDMAIL}/setup.cfg' or \
-    f'{os.path.expanduser("~")}/remindmail/setup.cfg'
+DEFAULT_CONFIG_FILE = f"{PATH_SRC}/setup.cfg"
 
-PATH_SRC = PATH_SRC_REMINDMAIL if sys.argv[1] == 'remindmail' else PATH_SRC_SECUREDATA
-DEFAULT_CONFIG_FILE = DEFAULT_CONFIG_FILE_REMINDMAIL if sys.argv[
-    1] == 'remindmail' else DEFAULT_CONFIG_FILE_SECUREDATA
-CMD_PIPREQS = "pipreqs --force --savepath requirements.md --mode no-pin;" if sys.argv[1] == 'remindmail' else ""
+CMD_PIPREQS = ""
+if sys.argv[1] == 'remindmail':
+    CMD_PIPREQS = "pipreqs --force --savepath requirements.md --mode no-pin;"
 
 
 def main():
