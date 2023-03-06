@@ -15,7 +15,7 @@ if len(sys.argv) < 2 or sys.argv[1] not in BUILD_OPTIONS:
     sys.exit(1)
 
 if sys.argv[1] == 'remindmail':
-    PATH_SRC = cabinet.put("path", "remindmail", "src") \
+    PATH_SRC = cabinet.get("path", "remindmail", "src") \
         or f"{os.path.expanduser('~')}/git/remindmail"
 else:
     PATH_SRC = cabinet.get("path", "cabinet", "src") \

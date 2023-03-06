@@ -5,7 +5,7 @@ A simple tool to control my condo's light bulbs
 ## usage
 
 - `python3 main.py {device name} {on/off}`
-  - When first run (or when `securedata -> 'lights'` is deleted), it will discover devices on the current network.
+  - When first run (or when `cabinet -> 'lights'` is deleted), it will discover devices on the current network.
 
 ## dependencies
 
