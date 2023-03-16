@@ -90,7 +90,7 @@ if 'Spotify' in status_email_alerts:
 
 # daily log
 daily_log_file_array = cabinet.get_file_as_array(
-    f"LOG_DAILY {TODAY}.log", file_path=PATH_LOG_TODAY)
+    f"LOG_DAILY_{TODAY}.log", file_path=PATH_LOG_TODAY)
 DAILY_LOG_FILE = '<br>'.join(daily_log_file_array)
 
 if "ERROR —" in DAILY_LOG_FILE or "CRITICAL —" in DAILY_LOG_FILE:

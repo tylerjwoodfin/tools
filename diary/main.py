@@ -33,7 +33,7 @@ with tempfile.NamedTemporaryFile(mode='w+', suffix=".tmp") as tf:
 
     if len(DATA) > 0:
         print("Saving...")
-        cabinet.writeFile(
+        cabinet.write_file(
             FILENAME, "notes", DATA)
     else:
         print("No changes made.")
