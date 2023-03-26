@@ -17,7 +17,8 @@ def remindmail():
         remindmail mail <subject> <body> <to_addr, comma-separated>
     """
     cab = Cabinet()
-    parser = argparse.ArgumentParser(prog='remindmail')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('command', choices=['generate', 'later', 'mail'])
 
     args = parser.parse_args()
 
@@ -31,3 +32,7 @@ def remindmail():
         mail.send(subject=args.subject, body=args.body, to_addr=args.to_addr.split(","))
     else:
         print(f"Invalid command: {args.command}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    remindmail()
