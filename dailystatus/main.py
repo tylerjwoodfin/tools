@@ -1,34 +1,41 @@
-''' Used to send daily weather/Spotify updates '''
+"""
+A simple module to chat with GPT3
+"""
 
-import pwd
 import os
-import datetime
 import sys
-from cabinet import cabinet, mail
-sys.path.insert(0, cabinet.get("path", "openai"))
+import pwd
+import datetime
+
+from cabinet import Cabinet, mail
+
+# Add the openai directory to the sys path
+cab = Cabinet()
+sys.path.insert(0, cab.get("path", "openai"))
+
 import main as openai
 
-cabinet.log("Started Daily Tasks")
+cab.log("Started Daily Tasks")
 
 GREETING = ""
 try:
     GREETING = openai.submit("give me a cute greeting for an email")
 except Exception as error:
-    cabinet.log(f"Error fetching daily status greeting: {error}", level="warn")
+    cab.log(f"Error fetching daily status greeting: {error}", level="warn")
 status_email_alerts = []
 
 STATUS_EMAIL = f"Dear Tyler,<br><br>{GREETING} This is your daily status report.<br><br>"
 
 DIR_USER = pwd.getpwuid(os.getuid())[0]
 TODAY = datetime.date.today()
-PATH_BACKEND = cabinet.get("path", "cabinet", "log-backup")
+PATH_BACKEND = cab.get("path", "cabinet", "log-backup")
 PATH_LOG_BACKEND = f"{PATH_BACKEND}/log"
 PATH_BASHRC = f"/home/{DIR_USER}/.bashrc"
-PATH_LOG_TODAY = f"{cabinet.get('path', 'log')}/{TODAY}/"
+PATH_LOG_TODAY = f"{cab.get('path', 'log')}/{TODAY}/"
 
 # get steps
 STEPS_COUNT = -1
-STEPS_COUNT_FILE = cabinet.get_file_as_array(
+STEPS_COUNT_FILE = cab.get_file_as_array(
     "cabinet/steps.md", file_path=PATH_BACKEND)
 
 if STEPS_COUNT_FILE:
@@ -39,11 +46,11 @@ with open(f"{PATH_LOG_BACKEND}/log_steps.csv", "a+", encoding="utf-8") as file_s
     file_steps.write(f"\n{TODAY},{STEPS_COUNT}")
 
 # get reminders sent
-REMINDERS_COUNT = cabinet.get("remindmail", "sent_today") or 0
+REMINDERS_COUNT = cab.get("remindmail", "sent_today") or 0
 
-cabinet.log("Setting remindmail -> sent_today to 0", level="debug")
-cabinet.put("remindmail", "sent_today", 0)
-cabinet.log(f"""remindmail -> sent_today is {cabinet.get("remindmail", "sent_today")}""")
+cab.log("Setting remindmail -> sent_today to 0", level="debug")
+cab.put("remindmail", "sent_today", 0)
+cab.log(f"""remindmail -> sent_today is {cab.get("remindmail", "sent_today")}""")
 
 # log reminders
 with open(f"{PATH_LOG_BACKEND}/log_reminders.csv", "a+", encoding="utf-8") as file_rmm:
@@ -59,7 +66,7 @@ os.system(f"mkdir -p {PATH_LOG_BACKEND}/cabinet")
 
 # copy key files to backend
 print("Copying files to backend\n")
-remind_src = f"{cabinet.get('path', 'notes', 'local')}/remind.md"
+remind_src = f"{cab.get('path', 'notes', 'local')}/remind.md"
 remind_dst = f"{PATH_LOG_BACKEND}/tasks/remind {TODAY}.md"
 os.system(f"cp -r {remind_src} '{remind_dst}'")
 
@@ -67,29 +74,35 @@ os.system(f"cp -r {remind_src} '{remind_dst}'")
 os.system(f"crontab -l > '{PATH_LOG_BACKEND}/cron/Cron {TODAY}.md'")
 os.system(f"cp -r {PATH_BASHRC} '{PATH_LOG_BACKEND}/bash/Bash {TODAY}.md'")
 
-cabinet.log(f"Cron, Bash, and remind.md copied to {PATH_LOG_BACKEND}.")
+cab.log(f"Cron, Bash, and remind.md copied to {PATH_LOG_BACKEND}.")
 
 # spotify stats
-spotify_count = cabinet.get("spotipy", "total_tracks")
-spotify_avg_year = cabinet.get("spotipy", "average_year")
+spotify_count = cab.get("spotipy", "total_tracks")
+spotify_avg_year = cab.get("spotipy", "average_year")
 SPOTIFY_STATS = "<b>Spotify Stats:</b><br>"
-SPOTIFY_LOG = "<font face='monospace'>" + \
-    '<br>'.join(cabinet.get_file_as_array(
-        "LOG_SPOTIFY.log", file_path=PATH_LOG_TODAY)) + "</font><br><br>"
 
-if "ERROR —" in SPOTIFY_LOG:
-    status_email_alerts.append('Spotify')
-    SPOTIFY_STATS += "Please review your songs! We found some errors.<br><br>"
+
+spotify_log_array = cab.get_file_as_array(
+        "LOG_SPOTIFY.log", file_path=PATH_LOG_TODAY)
+
+if spotify_log_array is not None:
+    SPOTIFY_LOG = "<font face='monospace'>" + \
+        '<br>'.join(cab.get_file_as_array(
+            "LOG_SPOTIFY.log", file_path=PATH_LOG_TODAY)) + "</font><br><br>"
+
+    if "ERROR —" in SPOTIFY_LOG:
+        status_email_alerts.append('Spotify')
+        SPOTIFY_STATS += "Please review your songs! We found some errors.<br><br>"
 
 SPOTIFY_STATS += f"""
     You have {spotify_count} songs; the mean song is from {spotify_avg_year}.<br><br>
     """
 
-if 'Spotify' in status_email_alerts:
+if 'Spotify' in status_email_alerts and spotify_log_array is not None:
     SPOTIFY_STATS += SPOTIFY_LOG
 
 # daily log
-daily_log_file_array = cabinet.get_file_as_array(
+daily_log_file_array = cab.get_file_as_array(
     f"LOG_DAILY_{TODAY}.log", file_path=PATH_LOG_TODAY)
 DAILY_LOG_FILE = '<br>'.join(daily_log_file_array)
 
@@ -114,7 +127,7 @@ STATUS_EMAIL += SPOTIFY_STATS
 STATUS_EMAIL += f"""<b>Reminders:</b><br>{REMINDERS_COUNT} reminders were sent today.<br><br>"""
 
 # weather
-weather_data = cabinet.get("weather", "data")
+weather_data = cab.get("weather", "data")
 WEATHER_DATA_TEXT = "Unavailable"
 if weather_data:
     WEATHER_DATA_TEXT = f"""

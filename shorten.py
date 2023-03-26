@@ -9,8 +9,9 @@ import sys
 import random
 import string
 from os import system
-from cabinet import cabinet
+from cabinet import Cabinet
 
+cab = Cabinet()
 
 def get_url():
     """
@@ -29,7 +30,7 @@ if not sys.argv[1].startswith('http'):
     sys.exit(-1)
 
 DIRECTORY = get_url()
-system((f"""{cabinet.get('shorten_ssh')} "echo '\nRewriteCond"""
+system((f"""{cab.get('shorten_ssh')} "echo '\nRewriteCond"""
         f""" %{{REQUEST_URI}} ^/u/{DIRECTORY}.*\nRewriteRule (.*)"""
         f""" {sys.argv[1]}' >> www/.htaccess" """))
 print(f"https://tyler.cloud/u/{DIRECTORY}")

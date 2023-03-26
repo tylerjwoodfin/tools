@@ -5,7 +5,9 @@ This tool is specific to the original developer and is used to publish to PyPi.
 import sys
 import os.path
 from datetime import datetime
-from cabinet import cabinet
+from cabinet import Cabinet
+
+cab = Cabinet()
 
 BUILD_OPTIONS = ['remindmail', 'cabinet']
 
@@ -15,10 +17,10 @@ if len(sys.argv) < 2 or sys.argv[1] not in BUILD_OPTIONS:
     sys.exit(1)
 
 if sys.argv[1] == 'remindmail':
-    PATH_SRC = cabinet.get("path", "remindmail", "src") \
+    PATH_SRC = cab.get("path", "remindmail", "src") \
         or f"{os.path.expanduser('~')}/git/remindmail"
 else:
-    PATH_SRC = cabinet.get("path", "cabinet", "src") \
+    PATH_SRC = cab.get("path", "cabinet", "src") \
         or f"{os.path.expanduser('~')}/git/cabinet"
 
 DEFAULT_CONFIG_FILE = f"{PATH_SRC}/setup.cfg"

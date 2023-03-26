@@ -13,10 +13,12 @@ import time
 import random
 import sys
 import requests
-from cabinet import cabinet, mail
+from cabinet import Cabinet, mail
 
-lat = cabinet.get("latitude")
-lon = cabinet.get("longitude")
+cab = Cabinet()
+
+lat = cab.get("latitude")
+lon = cab.get("longitude")
 
 
 def datetime_from_utc_to_local(utc_datetime):
@@ -54,12 +56,12 @@ def convert_temperature_c_to_f(temp):
 
 
 # context variables
-plantyStatus = cabinet.get("planty", "status")
+plantyStatus = cab.get("planty", "status")
 now = datetime.datetime.now()
 
 # Call API
 url_request = (f"https://api.openweathermap.org/data/2.5/onecall"
-               f"?lat={lat}&lon={lon}&appid={cabinet.get('weather', 'api_key')}")
+               f"?lat={lat}&lon={lon}&appid={cab.get('weather', 'api_key')}")
 print(f"Calling API at {url_request}")
 
 response = requests.get(url_request, timeout=30).json()
@@ -91,9 +93,9 @@ weatherData = {
     "tomorrow_sunrise": sunrise_tomorrow_formatted,
     "tomorrow_sunset": sunset_tomorrow_formatted}
 
-cabinet.put("weather", "data", weatherData)
+cab.put("weather", "data", weatherData)
 
-if cabinet.get("weather", "alert_walk_sent") < (time.time() - 43200) and now.hour >= 10:
+if cab.get("weather", "alert_walk_sent") < (time.time() - 43200) and now.hour >= 10:
     GOOD_TEMP = (65 <= temperature <= 85) or (72 <= temperature <= 90)
     if GOOD_TEMP and wind < 10 and timeToSunset > 2:
         message = f"""\
@@ -108,39 +110,39 @@ if cabinet.get("weather", "alert_walk_sent") < (time.time() - 43200) and now.hou
                     Here's a close place for you to walk to.</a></h2>"""
 
         mail.send("Here's a close place to walk today!", message)
-        cabinet.put("weather", "alert_walk_sent", int(time.time()))
-        cabinet.put("Walk Alert Sent")
+        cab.put("weather", "alert_walk_sent", int(time.time()))
+        cab.put("Walk Alert Sent")
 
-plantyAlertSent = cabinet.get("weather", "alert_planty_sent")
-plantyAlertChecked = cabinet.get("weather", "alert_planty_checked")
+plantyAlertSent = cab.get("weather", "alert_planty_sent")
+plantyAlertChecked = cab.get("weather", "alert_planty_checked")
 
 if len(sys.argv) > 1 and sys.argv[1] == 'force' or \
     (not plantyAlertSent or not plantyAlertChecked or
      (int(plantyAlertSent) < (time.time() - 43200) and
         int(plantyAlertChecked) < (time.time() - 21600))):
-    cabinet.log(
+    cab.log(
         f"Checked Planty ({plantyStatus}): low {low_tomorrow}, high {high}")
-    cabinet.put("weather", "alert_planty_checked", int(time.time()))
+    cab.put("weather", "alert_planty_checked", int(time.time()))
     if low_tomorrow < 55 and plantyStatus == "out":
         try:
             mail.send("Take Planty In This Afternoon",
                       (f"Hi Tyler,<br><br>The low tonight is {low_tomorrow}°."
                        f" Please take Planty in!"),
-                      to_addr=cabinet.get("weather", "alert_planty_emails"))
-            cabinet.put(
+                      to_addr=cab.get("weather", "alert_planty_emails"))
+            cab.put(
                 "weather", "alert_planty_sent", int(time.time()))
         except IOError as e:
-            cabinet.log(f"Could not send Planty email: {e}", level="error")
-        cabinet.put("planty", "status", "in")
+            cab.log(f"Could not send Planty email: {e}", level="error")
+        cab.put("planty", "status", "in")
     if (high > 80 or low_tomorrow >= 56) and plantyStatus == "in":
         try:
             EMAIL = (f"Hi Tyler,<br><br>It looks like a nice day!"
                      f" It's going to be around {high}°. Please take Planty out.")
 
             mail.send("Take Planty Out This Afternoon", EMAIL,
-                      to_addr=cabinet.get("weather", "alert_planty_emails"))
-            cabinet.put(
+                      to_addr=cab.get("weather", "alert_planty_emails"))
+            cab.put(
                 "weather", "alert_planty_sent", int(time.time()))
         except IOError as e:
-            cabinet.log(f"Could not send Planty email: {e}", level="error")
-        cabinet.put("planty", "status", "out")
+            cab.log(f"Could not send Planty email: {e}", level="error")
+        cab.put("planty", "status", "out")

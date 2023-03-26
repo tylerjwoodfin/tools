@@ -7,9 +7,11 @@ see README.md for instructions
 import os
 import sys
 import openai
-from cabinet import cabinet
+from cabinet import Cabinet
 
-openai.api_key = cabinet.get("keys", "openai")
+cab = Cabinet()
+
+openai.api_key = cab.get("keys", "openai")
 
 
 def submit(query, log="", debug=False):

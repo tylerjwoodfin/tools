@@ -5,11 +5,13 @@ kasalights - see README.md
 import sys
 import asyncio
 import kasa
-from cabinet import cabinet
+from cabinet import Cabinet
+
+cab = Cabinet()
 
 dimmers = kasa.Discover()
 
-devices = cabinet.get("lights") or {}
+devices = cab.get("lights") or {}
 devices_keys = devices.keys()
 
 
@@ -28,7 +30,7 @@ async def main():
         for dev in found_devices:
             devices[found_devices[dev].alias.lower()] = dev
 
-        cabinet.put("lights", devices)
+        cab.put("lights", devices)
 
     # parse args
     device = ''

@@ -7,33 +7,27 @@ and save a new diary entry (stored in my cloud provider as a markdown file)
 import os
 import tempfile
 import datetime
-from sys import argv
 from subprocess import call
-from cabinet import cabinet
+from cabinet import Cabinet
+
+cab = Cabinet()
 
 EDITOR = os.environ.get('EDITOR', 'vim')
-PATH_DIARY = cabinet.get("path", "diary")
-PATH_NOTES_LOCAL = cabinet.get('path', 'notes', 'local')
-PATH_NOTES_CLOUD = cabinet.get('path', 'notes', 'cloud')
+PATH_DIARY = cab.get("path", "diary")
+PATH_NOTES = cab.get('path', 'notes')
 FILENAME = f"{PATH_DIARY}/{datetime.datetime.now().strftime('%Y %m %d %H.%M.%S')}.md"
 
 with tempfile.NamedTemporaryFile(mode='w+', suffix=".tmp") as tf:
 
-    if len(argv) == 1:
-        tf.write('')
-        tf.flush()
-        call([EDITOR, tf.name])
-        tf.seek(0)
-        DATA = tf.read()
-    else:
-        print("Pulling...")
-        os.system(f"rclone sync {PATH_NOTES_CLOUD} {PATH_NOTES_LOCAL}")
-        print("Pulled.")
-        DATA = ' '.join(argv[1:])
+    tf.write('')
+    tf.flush()
+    call([EDITOR, tf.name])
+    tf.seek(0)
+    DATA = tf.read()
 
     if len(DATA) > 0:
-        print("Saving...")
-        cabinet.write_file(
+        cab.write_file(
             FILENAME, "notes", DATA)
+        print("Saved.")
     else:
         print("No changes made.")
