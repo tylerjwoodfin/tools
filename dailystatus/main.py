@@ -1,7 +1,8 @@
 """
-A simple module to chat with GPT3
+Sends me a daily status email with key information
 """
 
+import main as openai
 import os
 import sys
 import pwd
@@ -12,8 +13,6 @@ from cabinet import Cabinet, mail
 # Add the openai directory to the sys path
 cab = Cabinet()
 sys.path.insert(0, cab.get("path", "openai"))
-
-import main as openai
 
 cab.log("Started Daily Tasks")
 
@@ -50,7 +49,8 @@ REMINDERS_COUNT = cab.get("remindmail", "sent_today") or 0
 
 cab.log("Setting remindmail -> sent_today to 0", level="debug")
 cab.put("remindmail", "sent_today", 0)
-cab.log(f"""remindmail -> sent_today is {cab.get("remindmail", "sent_today")}""")
+cab.log(
+    f"""remindmail -> sent_today is {cab.get("remindmail", "sent_today")}""")
 
 # log reminders
 with open(f"{PATH_LOG_BACKEND}/log_reminders.csv", "a+", encoding="utf-8") as file_rmm:
@@ -83,7 +83,7 @@ SPOTIFY_STATS = "<b>Spotify Stats:</b><br>"
 
 
 spotify_log_array = cab.get_file_as_array(
-        "LOG_SPOTIFY.log", file_path=PATH_LOG_TODAY)
+    "LOG_SPOTIFY.log", file_path=PATH_LOG_TODAY)
 
 if spotify_log_array is not None:
     SPOTIFY_LOG = "<font face='monospace'>" + \
@@ -124,7 +124,8 @@ if len(DAILY_LOG_FILTERED) > 0:
 
 STATUS_EMAIL += SPOTIFY_STATS
 
-STATUS_EMAIL += f"""<b>Reminders:</b><br>{REMINDERS_COUNT} reminders were sent today.<br><br>"""
+SENT_TODAY = " was" if REMINDERS_COUNT == 1 else "s were"
+STATUS_EMAIL += f"<b>Reminders:</b><br>{REMINDERS_COUNT} reminder{SENT_TODAY} sent today.<br><br>"
 
 # weather
 weather_data = cab.get("weather", "data")
