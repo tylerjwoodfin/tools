@@ -2,9 +2,7 @@
 Sends me a daily status email with key information
 """
 
-import main as openai
 import os
-import sys
 import pwd
 import datetime
 
@@ -12,18 +10,9 @@ from cabinet import Cabinet, mail
 
 # Add the openai directory to the sys path
 cab = Cabinet()
-sys.path.insert(0, cab.get("path", "openai"))
-
-cab.log("Started Daily Tasks")
-
-GREETING = ""
-try:
-    GREETING = openai.submit("give me a cute greeting for an email")
-except Exception as error:
-    cab.log(f"Error fetching daily status greeting: {error}", level="warn")
 status_email_alerts = []
 
-STATUS_EMAIL = f"Dear Tyler,<br><br>{GREETING} This is your daily status report.<br><br>"
+STATUS_EMAIL = "Dear Tyler,<br><br> This is your daily status report.<br><br>"
 
 DIR_USER = pwd.getpwuid(os.getuid())[0]
 TODAY = datetime.date.today()
