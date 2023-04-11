@@ -27,10 +27,25 @@ borg create                         \
     --compression lz4               \
     --exclude-caches                \
                                     \
-    ::'{hostname}-{now}'            \
-    /home/tyler/syncthing
+    ::'{hostname}-notes-{now}'      \
+    /home/tyler/syncthing/notes
 
-backup_exit=$?
+notes_backup_exit=$?
+
+# Backup /home/tyler/syncthing (excluding notes)
+
+borg create                         \
+    --verbose                       \
+    --filter AME                    \
+    --list                          \
+    --stats                         \
+    --show-rc                       \
+    --compression lz4               \
+    --exclude-caches                \
+    --exclude /home/tyler/syncthing/notes \
+                                    \
+    ::'{hostname}-syncthing-{now}'  \
+    /home/tyler/syncthing
 
 info "Pruning repository"
 
@@ -58,7 +73,8 @@ borg compact
 compact_exit=$?
 
 # use highest exit code as global exit code
-global_exit=$(( backup_exit > prune_exit ? backup_exit : prune_exit ))
+global_exit=$(( notes_backup_exit > syncthing_backup_exit ? notes_backup_exit : syncthing_backup_exit ))
+global_exit=$(( prune_exit > global_exit ? prune_exit : global_exit ))
 global_exit=$(( compact_exit > global_exit ? compact_exit : global_exit ))
 
 if [ ${global_exit} -eq 0 ]; then
