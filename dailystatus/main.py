@@ -19,6 +19,7 @@ TODAY = datetime.date.today()
 PATH_BACKEND = cab.get("path", "cabinet", "log-backup")
 PATH_LOG_BACKEND = f"{PATH_BACKEND}/log"
 PATH_BASHRC = f"/home/{DIR_USER}/.bashrc"
+PATH_NOTES = cab.get('path', 'notes')
 PATH_LOG_TODAY = f"{cab.get('path', 'log')}/{TODAY}/"
 
 # get steps
@@ -48,22 +49,18 @@ with open(f"{PATH_LOG_BACKEND}/log_reminders.csv", "a+", encoding="utf-8") as fi
 
 # create backend folders
 print(f"\nCreating folders in {PATH_LOG_BACKEND}, if necessary")
-os.system(f"mkdir -p {PATH_LOG_BACKEND}/tasks")
-os.system(f"mkdir -p {PATH_LOG_BACKEND}/cron")
-os.system(f"mkdir -p {PATH_LOG_BACKEND}/bash")
-os.system(f"mkdir -p {PATH_LOG_BACKEND}/cabinet")
 
-# copy key files to backend
+directories = ["cron", "bash", "cabinet", "notes"]
+for directory in directories:
+    os.system(f"mkdir -p {os.path.join(PATH_LOG_BACKEND, directory)}")
+
+# backup cron, bash, notes
 print("Copying files to backend\n")
-remind_src = f"{cab.get('path', 'notes', 'local')}/remind.md"
-remind_dst = f"{PATH_LOG_BACKEND}/tasks/remind {TODAY}.md"
-os.system(f"cp -r {remind_src} '{remind_dst}'")
-
-# copy cron to backup
 os.system(f"crontab -l > '{PATH_LOG_BACKEND}/cron/Cron {TODAY}.md'")
 os.system(f"cp -r {PATH_BASHRC} '{PATH_LOG_BACKEND}/bash/Bash {TODAY}.md'")
+os.system(f"zip -r '{PATH_LOG_BACKEND}/notes/notes {TODAY}.zip' {PATH_NOTES}")
 
-cab.log(f"Cron, Bash, and remind.md copied to {PATH_LOG_BACKEND}.")
+cab.log(f"Cron, Bash, Notes, and remind.md copied to {PATH_LOG_BACKEND}.")
 
 # spotify stats
 spotify_count = cab.get("spotipy", "total_tracks")

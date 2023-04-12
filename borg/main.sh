@@ -58,7 +58,7 @@ borg prune                          \
     --list                          \
     --glob-archives '{hostname}-*'  \
     --show-rc                       \
-    --keep-daily    1               \
+    --keep-daily    2               \
     --keep-weekly   2               \
     --keep-monthly  1
 
