@@ -6,10 +6,11 @@ import os
 import pwd
 import datetime
 
-from cabinet import Cabinet, mail
+from cabinet import Cabinet, Mail
 
 # Add the openai directory to the sys path
 cab = Cabinet()
+mail = Mail()
 status_email_alerts = []
 
 STATUS_EMAIL = "Dear Tyler,<br><br> This is your daily status report.<br><br>"

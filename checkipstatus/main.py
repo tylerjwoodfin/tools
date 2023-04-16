@@ -4,9 +4,10 @@ checkipstatus - see README
 
 import json
 from requests import get
-from cabinet import Cabinet, mail
+from cabinet import Cabinet, Mail
 
 cab = Cabinet()
+mail = Mail()
 
 ip_current = cab.get("currentIP")
 

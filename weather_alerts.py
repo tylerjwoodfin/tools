@@ -13,9 +13,10 @@ import time
 import random
 import sys
 import requests
-from cabinet import Cabinet, mail
+from cabinet import Cabinet, Mail
 
 cab = Cabinet()
+mail = Mail()
 
 lat = cab.get("latitude")
 lon = cab.get("longitude")

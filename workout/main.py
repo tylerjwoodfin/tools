@@ -16,9 +16,10 @@ Format:
 import sys
 import time
 import datetime
-from cabinet import Cabinet, mail
+from cabinet import Cabinet, Mail
 
 cab = Cabinet()
+mail = Mail()
 
 TODAY = datetime.date.today()
 DAY_EPOCH = int(int(time.time())/60/60/24)
