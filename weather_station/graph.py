@@ -7,8 +7,8 @@ import json
 import os
 from datetime import datetime, timedelta
 import pytz
+import plotly
 import cabinet
-import plotly.graph_objs as go
 
 TODAY = str(datetime.today().strftime('%Y-%m-%d'))
 TODAY_DT = datetime.today()
@@ -34,7 +34,8 @@ def get_weather_files():
         return []
 
     # Filter out any files that don't start with "weather "
-    weather_files = [file for file in files_in_weather_folder if file.startswith("weather ")]
+    weather_files = [
+        file for file in files_in_weather_folder if file.startswith("weather ")]
 
     # Get the names of files for last 3 days
     last_three_days = [(TODAY_DT - timedelta(days=i)
@@ -100,18 +101,29 @@ central_timezone = pytz.timezone('US/Central')
 timestamps = [ts.astimezone(central_timezone) for ts in timestamps]
 
 # Create traces
-trace1 = go.Scatter(x=timestamps, y=temperatures_fahrenheit,
-                    name='Temperature (Fahrenheit)', yaxis='y1')
-trace2 = go.Scatter(x=timestamps, y=humidities, name='Humidity', yaxis='y2')
+trace1 = plotly.graph_objs.Scatter(x=timestamps, y=temperatures_fahrenheit,
+                                   name='Temperature (Fahrenheit)', yaxis='y1')
+trace2 = plotly.graph_objs.Scatter(
+    x=timestamps, y=humidities, name='Humidity', yaxis='y2')
 
 # Set layout
-layout = go.Layout(title='Temperature and Humidity, Past 36 Hours',
-                   xaxis=dict(title='Time'),
-                   yaxis=dict(title='Temperature (F)', side='left', range=[
-                       min(temperatures_fahrenheit)-5, max(temperatures_fahrenheit)+5]),
-                   yaxis2=dict(title='Humidity (%)', side='right',
-                               overlaying='y', range=[min(humidities)-5, max(humidities)+5]))
+layout = plotly.graph_objs.Layout(
+    title='Temperature and Humidity, Past 36 Hours',
+    xaxis=dict(title='Time'),
+    yaxis=dict(title='Temperature (F)', side='left', range=[
+        min(temperatures_fahrenheit)-5, max(temperatures_fahrenheit)+5]),
+    yaxis2=dict(title='Humidity (%)', side='right',
+                overlaying='y', range=[min(humidities)-5, max(humidities)+5]))
 
 # Create figure and show it
-fig = go.Figure(data=[trace1, trace2], layout=layout)
-fig.show()
+fig = plotly.graph_objs.Figure(data=[trace1, trace2], layout=layout)
+# fig.show()
+
+plotly.io.write_html(fig, file='/var/www/dashboard/html/weather-graph.html')
+DASHBOARD_HTML = """
+        <title>Dashboard</title>
+        <iframe id="igraph" scrolling="no" style="border:none;" seamless="seamless"
+        src="weather-graph.html" height="525" width="100%">
+        </iframe>"""
+
+cab.write_file('index.html', '/var/www/dashboard/html', DASHBOARD_HTML)
