@@ -110,20 +110,40 @@ trace2 = plotly.graph_objs.Scatter(
 layout = plotly.graph_objs.Layout(
     title='Temperature and Humidity, Past 36 Hours',
     xaxis=dict(title='Time'),
-    yaxis=dict(title='Temperature (F)', side='left', range=[
-        min(temperatures_fahrenheit)-5, max(temperatures_fahrenheit)+5]),
-    yaxis2=dict(title='Humidity (%)', side='right',
-                overlaying='y', range=[min(humidities)-5, max(humidities)+5]))
+    yaxis=dict(title='Temperature (F)', side='right',
+               autorange=True, fixedrange=True),
+    yaxis2=dict(title='Humidity (%)', side='left',
+                overlaying='y', autorange=True, fixedrange=True),
+    autosize=True,
+    legend=dict(y=1, orientation='h'))
 
-# Create figure and show it
+# write temperature data
+data = {}
+data['temperature'] = round(temperatures_fahrenheit[-1], 1)
+data['humidity'] = round(humidities[-1], 1)
+
+with open('/var/www/dashboard/html/data.json', 'w', encoding="utf-8") as outfile:
+    json.dump(data, outfile)
+
+# create fig
 fig = plotly.graph_objs.Figure(data=[trace1, trace2], layout=layout)
-# fig.show()
+html_graph = plotly.io.to_html(fig, include_plotlyjs=True)
 
-plotly.io.write_html(fig, file='/var/www/dashboard/html/weather-graph.html')
-DASHBOARD_HTML = """
-        <title>Dashboard</title>
-        <iframe id="igraph" scrolling="no" style="border:none;" seamless="seamless"
-        src="weather-graph.html" height="525" width="100%">
-        </iframe>"""
+html = f"""
+    <head>
+        <link rel="stylesheet" href="style.css">
+    </head>
+    <body>
+        <div id="stats">
+            <p>Current Temperature: <span id="current-temp">{round(temperatures_fahrenheit[-1], 1)}</span></p>
+            <p>Current Humidity: <span id="current-humidity">{round(humidities[-1], 1)}</span></p>
+        </div>
+        <div id="graph">
+        {html_graph}
+        </div>
+    </body>
+"""
 
-cab.write_file('index.html', '/var/www/dashboard/html', DASHBOARD_HTML)
+html_graph = f"<head><link rel='stylesheet' href='style.css'></head>{html_graph}"
+
+cab.write_file("weather-graph.html", "/var/www/dashboard/html", html_graph)
