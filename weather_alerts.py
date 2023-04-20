@@ -77,24 +77,25 @@ sunrise_tomorrow_formatted = time.strftime(
     '%Y-%m-%d %H:%M AM', time.localtime(response["daily"][1]["sunrise"]))
 sunset_tomorrow_formatted = time.strftime(
     '%Y-%m-%d %I:%M PM', time.localtime(response["daily"][1]["sunset"]))
+humidity = response["current"]["humidity"]
 
 high = convert_temperature_c_to_f(response["daily"][0]["temp"]["max"])
 wind = response["current"]["wind_speed"]
 sunset = response["daily"][0]["sunset"]
 timeToSunset = (sunset - time.time()) / 3600
 
-# set WEATHER_DATA
-weatherData = {
+weather_data = {
     "current_temperature": temperature,
     "current_conditions": conditions_now,
     "current_conditions_icon": conditions_now_icon,
+    "current_humidity": humidity,
     "tomorrow_high": high_tomorrow,
     "tomorrow_low": low_tomorrow,
     "tomorrow_conditions": conditions_tomorrow,
     "tomorrow_sunrise": sunrise_tomorrow_formatted,
     "tomorrow_sunset": sunset_tomorrow_formatted}
 
-cab.put("weather", "data", weatherData)
+cab.put("weather", "data", weather_data)
 
 if cab.get("weather", "alert_walk_sent") < (time.time() - 43200) and now.hour >= 10:
     GOOD_TEMP = (65 <= temperature <= 85) or (72 <= temperature <= 90)

@@ -119,8 +119,16 @@ layout = plotly.graph_objs.Layout(
 
 # write temperature data
 data = {}
-data['temperature'] = round(temperatures_fahrenheit[-1], 1)
-data['humidity'] = round(humidities[-1], 1)
+data['temperature_in'] = round(temperatures_fahrenheit[-1], 1)
+data['humidity_in'] = round(humidities[-1], 1)
+
+data['temperature_out'] = cab.get("weather", "data", "current_temperature")
+data['humidity_out'] = cab.get("weather", "data", "current_humidity")
+
+data['steps'] = cab.get_file_as_array("steps.md", cab.path_cabinet)
+
+if data['steps']:
+    data['steps'] = data['steps'][0].split(" ")[0]
 
 with open('/var/www/dashboard/html/data.json', 'w', encoding="utf-8") as outfile:
     json.dump(data, outfile)
@@ -128,21 +136,6 @@ with open('/var/www/dashboard/html/data.json', 'w', encoding="utf-8") as outfile
 # create fig
 fig = plotly.graph_objs.Figure(data=[trace1, trace2], layout=layout)
 html_graph = plotly.io.to_html(fig, include_plotlyjs=True)
-
-html = f"""
-    <head>
-        <link rel="stylesheet" href="style.css">
-    </head>
-    <body>
-        <div id="stats">
-            <p>Current Temperature: <span id="current-temp">{round(temperatures_fahrenheit[-1], 1)}</span></p>
-            <p>Current Humidity: <span id="current-humidity">{round(humidities[-1], 1)}</span></p>
-        </div>
-        <div id="graph">
-        {html_graph}
-        </div>
-    </body>
-"""
 
 html_graph = f"<head><link rel='stylesheet' href='style.css'></head>{html_graph}"
 
