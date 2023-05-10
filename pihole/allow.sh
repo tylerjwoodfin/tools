@@ -1,6 +1,19 @@
 #!/bin/sh
-blockDomains=$(cat /home/tyler/git/tools/pihole/blocklist)
+echo "starting"
 
-for domain in $blockDomains; do
-  sudo pihole --wild -d $domain
+blocklist_file=$(cabinet -g path blocklist)
+echo "blocklist_file = '${blocklist_file}'"
+
+if [[ -z "${blocklist_file}" ]]; then
+  echo "Error: blocklist_file (cabinet -g path blocklist) is empty"
+  exit 1
+fi
+
+blocklist_domains=$(cat "${blocklist_file}")
+
+for domain in $blocklist_domains; do
+  echo "blocking ${domain}..."
+  sudo pihole --wild -d "$domain"
 done
+
+echo "done"
