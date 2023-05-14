@@ -7,7 +7,6 @@ import json
 import os
 from datetime import datetime, timedelta
 import pytz
-import plotly
 import cabinet
 
 TODAY = str(datetime.today().strftime('%Y-%m-%d'))
@@ -100,23 +99,6 @@ utc_timezone = pytz.timezone('UTC')
 central_timezone = pytz.timezone('US/Central')
 timestamps = [ts.astimezone(central_timezone) for ts in timestamps]
 
-# Create traces
-trace1 = plotly.graph_objs.Scatter(x=timestamps, y=temperatures_fahrenheit,
-                                   name='Temperature (Fahrenheit)', yaxis='y1')
-trace2 = plotly.graph_objs.Scatter(
-    x=timestamps, y=humidities, name='Humidity', yaxis='y2')
-
-# Set layout
-layout = plotly.graph_objs.Layout(
-    title='Temperature and Humidity, Past 36 Hours',
-    xaxis=dict(title='Time'),
-    yaxis=dict(title='Temperature (F)', side='right',
-               autorange=True, fixedrange=True),
-    yaxis2=dict(title='Humidity (%)', side='left',
-                overlaying='y', autorange=True, fixedrange=True),
-    autosize=True,
-    legend=dict(y=1, orientation='h'))
-
 # write temperature data
 data = {}
 data['temperature_in'] = round(temperatures_fahrenheit[-1], 1)
@@ -130,13 +112,5 @@ data['steps'] = cab.get_file_as_array("steps.md", cab.path_cabinet)
 if data['steps']:
     data['steps'] = data['steps'][0].split(" ")[0]
 
-with open('/var/www/dashboard/html/data.json', 'w', encoding="utf-8") as outfile:
+with open('/var/www/html/dashboard/public/data.json', 'w', encoding="utf-8") as outfile:
     json.dump(data, outfile)
-
-# create fig
-fig = plotly.graph_objs.Figure(data=[trace1, trace2], layout=layout)
-html_graph = plotly.io.to_html(fig, include_plotlyjs=True)
-
-html_graph = f"<head><link rel='stylesheet' href='style.css'></head>{html_graph}"
-
-cab.write_file("weather-graph.html", "/var/www/dashboard/html", html_graph)
