@@ -21,7 +21,7 @@ PATH_BACKEND = cab.get("path", "cabinet", "log-backup")
 PATH_LOG_BACKEND = f"{PATH_BACKEND}/log"
 PATH_BASHRC = f"/home/{DIR_USER}/.bashrc"
 PATH_NOTES = cab.get('path', 'notes')
-PATH_LOG_TODAY = f"{cab.get('path', 'log')}/{TODAY}/"
+PATH_LOG_TODAY = f"{cab.path_log}{TODAY}/"
 
 # get steps
 STEPS_COUNT = -1
@@ -36,12 +36,7 @@ with open(f"{PATH_LOG_BACKEND}/log_steps.csv", "a+", encoding="utf-8") as file_s
     file_steps.write(f"\n{TODAY},{STEPS_COUNT}")
 
 # get reminders sent
-REMINDERS_COUNT = cab.get("remindmail", "sent_today") or 0
-
-cab.log("Setting remindmail -> sent_today to 0", level="debug")
-cab.put("remindmail", "sent_today", 0)
-cab.log(
-    f"""remindmail -> sent_today is {cab.get("remindmail", "sent_today")}""")
+REMINDERS_COUNT = os.popen('remind --sent-today').read() or 0
 
 # log reminders
 with open(f"{PATH_LOG_BACKEND}/log_reminders.csv", "a+", encoding="utf-8") as file_rmm:
