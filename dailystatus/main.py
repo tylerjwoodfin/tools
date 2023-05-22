@@ -6,6 +6,7 @@ import os
 import pwd
 import datetime
 
+from remind import remindmail_utils
 from cabinet import Cabinet, Mail
 
 # Add the openai directory to the sys path
@@ -36,7 +37,7 @@ with open(f"{PATH_LOG_BACKEND}/log_steps.csv", "a+", encoding="utf-8") as file_s
     file_steps.write(f"\n{TODAY},{STEPS_COUNT}")
 
 # get reminders sent
-REMINDERS_COUNT = os.popen('remind --sent-today').read() or 0
+REMINDERS_COUNT = remindmail_utils.RemindMailUtils().get_sent_today() or -1
 
 # log reminders
 with open(f"{PATH_LOG_BACKEND}/log_reminders.csv", "a+", encoding="utf-8") as file_rmm:
