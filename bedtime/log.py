@@ -6,6 +6,20 @@ import datetime
 import os
 import sys
 
+
+def remove_empty_lines(file_path):
+    """
+    Removes any empty lines from the file provided
+    :param file_path: the full path of the file
+    """
+    with open(file_path, 'r', newline='', encoding='utf-8') as file:
+        lines = [line for line in file if line.strip()]
+
+    # Rewrite the file with the non-empty lines
+    with open(file_path, 'w', newline='', encoding='utf-8') as file:
+        file.writelines(lines)
+
+
 # Set the path to the log file
 LOG_FILE = '/home/tyler/syncthing/log/log_bedtime.csv'
 
@@ -29,9 +43,13 @@ if now.hour < 4:
     date_str = yesterday.strftime('%Y-%m-%d')
 
 # Check if there is already a "bedtime" or "wakeup" entry for today's date
+
+remove_empty_lines(LOG_FILE)
+
 with open(LOG_FILE, 'r', encoding='utf-8') as csvfile:
     reader = csv.reader(csvfile)
     rows = list(reader)
+
     for i, row in enumerate(rows):
         if row[0] == 'bedtime' and row[1] == date_str:
             # Update the existing "bedtime" row with the current time
