@@ -5,6 +5,9 @@ import csv
 import datetime
 import os
 import sys
+from cabinet import Mail
+
+MAIL = Mail()
 
 
 def remove_empty_lines(file_path):
@@ -78,3 +81,17 @@ elif sys.argv[1] == 'wakeup' and now.hour >= 4:
         with open(LOG_FILE, 'a', encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(['wakeup', date_str, time_str])
+
+        # If last night's bedtime was later than 2AM, send an email to donate $23
+        with open(LOG_FILE, 'r', encoding='utf-8') as csvfile:
+            reader = csv.reader(csvfile)
+            BEDTIME = None
+            for row in reversed(list(reader)):
+                if row[0] == 'bedtime':
+                    BEDTIME = datetime.datetime.strptime(row[2], '%H:%M')
+                    break
+
+            if BEDTIME and BEDTIME.hour >= 2 and BEDTIME.hour <= 6:
+                MAIL.send("Late Bedtime: $23 to Charity",
+                          f"Your bedtime last night was {BEDTIME.strftime('%H:%M')} \
+                            - please get to bed at a more reasonable time.")
