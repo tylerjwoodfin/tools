@@ -5,9 +5,10 @@ import csv
 import datetime
 import os
 import sys
-from cabinet import Mail
+from cabinet import Cabinet, Mail
 
 MAIL = Mail()
+CAB = Cabinet()
 
 
 def remove_empty_lines(file_path):
@@ -88,10 +89,19 @@ elif sys.argv[1] == 'wakeup' and now.hour >= 4:
             BEDTIME = None
             for row in reversed(list(reader)):
                 if row[0] == 'bedtime':
-                    BEDTIME = datetime.datetime.strptime(row[2], '%H:%M')
+                    BEDTIME = datetime.datetime.strptime(
+                        row[2], '%H:%M').time()
                     break
 
-            if BEDTIME and BEDTIME.hour >= 2 and BEDTIME.hour <= 6:
-                MAIL.send("Late Bedtime: $23 to Charity",
-                          f"Your bedtime last night was {BEDTIME.strftime('%H:%M')} \
-                            - please get to bed at a more reasonable time.")
+            # 24-hour format as a string, i.e. "1:30"
+            bedtime_limit = CAB.get('bedtime', 'limit')
+            bedtime_limit_amount = CAB.get('bedtime', 'limit_amount') or 23
+
+            if bedtime_limit:
+                bedtime_limit = datetime.datetime.strptime(
+                    bedtime_limit, '%H:%M').time()
+
+                if BEDTIME and (bedtime_limit <= BEDTIME <= datetime.time(6, 0)):
+                    MAIL.send(f"Late Bedtime: ${bedtime_limit_amount} to Charity",
+                              f"Your bedtime last night was {BEDTIME.strftime('%H:%M')} \
+                                        - please get to bed at a more reasonable time.")
