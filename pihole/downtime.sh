@@ -1,11 +1,17 @@
 #!/bin/sh
 echo "starting"
 
-blocklist_file=$(/home/tyler/.local/bin/cabinet -g path blocklist)
+if [[ -z "$2" ]]; then
+  echo "Error: Missing argument. Please provide the second argument."
+  exit 1
+fi
+
+# $2 can be 'afternoon' or 'overnight', etc. to read the corresponding property
+blocklist_file=$(/home/tyler/.local/bin/cabinet -g path blocklist "$2")
 echo "blocklist_file = '${blocklist_file}'"
 
 if [[ -z "${blocklist_file}" ]]; then
-  echo "Error: blocklist_file (cabinet -g path blocklist) is empty"
+  echo "Error: blocklist_file (cabinet -g path blocklist $2) is empty"
   exit 1
 fi
 
