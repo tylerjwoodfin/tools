@@ -1,10 +1,30 @@
 """
-Sends me a daily status email with key information
+This script generates a daily status email with key information and sends it to me each evening.
+
+The script performs the following tasks:
+- Collects various data and statistics related to my activities
+- Backs up important files such as cron, bash, and notes
+- Prunes excess log backups
+- Retrieves and includes Spotify statistics
+- Retrieves and includes the daily log file
+- Retrieves and includes weather information for tomorrow
+- Sends the generated status email
+
+The script relies on the following external modules:
+- `remindmail_utils` from the `remind` package for handling reminders
+- `Cabinet` for accessing configuration settings and file utilities
+- `Mail` for sending email notifications
+
+Note: This code snippet is a personal script intended only for the developer.
+Additional configuration is required to run successfully on your machine.
 """
+
 
 import os
 import pwd
 import datetime
+import glob
+import subprocess
 
 from remind import remindmail_utils
 from cabinet import Cabinet, Mail
@@ -23,6 +43,9 @@ PATH_LOG_BACKEND = f"{PATH_BACKEND}/log"
 PATH_BASHRC = f"/home/{DIR_USER}/.bashrc"
 PATH_NOTES = cab.get('path', 'notes')
 PATH_LOG_TODAY = f"{cab.path_log}{TODAY}/"
+
+LOG_BACKUPS_MAX = cab.get("backups", "log_backup_limit") or 14
+LOG_BACKUPS_LOCATION = f"{cab.get('path', 'backups')}/log"
 
 # get steps
 STEPS_COUNT = -1
@@ -51,11 +74,32 @@ directories = ["cron", "bash", "cabinet", "notes"]
 for directory in directories:
     os.system(f"mkdir -p {os.path.join(PATH_LOG_BACKEND, directory)}")
 
-# backup cron, bash, notes
-print("Copying files to backend\n")
-os.system(f"crontab -l > '{PATH_LOG_BACKEND}/cron/Cron {TODAY}.md'")
-os.system(f"cp -r {PATH_BASHRC} '{PATH_LOG_BACKEND}/bash/Bash {TODAY}.md'")
-os.system(f"zip -r '{PATH_LOG_BACKEND}/notes/notes {TODAY}.zip' {PATH_NOTES}")
+# Backup cron, bash, notes
+cab.log("Backing up key files...\n")
+
+try:
+    subprocess.run(
+        f"crontab -l > '{PATH_LOG_BACKEND}/cron/Cron {TODAY}.md'", shell=True, check=True)
+    subprocess.run(
+        f"cp -r {PATH_BASHRC} '{PATH_LOG_BACKEND}/bash/Bash {TODAY}.md'", shell=True, check=True)
+    subprocess.run(
+        f"zip -r '{PATH_LOG_BACKEND}/notes/notes {TODAY}.zip' {PATH_NOTES}", shell=True, check=True)
+    subprocess.run(
+        f"zip -r '{LOG_BACKUPS_LOCATION}/log folder backup {TODAY}.zip' \
+{PATH_LOG_BACKEND} --exclude='{PATH_LOG_BACKEND}/songs/*'",
+        shell=True, check=True)
+except subprocess.CalledProcessError as error:
+    cab.log(f"Could not create ZIP: {str(error)}", level="error")
+
+# delete log folder backups above a certain size (default: 14)
+cab.log(f"Pruning {LOG_BACKUPS_LOCATION}...")
+zip_files = glob.glob(f"{LOG_BACKUPS_LOCATION}/*.zip")
+zip_files.sort(key=os.path.getmtime)
+excess_count = len(zip_files) - LOG_BACKUPS_MAX
+
+if excess_count > 0:
+    for i in range(excess_count):
+        os.remove(zip_files[i])
 
 cab.log(f"Cron, Bash, Notes, and remind.md copied to {PATH_LOG_BACKEND}.")
 
