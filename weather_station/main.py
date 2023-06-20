@@ -6,6 +6,7 @@ import json
 from datetime import datetime
 import time
 import smbus2
+# pylint: disable=import-error
 import bme280
 import requests
 from cabinet import Cabinet
