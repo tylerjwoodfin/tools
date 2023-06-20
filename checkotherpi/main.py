@@ -5,7 +5,7 @@ import os
 import sys
 import socket
 
-from cabinet import mail
+from cabinet import Mail
 
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.connect(("8.8.8.8", 80))
@@ -29,4 +29,4 @@ for i in range(2):
 
 # sister device not found
 print(RESPONSE)
-mail.send(f"{HOSTNAME_NAME} is Down", f"Your server at {HOSTNAME} is down.")
+Mail().send(f"{HOSTNAME_NAME} is Down", f"Your server at {HOSTNAME} is down.")

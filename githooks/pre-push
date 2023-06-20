@@ -1,0 +1,43 @@
+#!/bin/bash
+
+# Function to run Pylint on a single Python file
+run_pylint() {
+  pylint "$1" --output-format=text --disable=R --score=False | xargs
+}
+
+# Retrieve the root directory of the repository
+repo_root=$(git rev-parse --show-toplevel)
+
+# Iterate over all Python files in the repository
+files=$(git ls-tree --full-tree -r --name-only HEAD | grep '\.py$')
+non_refactor_found=false
+
+echo -e "Executing pre-push hook...\n"
+total_files=$(echo "$files" | wc -l)
+progress=0
+
+for file in $files; do
+  # Run Pylint and store the output
+  pylint_output=$(run_pylint "$repo_root/$file")
+
+  # Check if any non-refactor messages are present or pylint command failed
+  if [[ -n "$pylint_output" ]]; then
+    printf "Pylint found issues in $file:\n"
+    echo "$pylint_output\n"
+    non_refactor_found=true
+  fi
+
+  # Update progress bar
+  progress=$((progress + 1))
+  percentage=$((progress * 100 / total_files))
+  printf "Progress: [%-50s] %d%%\r" "$(printf '#%.0s' $(seq 1 $((progress * 50 / total_files))))" "$percentage"
+  sleep 0.1  # Delay for demonstration purposes, adjust as needed
+done
+
+echo  # Print a newline after the progress bar
+
+# If non-refactor issues found, block the push
+if [ "$non_refactor_found" = true ]; then
+  echo "Please fix all issues before pushing."
+  exit 1
+fi

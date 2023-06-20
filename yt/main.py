@@ -38,7 +38,7 @@ ydl_opts = {
 }
 
 with yt_dlp.YoutubeDL(ydl_opts if not IS_VIDEO else None) as ydl:
-    error_code = ydl.download(URL)
+    ERROR_CODE = ydl.download(URL)
 
 # move all downloads to desktop
 system("mv *.webm ~/Desktop; mv *.mp3 ~/Desktop")

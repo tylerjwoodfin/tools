@@ -7,6 +7,7 @@ see README.md for instructions
 import os
 import sys
 import openai
+#pylint: disable=wrong-import-order
 from cabinet import Cabinet
 
 cab = Cabinet()
