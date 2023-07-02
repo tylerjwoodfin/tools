@@ -1,80 +1,101 @@
 """
-openai
-
-see README.md for instructions
+Python voice assistant experiment
 """
-
-import os
-import sys
-import openai
-#pylint: disable=wrong-import-order
+import subprocess
+import requests
+from gtts import gTTS
 from cabinet import Cabinet
+import speech_recognition as sr
 
 cab = Cabinet()
 
-openai.api_key = cab.get("keys", "openai")
+API_ENDPOINT = "https://api.openai.com/v1/chat/completions"
+API_KEY = cab.get("keys", "openai")
 
 
-def submit(query, log="", debug=False):
+def listen():
     """
-    submits `query` to openai
+    Listen to user input using the microphone.
     """
-    response = openai.Completion.create(
-        model="text-davinci-002",
-        prompt=f"""{log}\n{query}""",
-        temperature=0.6,
-        max_tokens=1024
-    )
-
-    # debugging
-    if debug:
-        print(".......")
-        print(query)
-        print(".......")
-        print(response)
-        print(".......")
-
-    to_return = response["choices"][0]["text"]
-    if "\n\n" in to_return:
-        to_return = to_return.split("\n\n")[1]
-    return to_return
-
-
-def cli():
-    """
-    a back-and-forth interaction with GPT3
-    """
-
-    log = ""
-    print(f"""{submit("Please greet me.", "")}\n\n""")
-
-    while True:
+    recognizer = sr.Recognizer()
+    with sr.Microphone() as source:
+        print("Listening...")
+        subprocess.run(["play", "listen.mp3", "tempo", "1.5"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        audio = recognizer.listen(source)
         try:
-            user_input = input("> ")
-
-            if user_input == 'clear':
-                os.system('clear')
-
-            output = (submit(user_input, log))
-            if not output:
-                print("I don't have an answer for that.")
-
-            print(f"""{output}\n\n""")
-            log = f"{log}\n{output}"
-        except KeyboardInterrupt:
-            try:
-                sys.exit(0)
-            except SystemExit:
-                sys.exit(0)
+            query = recognizer.recognize_google(audio)
+            return query
+        except sr.UnknownValueError:
+            subprocess.run(["play", "error.mp3", "tempo", "1.5"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+            print("Sorry, I couldn't understand you.")
+        except sr.RequestError:
+            print("Sorry, there was an error with the speech recognition service.")
+        return None
 
 
-if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        response_simple = submit(' '.join(sys.argv[1:]), '')
+def speak(text):
+    """
+    Convert text to speech and play it.
+    """
+    tts = gTTS(text=text, lang='en')
+    tts.save('output.mp3')
+    subprocess.run(["play", "output.mp3", "tempo", "1.5"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
 
-        if '\n\n' in response_simple:
-            response_simple = response_simple.split("\n\n")[1:]
 
-        print(response_simple)
+def query_gpt(query, gpt_conversation=None):
+    """
+    Send the user query and conversation history to the OpenAI ChatGPT API and get a response.
+    """
+
+    if gpt_conversation is not None:
+        gpt_conversation = []
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    system_messages = [
+        "You are a helpful assistant named Victoria.",
+        "You are designed to give very brief, thoughtful responses.",
+        "You may have an edgy tone at times, but you always want what's best for me.",
+        "You know that my name is Tyler."
+    ]
+
+    messages = [
+        {"role": "system", "content": msg}
+        for msg in system_messages
+    ]
+
+    # Add previous messages to the conversation history
+    messages.extend(gpt_conversation)
+    messages.append({"role": "user", "content": query})
+
+    data = {
+        "model": "gpt-3.5-turbo",
+        "messages": messages,
+    }
+
+    response = requests.post(
+        API_ENDPOINT, headers=headers, json=data, timeout=30)
+    if response.status_code == 200:
+        messages = response.json()["choices"][0]["message"]["content"]
+        return messages
     else:
-        cli()
+        print("Sorry, there was an error with the API request.")
+        print(response.json())
+        return None
+
+conversation = []  # Initialize an empty conversation
+
+while True:
+    user_input = listen()
+    if user_input:
+        output = query_gpt(user_input, conversation)
+        if output:
+            print("Assistant:", output)
+            speak(output)
+            conversation.append({"role": "user", "content": user_input})
+            conversation.append({"role": "assistant", "content": output})
