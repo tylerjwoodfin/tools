@@ -18,9 +18,9 @@ fi
 blocklist_domains=$(cat "${blocklist_file}")
 
 if [[ "$1" == "allow" ]]; then
-  pihole_command="sudo pihole --wild -d"
+  pihole_command="/usr/local/bin/pihole --wild -d"
 else
-  pihole_command="sudo pihole --wild"
+  pihole_command="/usr/local/bin/pihole --wild"
 fi
 
 for domain in $blocklist_domains; do
@@ -29,3 +29,4 @@ for domain in $blocklist_domains; do
 done
 
 echo "done"
+
