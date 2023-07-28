@@ -46,18 +46,6 @@ PATH_LOG_TODAY = os.path.join(cab.path_log, str(TODAY))
 LOG_BACKUPS_MAX = cab.get("backups", "log_backup_limit") or 14
 LOG_BACKUPS_LOCATION = os.path.join(cab.get('path', 'backups'), "log")
 
-# get steps
-STEPS_COUNT = -1
-STEPS_COUNT_FILE = cab.get_file_as_array(
-    "cabinet/steps.md", file_path=PATH_BACKEND)
-
-if STEPS_COUNT_FILE:
-    STEPS_COUNT = STEPS_COUNT_FILE[0].split(" ")[0].replace(",", "")
-
-# log steps
-with open(os.path.join(PATH_LOG_BACKEND, "log_steps.csv"), "a+", encoding="utf-8") as file_steps:
-    file_steps.write(f"\n{TODAY},{STEPS_COUNT}")
-
 # get reminders sent
 REMINDERS_COUNT = remindmail_utils.RemindMailUtils().get_sent_today() or -1
 
