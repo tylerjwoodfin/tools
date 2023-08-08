@@ -55,7 +55,7 @@ def cli():
             if user_input == 'clear':
                 os.system('clear')
 
-            output = (submit(user_input, log))
+            output = submit(user_input, log)
             if not output:
                 print("I don't have an answer for that.")
 
