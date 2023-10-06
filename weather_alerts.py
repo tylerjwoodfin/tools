@@ -97,7 +97,7 @@ weather_data = {
 
 cab.put("weather", "data", weather_data)
 
-if cab.get("weather", "alert_walk_sent") < (time.time() - 43200) and now.hour >= 10:
+if cab.get("weather", "alert_walk_sent") < (time.time() - 43200) and 10 <= now.hour < 19:
     GOOD_TEMP = (65 <= temperature <= 85) or (72 <= temperature <= 90)
     if GOOD_TEMP and wind < 10 and timeToSunset > 2:
         message = f"""\
