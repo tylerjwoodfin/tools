@@ -73,13 +73,17 @@ def get_air_quality_advice(aqi_components):
 
     advice = []
     if components["pm2_5"] > pm25_threshold:
-        advice.append("High PM2.5 levels. Consider an N95 mask outdoors.")
+        advice.append(f"High PM2.5 levels ({components['pm2_5']}).\
+                       Consider an N95 mask outdoors.")
     if components["pm10"] > pm10_threshold:
-        advice.append("Elevated PM10. Consider short walks with an N95 mask.")
+        advice.append(f"Elevated PM10 ({components['pm10']}).\
+                       Consider short walks with an N95 mask.")
     if components["o3"] > o3_threshold:
-        advice.append("High Ozone levels. Limit outdoor time & strenuous activities.")
+        advice.append(f"High Ozone levels ({components['o3']}).\
+                       Limit outdoor time & strenuous activities.")
     if components["no2"] > no2_threshold:
-        advice.append("High NO2 levels. Maybe stay indoors or limit exposure.")
+        advice.append(f"High NO2 levels ({components['no2']}).\
+                       Maybe stay indoors or limit exposure.")
     return advice
 
 
@@ -155,6 +159,7 @@ if (
             <br><br>Take a look at today's air quality:<br><br>
             <ul>{AIR_QUALITY_ADVICE}</ul>"""
         mail.send("Air Quality Alert", message)
+        cab.put("weather", "alert_walk_sent", int(time.time()))
 
     # air quality is fine
     GOOD_TEMP = (65 <= temperature <= 85) or (72 <= temperature <= 90)
