@@ -64,10 +64,16 @@ def get_air_quality_advice(aqi_components):
     """
 
     # Setting some basic thresholds (µg/m³)
-    pm25_threshold = 12
-    pm10_threshold = 20
-    o3_threshold = 70
-    no2_threshold = 25
+    air_limit = cab.get("air_limit")
+
+    if not air_limit:
+        cab.log("Could not determine Air Quality Limits", level="error")
+        return []
+
+    pm25_threshold = air_limit["pm25"] or 0
+    pm10_threshold = air_limit["pm25"] or 0
+    o3_threshold = air_limit["pm25"] or 0
+    no2_threshold = air_limit["pm25"] or 0
 
     components = aqi_components
 
@@ -88,25 +94,35 @@ def get_air_quality_advice(aqi_components):
 
 
 # context variables
-planty_status = cab.get("planty", "status")
+planty = cab.get("planty")
+planty_status = planty["status"] or None
 now = datetime.datetime.now()
+api_key = cab.get('weather', 'api_key')
 
 # Call API
 
 # ... weather
 url_request_weather = (
     f"https://api.openweathermap.org/data/2.5/onecall"
-    f"?lat={lat}&lon={lon}&appid={cab.get('weather', 'api_key')}"
+    f"?lat={lat}&lon={lon}&appid={api_key}"
 )
-print(f"Calling API at {url_request_weather}")
 
 # ... air quality
 url_request_air = (
     f"http://api.openweathermap.org/data/2.5/air_pollution"
-    f"?lat={lat}&lon={lon}&appid={cab.get('weather', 'api_key')}"
+    f"?lat={lat}&lon={lon}&appid={api_key}"
+)
+
+# ... planty weather
+url_request_planty = url_request_weather
+if planty["latitude"] and planty["longitude"]:
+    url_request_planty = (
+    f"https://api.openweathermap.org/data/2.5/onecall"
+    f"?lat={planty['latitude']}&lon={planty['longitude']}&appid={api_key}"
 )
 
 
+print(f"Calling API at {url_request_weather}")
 response_weather = requests.get(url_request_weather, timeout=30).json()
 
 print(f"Calling API at {url_request_air}")
@@ -195,6 +211,21 @@ if (
         )
     )
 ):
+    # check planty
+
+    # handle planty weather
+    if url_request_planty != url_request_weather:
+        print(f"Calling API at {url_request_planty}")
+        response_weather = requests.get(url_request_planty, timeout=30).json()
+
+        temperature = convert_temperature_c_to_f(response_weather["current"]["temp"])
+        conditions_now = response_weather["current"]["weather"][0]["description"]
+        conditions_now_icon = response_weather["current"]["weather"][0]["icon"]
+        conditions_tomorrow = response_weather["daily"][1]["weather"][0]["description"]
+        high_tomorrow = convert_temperature_c_to_f(response_weather["daily"][1]["temp"]["max"])
+        low_tomorrow = convert_temperature_c_to_f(response_weather["daily"][1]["temp"]["min"])
+        high = convert_temperature_c_to_f(response_weather["daily"][0]["temp"]["max"])
+    
     cab.log(f"Checked Planty ({planty_status}): low {low_tomorrow}, high {high}")
     cab.put("weather", "alert_planty_checked", int(time.time()))
     
@@ -203,7 +234,7 @@ if (
             mail.send(
                 "Take Planty In This Afternoon",
                 (
-                    f"Hi Tyler,<br><br>The low tonight is {low_tomorrow}°."
+                    f"Hi Tyler,<br><br>The low tonight for Planty is {low_tomorrow}°."
                     f" Please take Planty in!"
                 ),
                 to_addr=cab.get("weather", "alert_planty_emails"),
@@ -216,7 +247,7 @@ if (
         try:
             EMAIL = (
                 f"Hi Tyler,<br><br>It looks like a nice day!"
-                f" It's going to be around {high}°. Please take Planty out."
+                f" It's going to be around {high}° for Planty. Please take him out."
             )
 
             mail.send(
