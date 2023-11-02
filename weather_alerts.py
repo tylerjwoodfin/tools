@@ -64,16 +64,16 @@ def get_air_quality_advice(aqi_components):
     """
 
     # Setting some basic thresholds (µg/m³)
-    air_limit = cab.get("air_limit")
+    air_limit = cab.get("weather", "air_limit")
 
     if not air_limit:
         cab.log("Could not determine Air Quality Limits", level="error")
         return []
 
     pm25_threshold = air_limit["pm25"] or 0
-    pm10_threshold = air_limit["pm25"] or 0
-    o3_threshold = air_limit["pm25"] or 0
-    no2_threshold = air_limit["pm25"] or 0
+    pm10_threshold = air_limit["pm10"] or 0
+    o3_threshold = air_limit["o3"] or 0
+    no2_threshold = air_limit["no2"] or 0
 
     components = aqi_components
 
@@ -225,10 +225,10 @@ if (
         high_tomorrow = convert_temperature_c_to_f(response_weather["daily"][1]["temp"]["max"])
         low_tomorrow = convert_temperature_c_to_f(response_weather["daily"][1]["temp"]["min"])
         high = convert_temperature_c_to_f(response_weather["daily"][0]["temp"]["max"])
-    
+
     cab.log(f"Checked Planty ({planty_status}): low {low_tomorrow}, high {high}")
     cab.put("weather", "alert_planty_checked", int(time.time()))
-    
+
     if low_tomorrow < 55 and planty_status == "out":
         try:
             mail.send(
