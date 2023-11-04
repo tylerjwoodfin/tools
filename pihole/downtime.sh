@@ -6,8 +6,14 @@ if [[ -z "$2" ]]; then
   exit 1
 fi
 
+home_directory=$(eval echo ~$USER)
+
 # $2 can be 'afternoon' or 'overnight', etc. to read the corresponding property
 blocklist_file=$(/home/tyler/.local/bin/cabinet -g path blocklist "$2")
+
+# Replace $HOME and ~ with the actual home directory path
+blocklist_file=$(echo "${blocklist_file}" | sed "s|~|$home_directory|g" | sed "s|\$HOME|$home_directory|g")
+
 echo "blocklist_file = '${blocklist_file}'"
 
 if [[ -z "${blocklist_file}" ]]; then
