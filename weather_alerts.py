@@ -58,9 +58,12 @@ def convert_temperature_c_to_f(temp):
     """
     return round((temp - 273.15) * 9 / 5 + 32)
 
+
 def get_air_quality_advice(aqi_components):
     """
     Gets advice based on air quality
+
+    Returns advice: list, advice_emojis: str
     """
 
     # Setting some basic thresholds (µg/m³)
@@ -78,26 +81,38 @@ def get_air_quality_advice(aqi_components):
     components = aqi_components
 
     advice = []
+    advice_emojis = ""
     if components["pm2_5"] > pm25_threshold:
-        advice.append(f"High PM2.5 levels ({components['pm2_5']}).\
-                       Consider an N95 mask outdoors.")
+        advice.append(
+            f"High PM2.5 levels ({components['pm2_5']}/{pm25_threshold}).\
+                       Consider an N95 mask outdoors."
+        )
+        advice_emojis += "😷!"
     if components["pm10"] > pm10_threshold:
-        advice.append(f"Elevated PM10 ({components['pm10']}).\
-                       Consider short walks with an N95 mask.")
+        advice.append(
+            f"Elevated PM10 ({components['pm10']}/{pm10_threshold}).\
+                       Consider short walks with an N95 mask."
+        )
+        advice_emojis += "😷"
     if components["o3"] > o3_threshold:
-        advice.append(f"High Ozone levels ({components['o3']}).\
-                       Limit outdoor time & strenuous activities.")
+        advice.append(
+            f"High Ozone levels ({components['o3']}/{o3_threshold}).\
+                       Limit outdoor time & strenuous activities."
+        )
+        advice_emojis += "🏠"
     if components["no2"] > no2_threshold:
-        advice.append(f"High NO2 levels ({components['no2']}).\
-                       Maybe stay indoors or limit exposure.")
-    return advice
+        advice.append(
+            f"High NO2 levels ({components['no2']}/{no2_threshold}).\
+                       Stay indoors to limit exposure. Run an air filter."
+        )
+    return advice, advice_emojis
 
 
 # context variables
 planty = cab.get("planty")
 planty_status = planty["status"] or None
 now = datetime.datetime.now()
-api_key = cab.get('weather', 'api_key')
+api_key = cab.get("weather", "api_key")
 
 # Call API
 
@@ -117,9 +132,9 @@ url_request_air = (
 url_request_planty = url_request_weather
 if planty["latitude"] and planty["longitude"]:
     url_request_planty = (
-    f"https://api.openweathermap.org/data/2.5/onecall"
-    f"?lat={planty['latitude']}&lon={planty['longitude']}&appid={api_key}"
-)
+        f"https://api.openweathermap.org/data/2.5/onecall"
+        f"?lat={planty['latitude']}&lon={planty['longitude']}&appid={api_key}"
+    )
 
 
 print(f"Calling API at {url_request_weather}")
@@ -167,14 +182,18 @@ if (
     and 10 <= now.hour < 19
 ):
     # send air quality alerts
-    air_quality_advice = get_air_quality_advice(response_air_components)
+    air_quality_advice, air_quality_advice_emojis = get_air_quality_advice(
+        response_air_components
+    )
     if len(air_quality_advice) > 0:
-        AIR_QUALITY_ADVICE = '\n'.join([f"<li>{item}</li>" for item in air_quality_advice])
+        AIR_QUALITY_ADVICE = "\n".join(
+            [f"<li>{item}</li>" for item in air_quality_advice]
+        )
         message = f"""\
             Hi Tyler,\
             <br><br>Take a look at today's air quality:<br><br>
             <ul>{AIR_QUALITY_ADVICE}</ul>"""
-        mail.send("Air Quality Alert", message)
+        mail.send(f"Air Quality Alert {air_quality_advice_emojis}", message)
         cab.put("weather", "alert_walk_sent", int(time.time()))
 
     # air quality is fine
@@ -222,8 +241,12 @@ if (
         conditions_now = response_weather["current"]["weather"][0]["description"]
         conditions_now_icon = response_weather["current"]["weather"][0]["icon"]
         conditions_tomorrow = response_weather["daily"][1]["weather"][0]["description"]
-        high_tomorrow = convert_temperature_c_to_f(response_weather["daily"][1]["temp"]["max"])
-        low_tomorrow = convert_temperature_c_to_f(response_weather["daily"][1]["temp"]["min"])
+        high_tomorrow = convert_temperature_c_to_f(
+            response_weather["daily"][1]["temp"]["max"]
+        )
+        low_tomorrow = convert_temperature_c_to_f(
+            response_weather["daily"][1]["temp"]["min"]
+        )
         high = convert_temperature_c_to_f(response_weather["daily"][0]["temp"]["max"])
 
     cab.log(f"Checked Planty ({planty_status}): low {low_tomorrow}, high {high}")
