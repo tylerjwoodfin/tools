@@ -72,7 +72,7 @@ def main():
     os.system(f"cd {PATH_SRC}; {CMD_PIPREQS} python3 -m build")
 
     # push to PyPi
-    os.system(f"cd {PATH_SRC}; python3 -m twine upload dist/*")
+    os.system(f"cd {PATH_SRC}; python3 -m twine upload dist/* --verbose")
 
     print("\n\nFinished! Remember to commit any new changes.")
 
