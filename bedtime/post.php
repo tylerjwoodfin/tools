@@ -10,11 +10,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $now = new DateTime();
     $date_str = $now->format('Y-m-d');
     $time_str = $now->format('H:i');
+    $bedtime_limit_file = '/home/tyler/syncthing/cabinet/keys/BEDTIME_LIMIT';
+    $bedtime_limit_str = trim(file_get_contents($bedtime_limit_file));
+    $bedtime_limit = new DateTime($bedtime_limit_str);
+    $max_donation = 30;
 
     // If the time is between midnight and 4AM, use yesterday's date instead
     if ($now->format('H') < 4) {
         $yesterday = (new DateTime())->sub(new DateInterval('P1D'));
         $date_str = $yesterday->format('Y-m-d');
+    }
+
+    // If current time is after midnight but before 6 AM, consider the bedtime limit for the previous day
+    if ($now->format('H') < 6) {
+        if ($bedtime_limit->format('H') >= 6) {
+            $bedtime_limit->modify('-1 day');
+        }
     }
 
     $bedtime_exists_today = false;
@@ -66,8 +77,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             fclose($file);
         }
     }
+    
+    // Check if current time is later than the bedtime limit
+    if ($now > $bedtime_limit && $now <= new DateTime('06:00')) {
+        $interval = $now->diff($bedtime_limit);
+        $delta_minutes = ($interval->h * 60) + $interval->i;
+        $donation_amount = min($delta_minutes, $max_donation);
+        
+        echo "Updated Bedtime; {$donation_amount} dollar donation is required";
+    } else {
+        echo 'Updated Bedtime';
+    }
 
-    echo 'Updated Bedtime';
 } else {
     echo 'Invalid request';
 }
