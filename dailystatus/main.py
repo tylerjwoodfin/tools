@@ -42,6 +42,7 @@ PATH_LOG_BACKEND = os.path.join(PATH_BACKEND, "log")
 PATH_BASHRC = os.path.join(f"/home/{DIR_USER}/.bashrc")
 PATH_NOTES = cab.get('path', 'notes')
 PATH_LOG_TODAY = os.path.join(cab.path_log, str(TODAY))
+BEDTIME_LIMIT = cab.get("bedtime", "limit")
 
 LOG_BACKUPS_MAX = cab.get("backups", "log_backup_limit") or 14
 LOG_BACKUPS_LOCATION = os.path.join(cab.get('path', 'backups'), "log")
@@ -89,6 +90,14 @@ if excess_count > 0:
         os.remove(zip_files[i])
 
 cab.log(f"Cron, Bash, Notes, and remind.md copied to {PATH_LOG_BACKEND}.")
+
+# publish bedtime limit
+try:
+    with open(cab.path_cabinet + "/keys/BEDTIME_LIMIT", 'w', encoding="utf8") as file_bedtime_limit:
+        file_bedtime_limit.write(BEDTIME_LIMIT)
+except Exception as error:
+    cab.log(f"Error updating Bedtime Limit file: {str(error)}", level="error")
+
 
 # spotify stats
 spotify_count = cab.get("spotipy", "total_tracks")
