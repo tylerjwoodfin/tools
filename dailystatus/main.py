@@ -25,6 +25,7 @@ import pwd
 import datetime
 import glob
 import subprocess
+import json
 
 from remind import remindmail_utils
 import cabinet
@@ -40,18 +41,20 @@ TODAY = datetime.date.today()
 PATH_BACKEND = cab.get("path", "cabinet", "log-backup")
 PATH_LOG_BACKEND = os.path.join(PATH_BACKEND, "log")
 PATH_BASHRC = os.path.join(f"/home/{DIR_USER}/.bashrc")
-PATH_NOTES = cab.get('path', 'notes')
+PATH_NOTES = cab.get("path", "notes")
 PATH_LOG_TODAY = os.path.join(cab.path_log, str(TODAY))
 BEDTIME_LIMIT = cab.get("bedtime", "limit")
 
 LOG_BACKUPS_MAX = cab.get("backups", "log_backup_limit") or 14
-LOG_BACKUPS_LOCATION = os.path.join(cab.get('path', 'backups'), "log")
+LOG_BACKUPS_LOCATION = os.path.join(cab.get("path", "backups"), "log")
 
 # get reminders sent
 REMINDERS_COUNT = remindmail_utils.RemindMailUtils().get_sent_today() or -1
 
 # log reminders
-with open(os.path.join(PATH_LOG_BACKEND, "log_reminders.csv"), "a+", encoding="utf-8") as file_rmm:
+with open(
+    os.path.join(PATH_LOG_BACKEND, "log_reminders.csv"), "a+", encoding="utf-8"
+) as file_rmm:
     file_rmm.write(f"\n{TODAY},{REMINDERS_COUNT}")
 
 
@@ -70,7 +73,7 @@ backup_commands = [
     f"cp -r {PATH_BASHRC} '{os.path.join(PATH_LOG_BACKEND, 'bash', f'Bash {TODAY}.md')}'",
     f"zip -r '{os.path.join(PATH_LOG_BACKEND, 'notes', f'notes {TODAY}.zip')}' {PATH_NOTES}",
     f"zip -r '{os.path.join(LOG_BACKUPS_LOCATION, f'log folder backup {TODAY}.zip')}' "
-    f"{PATH_LOG_BACKEND} --exclude='{os.path.join(PATH_LOG_BACKEND, 'songs', '*')}'"
+    f"{PATH_LOG_BACKEND} --exclude='{os.path.join(PATH_LOG_BACKEND, 'songs', '*')}'",
 ]
 
 try:
@@ -91,50 +94,62 @@ if excess_count > 0:
 
 cab.log(f"Cron, Bash, Notes, and remind.md copied to {PATH_LOG_BACKEND}.")
 
-# publish bedtime limit
-try:
-    with open(cab.path_cabinet + "/keys/BEDTIME_LIMIT", 'w', encoding="utf8") as file_bedtime_limit:
-        file_bedtime_limit.write(BEDTIME_LIMIT)
-except Exception as error:
-    cab.log(f"Error updating Bedtime Limit file: {str(error)}", level="error")
+# publish bedtime limit to be read by tools/bedtime/post.php
+bedtime_output = json.dumps(cab.get("bedtime", "limit"))
+BEDTIME_KEY = "/home/tyler/syncthing/cabinet/keys/BEDTIME"
 
+# Write the JSON string to the file
+try:
+    with open(BEDTIME_KEY, "w", encoding="utf-8") as file:
+        file.write(bedtime_output)
+except Exception as error:
+    cab.log(f"Could not write bedtime key: {error}", level="error")
 
 # spotify stats
 spotify_count = cab.get("spotipy", "total_tracks")
 spotify_avg_year = cab.get("spotipy", "average_year")
 SPOTIFY_STATS = "<b>Spotify Stats:</b><br>"
 
-spotify_log_array = cab.get_file_as_array(
-    "LOG_SPOTIFY.log", file_path=PATH_LOG_TODAY)
+spotify_log_array = cab.get_file_as_array("LOG_SPOTIFY.log", file_path=PATH_LOG_TODAY)
 
 if spotify_log_array is not None:
-    SPOTIFY_LOG = "<font face='monospace'>" + \
-        '<br>'.join(cab.get_file_as_array(
-            "LOG_SPOTIFY.log", file_path=PATH_LOG_TODAY)) + "</font><br><br>"
+    SPOTIFY_LOG = (
+        "<font face='monospace'>"
+        + "<br>".join(
+            cab.get_file_as_array("LOG_SPOTIFY.log", file_path=PATH_LOG_TODAY)
+        )
+        + "</font><br><br>"
+    )
 
     if "ERROR —" in SPOTIFY_LOG:
-        status_email_alerts.append('Spotify')
+        status_email_alerts.append("Spotify")
         SPOTIFY_STATS += "Please review your songs! We found some errors.<br><br>"
 
 SPOTIFY_STATS += f"""
     You have {spotify_count} songs; the mean song is from {spotify_avg_year}.<br><br>
     """
 
-if 'Spotify' in status_email_alerts and spotify_log_array is not None:
+if "Spotify" in status_email_alerts and spotify_log_array is not None:
     SPOTIFY_STATS += SPOTIFY_LOG
 
 # daily log
 daily_log_file_array = cab.get_file_as_array(
-    f"LOG_DAILY_{TODAY}.log", file_path=PATH_LOG_TODAY)
-DAILY_LOG_FILE = '<br>'.join(daily_log_file_array)
+    f"LOG_DAILY_{TODAY}.log", file_path=PATH_LOG_TODAY
+)
+DAILY_LOG_FILE = "<br>".join(daily_log_file_array)
 
 if "ERROR —" in DAILY_LOG_FILE or "CRITICAL —" in DAILY_LOG_FILE:
     status_email_alerts.append("Errors")
 if "WARNING —" in DAILY_LOG_FILE:
     status_email_alerts.append("Warnings")
 
-DAILY_LOG_FILTERED = '<br>'.join([item for item in daily_log_file_array if (
-    "ERROR" in item or "WARN" in item or "CRITICAL" in item)])
+DAILY_LOG_FILTERED = "<br>".join(
+    [
+        item
+        for item in daily_log_file_array
+        if ("ERROR" in item or "WARN" in item or "CRITICAL" in item)
+    ]
+)
 
 if len(DAILY_LOG_FILTERED) > 0:
     STATUS_EMAIL += f"""
@@ -147,7 +162,9 @@ if len(DAILY_LOG_FILTERED) > 0:
 STATUS_EMAIL += SPOTIFY_STATS
 
 SENT_TODAY = " was" if REMINDERS_COUNT == 1 else "s were"
-STATUS_EMAIL += f"<b>Reminders:</b><br>{REMINDERS_COUNT} reminder{SENT_TODAY} sent today.<br><br>"
+STATUS_EMAIL += (
+    f"<b>Reminders:</b><br>{REMINDERS_COUNT} reminder{SENT_TODAY} sent today.<br><br>"
+)
 
 # weather
 weather_data = cab.get("weather", "data")
@@ -168,8 +185,10 @@ STATUS_EMAIL += WEATHER_DATA_TEXT
 
 STATUS_EMAIL = STATUS_EMAIL.replace("<br><br><br><br>", "<br><br>")
 
-STATUS_EMAIL_WARNINGS_TEXT = "- Check " + \
-    ', '.join(status_email_alerts) + \
-    " " if len(status_email_alerts) > 0 else ""
+STATUS_EMAIL_WARNINGS_TEXT = (
+    "- Check " + ", ".join(status_email_alerts) + " "
+    if len(status_email_alerts) > 0
+    else ""
+)
 
 mail.send(f"Daily Status {STATUS_EMAIL_WARNINGS_TEXT}- {TODAY}", STATUS_EMAIL)
