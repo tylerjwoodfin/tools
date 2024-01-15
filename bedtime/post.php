@@ -6,6 +6,7 @@ error_reporting(E_ALL);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $type = $_POST['type'];
+    $timezone = $_POST['timezone'];
     $log_file = "/var/www/html/log/log_bedtime.csv";
     $now = new DateTime();
     $date_str = $now->format('Y-m-d');
@@ -13,6 +14,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // Read JSON data from the file
     $bedtime_config_file = '/home/tyler/syncthing/cabinet/keys/BEDTIME';
+    $timezone_config_file = '/home/tyler/syncthing/cabinet/keys/TIMEZONE';
     $bedtime_config_json = file_get_contents($bedtime_config_file);
     $bedtime_config = json_decode($bedtime_config_json, true);
 
@@ -21,6 +23,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         echo "Error decoding JSON: " . json_last_error_msg();
         exit;
     }
+
+    // write timezone
+    file_put_contents($timezone_config_file, $timezone);
 
     // Extract values from JSON data
     $charity_balance = $bedtime_config['charity_balance'];
@@ -111,9 +116,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $refund_amount = min($delta_minutes / 2, $max_donation / 2); // 50% refund, capped at half of max penalty
         echo "Sleep now for {$refund_amount} dollar refund.";
     } else {
-        // Bedtime is after midn
-        echo 'Bedtime Limit: ' . $bedtime_limit->format('Y-m-d H:i:s');
+        // Bedtime is after midnight
         echo "Updated Bedtime";
+        echo $timezone;
     }
 } else {
     echo 'Invalid request';
