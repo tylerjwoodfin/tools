@@ -7,7 +7,7 @@ error_reporting(E_ALL);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $type = $_POST['type'];
     $timezone = $_POST['timezone'];
-    $log_file = "/var/www/html/log/log_bedtime.csv";
+    $log_file = "/home/tyler/syncthing/log/log_bedtime.csv";
     $now = new DateTime();
     $date_str = $now->format('Y-m-d');
     $time_str = $now->format('H:i');
@@ -118,7 +118,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         // Bedtime is after midnight
         echo "Updated Bedtime";
-        echo $timezone;
     }
 } else {
     echo 'Invalid request';
