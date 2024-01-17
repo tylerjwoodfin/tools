@@ -84,11 +84,11 @@ with open(LOG_FILE, "r", encoding="utf-8") as csvfile:
                 # late
                 penalty_amount = min(int(bedtime_time_difference[1]), max_penalty)
                 charity_balance += penalty_amount
-                MAIL.send(
-                    f"Late Bedtime: ${penalty_amount} to Charity",
-                    f"Your bedtime last night was {BEDTIME.strftime('%H:%M')}. \
-                                Please get to bed at a more reasonable time.",
+                msg = (
+                    f"Your bedtime last night was {BEDTIME.strftime('%H:%M')}. "
+                    f"Please get to bed at a reasonable time. Your balance is {charity_balance}"
                 )
+                MAIL.send(f"Late Bedtime: ${penalty_amount} to Charity", msg)
             else:
                 # early or on time
                 CAB.log("Early Bedtime")
