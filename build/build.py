@@ -3,9 +3,13 @@ This tool is specific to the original developer and is used to publish to PyPi.
 """
 
 import sys
-import os.path
+import os
 from datetime import datetime
 from cabinet import Cabinet
+
+def confirm_proceed():
+    response = input("You may be in the wrong directory. Are you sure? Type 'yes' to continue: ")
+    return response.strip().lower() == 'yes'
 
 cab = Cabinet()
 
@@ -16,19 +20,30 @@ if len(sys.argv) < 2 or sys.argv[1] not in BUILD_OPTIONS:
     print(f"Invalid argument; please run `...build.py {BUILD_OPTIONS}`")
     sys.exit(1)
 
-if sys.argv[1] == 'remindmail':
-    PATH_SRC = cab.get("path", "remindmail", "src") \
-        or f"{os.path.expanduser('~')}/git/remindmail"
+selected_option = sys.argv[1]
+current_working_directory = os.getcwd()
+path_remindmail = cab.get("path", "remindmail", "src") or os.path.join(os.path.expanduser('~'), 'git', 'remindmail')
+path_cabinet = cab.get("path", "cabinet", "src") or os.path.join(os.path.expanduser('~'), 'git', 'cabinet')
+
+# Confirmation check
+if selected_option == 'remindmail' and 'remindmail' not in current_working_directory:
+    if not confirm_proceed():
+        sys.exit("Try again.")
+elif selected_option == 'cabinet' and 'cabinet' not in current_working_directory:
+    if not confirm_proceed():
+        sys.exit("Try again.")
+
+# Set PATH_SRC based on the selected option
+if selected_option == 'remindmail':
+    PATH_SRC = path_remindmail
 else:
-    PATH_SRC = cab.get("path", "cabinet", "src") \
-        or f"{os.path.expanduser('~')}/git/cabinet"
+    PATH_SRC = path_cabinet
 
 DEFAULT_CONFIG_FILE = f"{PATH_SRC}/setup.cfg"
 
 CMD_PIPREQS = ""
-if sys.argv[1] == 'remindmail':
+if selected_option == 'remindmail':
     CMD_PIPREQS = "pipreqs --force --savepath requirements.md --mode no-pin;"
-
 
 def main():
     """
