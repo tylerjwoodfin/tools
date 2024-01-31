@@ -6,6 +6,7 @@ import subprocess
 import socket
 from datetime import datetime, timedelta
 import tzlocal
+import sys
 import pytz
 from cabinet import Cabinet, Mail
 
@@ -51,6 +52,11 @@ def check_timezone():
         timezone_data = timezone_file[0]
 
     timezone_data = timezone_file[0]
+    
+    if not timezone_data.strip():
+        CAB.log("No timezone data found", level="warn")
+        return
+    
     new_timezone = get_timezone_from_offset(timezone_data)
     if new_timezone != str(tzlocal.get_localzone()):
         # update system time
