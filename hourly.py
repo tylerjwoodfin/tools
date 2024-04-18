@@ -6,7 +6,6 @@ import subprocess
 import socket
 from datetime import datetime, timedelta
 import tzlocal
-import sys
 import pytz
 from cabinet import Cabinet, Mail
 
