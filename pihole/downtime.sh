@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/zsh
 echo "starting"
 
 if [[ -z "$2" ]]; then
@@ -21,18 +21,18 @@ if [[ -z "${blocklist_file}" ]]; then
   exit 1
 fi
 
-blocklist_domains=$(cat "${blocklist_file}")
+# Properly read lines into an array
+blocklist_domains=("${(@f)$(cat "${blocklist_file}")}")
 
 if [[ "$1" == "allow" ]]; then
-  pihole_command="/usr/local/bin/pihole --wild -d"
+pihole_command=(/usr/local/bin/pihole --wild -d)
 else
-  pihole_command="/usr/local/bin/pihole --wild"
+pihole_command=(/usr/local/bin/pihole --wild)
 fi
 
 for domain in $blocklist_domains; do
-  echo "${pihole_command} ${domain}"
-  ${pihole_command} "$domain"
+echo "${pihole_command[@]} $domain"
+"${pihole_command[@]}" "$domain"
 done
 
 echo "done"
-
