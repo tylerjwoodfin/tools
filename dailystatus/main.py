@@ -64,7 +64,7 @@ except subprocess.CalledProcessError as error:
 except OSError as error:
     cab.log(f"OS error for: {command} with error: {str(error)}", level="error")
 
-# prune log folder backups exceeding the limit
+# prune log folder backups exceeding the limit (currently 14)
 cab.log(f"Pruning {_log_backups_location}...")
 zip_files = glob.glob(f"{_log_backups_location}/*.zip")
 zip_files.sort(key=os.path.getmtime)
@@ -97,8 +97,18 @@ if _daily_log_issues:
 # append weather data
 weather_data = cab.get("weather", "data") or {}
 if weather_data:
-    _status_email += f"<b>Weather Tomorrow:</b><br>{weather_data.get('tomorrow_high')}°"
-    _status_email += f"and {weather_data.get('tomorrow_conditions')}."
+    _status_email += f"""
+        <b>Weather Tomorrow:</b><br>
+        <font face='monospace'>
+            High: {weather_data.get('tomorrow_high', 'N/A')}°
+            and {weather_data.get('tomorrow_conditions', 'No data')}
+            <br>
+                Sunrise: {weather_data.get('tomorrow_sunrise', 'No data')}
+            <br>
+                Sunset: {weather_data.get('tomorrow_sunset', 'No data')}
+            <br><br>
+        </font>
+    """
 
 # send the email
 mail.send(f"Daily Status - {_today}", _status_email)
