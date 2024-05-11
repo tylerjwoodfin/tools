@@ -14,6 +14,8 @@ import subprocess
 import json
 import cabinet
 
+# pylint: disable=invalid-name
+
 # initialize cabinet for configuration and mail for notifications
 cab = cabinet.Cabinet()
 mail = cabinet.Mail()
@@ -74,7 +76,12 @@ for i in range(excess_count):
 
 # publish bedtime limit
 bedtime_output = json.dumps(cab.get("bedtime", "limit"))
+os.makedirs(os.path.dirname(_bedtime_key), exist_ok=True)
+
 try:
+    with open(_bedtime_key, "x", encoding="utf-8") as file:
+        file.write(bedtime_output)
+except FileExistsError:
     with open(_bedtime_key, "w", encoding="utf-8") as file:
         file.write(bedtime_output)
 except (IOError, OSError) as error:
@@ -82,7 +89,18 @@ except (IOError, OSError) as error:
 
 # append Spotify statistics
 _spotify_log: list = cab.get_file_as_array("LOG_SPOTIFY.log", file_path=_log_path_today) or []
-_spotify_log_formatted: str = "<br>".join(_spotify_log) if _spotify_log else "No Data"
+_spotify_log_formatted: str = "No Data"
+
+if _spotify_log:
+    # Filter out only WARNING, ERROR, or CRITICAL messages
+    issues = [log for log in _spotify_log \
+        if "WARNING" in log or "ERROR" in log or "CRITICAL" in log]
+
+    if issues:
+        _spotify_log_formatted = "<br>".join(issues)
+    else:
+        _spotify_log_formatted = "Looks good!"
+
 _status_email += f"<b>Spotify Stats:</b><br>{_spotify_log_formatted}<br><br>"
 
 # append daily log analysis
@@ -105,7 +123,7 @@ if weather_data:
             <br>
                 Sunrise: {weather_data.get('tomorrow_sunrise', 'No data')}
             <br>
-                Sunset: {weather_data.get('tomorrow_sunset', 'No data')}
+                Sunset:  {weather_data.get('tomorrow_sunset', 'No data')}
             <br><br>
         </font>
     """

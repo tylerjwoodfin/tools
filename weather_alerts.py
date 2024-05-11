@@ -109,10 +109,11 @@ def get_air_quality_advice(aqi_components):
 
 
 # context variables
-planty = cab.get("planty")
+planty = cab.get("planty") or {}
 planty_status = planty["status"] or None
 now = datetime.datetime.now()
 api_key = cab.get("weather", "api_key")
+alerts_enabled: bool = cab.get("weather", "alerts_enabled", return_type=bool) or True
 
 # Call API
 
@@ -177,8 +178,11 @@ weather_data = {
 
 cab.put("weather", "data", weather_data)
 
+if not alerts_enabled:
+    sys.exit()
+
 if (
-    cab.get("weather", "alert_walk_sent") < (time.time() - 43200)
+    cab.get("weather", "alert_walk_sent", return_type=int) or 0 < (time.time() - 43200)
     and 10 <= now.hour < 19
 ):
     # send air quality alerts
