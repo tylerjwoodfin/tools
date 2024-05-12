@@ -182,7 +182,7 @@ if not alerts_enabled:
     sys.exit()
 
 if (
-    cab.get("weather", "alert_walk_sent", return_type=int) or 0 < (time.time() - 43200)
+    (cab.get("weather", "alert_walk_sent", return_type=int) or 0) < (time.time() - 43200)
     and 10 <= now.hour < 19
 ):
     # send air quality alerts
