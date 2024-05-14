@@ -113,7 +113,9 @@ planty = cab.get("planty") or {}
 planty_status = planty["status"] or None
 now = datetime.datetime.now()
 api_key = cab.get("weather", "api_key")
-alerts_enabled: bool = cab.get("weather", "alerts_enabled", return_type=bool) or True
+alerts_enabled: bool = cab.get("weather", "alerts_enabled", return_type=bool)
+if alerts_enabled is None:
+    alerts_enabled = True
 
 # Call API
 
