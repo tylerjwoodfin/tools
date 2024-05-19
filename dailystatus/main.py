@@ -87,9 +87,14 @@ except FileExistsError:
 except (IOError, OSError) as error:
     cab.log(f"Could not write bedtime key: {error}", level="error")
 
-# append Spotify statistics
+# spotipy
 _spotify_log: list = cab.get_file_as_array("LOG_SPOTIFY.log", file_path=_log_path_today) or []
-_spotify_log_formatted: str = "No Data"
+_spotify_issues: str = "No Data"
+_spotify_stats = cab.get("spotipy") or {}
+
+# spotipy issues
+has_warnings = False
+has_errors = False
 
 if _spotify_log:
     # Filter out only WARNING, ERROR, or CRITICAL messages
@@ -97,20 +102,48 @@ if _spotify_log:
         if "WARNING" in log or "ERROR" in log or "CRITICAL" in log]
 
     if issues:
-        _spotify_log_formatted = "<br>".join(issues)
-    else:
-        _spotify_log_formatted = "Looks good!"
+        _spotify_issues = "<br>".join(issues)
+        _status_email += f"<b>Spotify Issues:</b><br>{_spotify_issues}<br><br>"
 
-_status_email += f"<b>Spotify Stats:</b><br>{_spotify_log_formatted}<br><br>"
+    for issue in issues:
+        if "WARNING" in issue:
+            has_warnings = True
+        if "ERROR" in issue or "CRITICAL" in issue:
+            has_errors = True
+
+# spotipy stats
+try:
+    total_tracks = _spotify_stats['total_tracks']
+except KeyError:
+    total_tracks = "No Data"
+
+try:
+    average_year = _spotify_stats['average_year']
+except KeyError:
+    average_year = "No Data"
+
+_status_email += f"""
+<b>Spotify Stats:</b><br>
+<ul><b>Song Count:</b> {total_tracks}</ul>
+<ul><b>Average Year:</b> {average_year}</ul>
+<br>
+"""
 
 # append daily log analysis
 _daily_log_file = cab.get_file_as_array(f"LOG_DAILY_{_today}.log", file_path=_log_path_today) or []
 
 _daily_log_issues: list = [line for line in _daily_log_file \
     if "ERROR" in line or "WARN" in line or "CRITICAL" in line]
+
 if _daily_log_issues:
     _daily_log_filtered: str = "<br>".join(_daily_log_issues)
     _status_email += f"<b>Warning/Error/Critical Log:</b><br>{_daily_log_filtered}<br><br>"
+
+    for issue in _daily_log_issues:
+        if "WARN" in issue:
+            has_warnings = True
+        if "ERROR" in issue or "CRITICAL" in issue:
+            has_errors = True
 
 # append weather data
 weather_data = cab.get("weather", "data") or {}
@@ -123,10 +156,19 @@ if weather_data:
             <br>
                 Sunrise: {weather_data.get('tomorrow_sunrise', 'No data')}
             <br>
-                Sunset:  {weather_data.get('tomorrow_sunset', 'No data')}
+                Sunset:&nbsp;&nbsp;{weather_data.get('tomorrow_sunset', 'No data')}
             <br><br>
         </font>
     """
 
+# determine email subject
+email_subject = f"Daily Status - {_today}"
+if has_errors and has_warnings:
+    email_subject += " - Check Errors/Warnings"
+elif has_errors:
+    email_subject += " - Check Errors"
+elif has_warnings:
+    email_subject += " - Check Warnings"
+
 # send the email
-mail.send(f"Daily Status - {_today}", _status_email)
+mail.send(email_subject, _status_email)
