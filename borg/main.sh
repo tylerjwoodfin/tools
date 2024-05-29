@@ -1,23 +1,22 @@
-#!/bin/sh
+#!/bin/zsh
 
-# Setting this, so the repo does not need to be given on the commandline:
-
-borg_repo=`cat /home/tyler/syncthing/cabinet/keys/BORG_REPO`
-borg_passphrase=`cat /home/tyler/syncthing/cabinet/keys/BORG_PASSPHRASE`
+# Setting this, so the repo does not need to be given on the command line:
+borg_repo=$(cat "$HOME/syncthing/cabinet/keys/BORG_REPO")
+borg_passphrase=$(cat "$HOME/syncthing/cabinet/keys/BORG_PASSPHRASE")
 export BORG_REPO=$borg_repo
 export BORG_PASSPHRASE=$borg_passphrase
 
-echo $borg_repo
-echo $BORG_PASSPHRASE
+echo "$borg_repo"
+echo "$BORG_PASSPHRASE"
 
-# some helpers and error handling:
-info() { printf "\n%s %s\n\n" "$( date )" "$*" >&2; }
-trap 'echo $( date ) Backup interrupted >&2; exit 2' INT TERM
+# Some helpers and error handling:
+info() { $HOME/.local/bin/cabinet --log "$*"; }
+error() { $HOME/.local/bin/cabinet --log "$*" --level 'error'; }
+trap 'echo $(date) Backup interrupted >&2; exit 2' INT TERM
 
-info "Starting backup"
+info 'Starting Borg Backup...'
 
-# Backup /home/tyler/syncthing
-
+# Backup $HOME/syncthing
 borg create                         \
     --verbose                       \
     --filter AME                    \
@@ -28,7 +27,7 @@ borg create                         \
     --exclude-caches                \
                                     \
     ::'{hostname}-{now}'            \
-    /home/tyler/syncthing
+    $HOME/syncthing
 
 backup_exit=$?
 
@@ -49,24 +48,64 @@ borg prune                          \
 
 prune_exit=$?
 
-# actually free repo disk space by compacting segments
-
+# Actually free repo disk space by compacting segments
 info "Compacting repository"
-
 borg compact
 
 compact_exit=$?
 
-# use highest exit code as global exit code
+# Check if backups are performing as expected
+check_backups() {
+    backups=$(borg list --short)
+    today=$(date +%Y-%m-%d)
+    yesterday=$(date -d "yesterday" +%Y-%m-%d)
+    week_start=$(date -d "last sunday" +%Y-%m-%d)
+    last_month=$(date -d "last month" +%Y-%m)
+
+    today_count=$(echo "$backups" | grep -c "$today")
+    yesterday_count=$(echo "$backups" | grep -c "$yesterday")
+    week_count=$(echo "$backups" | grep -c "$week_start")
+    month_count=$(echo "$backups" | grep -c "$last_month")
+
+    if [ "$today_count" -ge 1 ] || [ "$yesterday_count" -ge 1 ]; then
+        info "Backup from today or yesterday found."
+    else
+        error "No backup from today or yesterday found."
+        return 1
+    fi
+
+    if [ "$week_count" -ge 2 ]; then
+        info "At least 2 backups from this week found."
+    else
+        error "Less than 2 backups from this week found."
+        return 1
+    fi
+
+    if [ "$month_count" -ge 1 ]; then
+        info "Backup from last month found."
+    else
+        error "No backup from last month found."
+        return 1
+    fi
+
+    return 0
+}
+
+info "Checking backups"
+check_backups
+check_exit=$?
+
+# Use highest exit code as global exit code
 global_exit=$(( backup_exit > prune_exit ? backup_exit : prune_exit ))
 global_exit=$(( compact_exit > global_exit ? compact_exit : global_exit ))
+global_exit=$(( check_exit > global_exit ? check_exit : global_exit ))
 
 if [ ${global_exit} -eq 0 ]; then
-    info "Backup, Prune, and Compact finished successfully"
+    info "Backup, Prune, Compact, and Check finished successfully"
 elif [ ${global_exit} -eq 1 ]; then
-    info "Backup, Prune, and/or Compact finished with warnings"
+    info "Backup, Prune, Compact, and/or Check finished with warnings"
 else
-    info "Backup, Prune, and/or Compact finished with errors"
+    info "Backup, Prune, Compact, and/or Check finished with errors"
 fi
 
 exit ${global_exit}
