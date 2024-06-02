@@ -59,12 +59,17 @@ check_backups() {
     backups=$(borg list --short)
     today=$(date +%Y-%m-%d)
     yesterday=$(date -d "yesterday" +%Y-%m-%d)
-    week_start=$(date -d "last sunday" +%Y-%m-%d)
     last_month=$(date -d "last month" +%Y-%m)
 
     today_count=$(echo "$backups" | grep -c "$today")
     yesterday_count=$(echo "$backups" | grep -c "$yesterday")
-    week_count=$(echo "$backups" | grep -c "$week_start")
+    
+    week_count=0
+    for i in {0..6}; do
+        day=$(date -d "$i days ago" +%Y-%m-%d)
+        week_count=$((week_count + $(echo "$backups" | grep -c "$day")))
+    done
+
     month_count=$(echo "$backups" | grep -c "$last_month")
 
     if [ "$today_count" -ge 1 ] || [ "$yesterday_count" -ge 1 ]; then
