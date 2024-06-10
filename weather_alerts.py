@@ -18,8 +18,8 @@ from cabinet import Cabinet, Mail
 cab = Cabinet()
 mail = Mail()
 
-lat = cab.get("latitude")
-lon = cab.get("longitude")
+lat = cab.get("weather", "latitude")
+lon = cab.get("weather", "longitude")
 
 
 def datetime_from_utc_to_local(utc_datetime):

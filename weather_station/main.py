@@ -76,8 +76,8 @@ def main():
     calibration_params = bme280.load_calibration_params(bus, address)
     today = datetime.today().strftime('%Y-%m-%d')
 
-    lat = cab.get("latitude")
-    lon = cab.get("longitude")
+    lat = cab.get("weather", "latitude")
+    lon = cab.get("weather", "longitude")
 
     # the sample method will take a single reading and return a
     # compensated_reading object
