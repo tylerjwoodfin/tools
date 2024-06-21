@@ -23,9 +23,10 @@ mail = Mail()
 
 TODAY = datetime.date.today()
 DAY_EPOCH = int(int(time.time())/60/60/24)
-WORKOUT_FILE = '<br>'.join(cab.get_file_as_array(
-    "workout.md", "notes"))
-WORKOUT_TODAY = list(filter(None, WORKOUT_FILE.split(
+WORKOUT_FILE = cab.get_file_as_array(
+    "workout.md", "notes") or ""
+WORKOUT_FILE_FORMATTED = '<br>'.join(WORKOUT_FILE)
+WORKOUT_TODAY = list(filter(None, WORKOUT_FILE_FORMATTED.split(
     "<br>## ")[(TODAY.weekday())+2].split("<br>")))
 
 WORKOUT_MSG = '<br>'.join(WORKOUT_TODAY[2:])

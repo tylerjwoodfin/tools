@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 
 # Function to run Pylint on a single Python file
 run_pylint() {

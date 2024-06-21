@@ -7,6 +7,7 @@ If my bedtime is earlier than the limit,
 """
 
 import csv
+import sys
 import datetime
 from cabinet import Cabinet, Mail
 
@@ -64,9 +65,14 @@ with open(LOG_FILE, "r", encoding="utf-8") as csvfile:
             CAB.log(f"Found bedtime in CSV: {BEDTIME}")
             break
 
-    bedtime_limit_obj = CAB.get("bedtime", "limit")
+    bedtime_limit_obj = CAB.get("bedtime", "limit", return_type=dict)
 
     CAB.log(f"Bedtime Info: {bedtime_limit_obj}")
+
+    if not bedtime_limit_obj:
+        CAB.log("Bedtime data not found", level="error")
+        sys.exit()
+
     bedtime_limit = bedtime_limit_obj["max_bedtime"]
     max_penalty = bedtime_limit_obj["max_penalty"]
     charity_balance = bedtime_limit_obj["charity_balance"]

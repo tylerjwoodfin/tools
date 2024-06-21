@@ -46,16 +46,16 @@ def check_timezone():
 
     timezone_file = CAB.get_file_as_array(
         "TIMEZONE", "/home/tyler/syncthing/cabinet/keys"
-    )
+    ) or []
     if timezone_file:
         timezone_data = timezone_file[0]
 
     timezone_data = timezone_file[0]
-    
+
     if not timezone_data.strip():
         CAB.log("No timezone data found", level="warn")
         return
-    
+
     new_timezone = get_timezone_from_offset(timezone_data)
     if new_timezone != str(tzlocal.get_localzone()):
         # update system time
@@ -89,6 +89,7 @@ def check_timezone():
             CAB.log(f"Error executing the subprocess: {e}", level="error")
         except PermissionError as e:
             CAB.log(f"Permission denied: {e}", level="error")
+        # pylint: disable=W0718
         except Exception as e:
             # Catch any other unexpected exceptions
             CAB.log(f"An unexpected error occurred: {e}", level="error")
