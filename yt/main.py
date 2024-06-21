@@ -1,11 +1,10 @@
+#!/usr/bin/env python
+
 """
 youtube downloader - see README.md
 """
 import sys
 from os import system
-
-#!/usr/bin/env python
-
 import yt_dlp
 
 
