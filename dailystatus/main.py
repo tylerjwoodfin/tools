@@ -146,19 +146,11 @@ if _daily_log_issues:
             has_errors = True
 
 # append weather data
-weather_data = cab.get("weather", "data") or {}
-if weather_data:
+weather_tomorrow_formatted = cab.get("weather", "data", "tomorrow_formatted") or {}
+if weather_tomorrow_formatted:
     _status_email += f"""
         <b>Weather Tomorrow:</b><br>
-        <font face='monospace'>
-            High: {weather_data.get('tomorrow_high', 'N/A')}°
-            and {weather_data.get('tomorrow_conditions', 'No data')}
-            <br>
-                Sunrise: {weather_data.get('tomorrow_sunrise', 'No data')}
-            <br>
-                Sunset:&nbsp;&nbsp;{weather_data.get('tomorrow_sunset', 'No data')}
-            <br><br>
-        </font>
+        {weather_tomorrow_formatted}
     """
 
 # determine email subject
