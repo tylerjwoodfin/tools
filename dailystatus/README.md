@@ -1,12 +1,10 @@
 # dailystatus
-- Not meant to be cloned; for educational purposes only
+- Feel free to clone, but this is very custom to my setup and backup process
 - Backs up logs, crontab, etc. 
 - Sends me an email each day with my home automation status, the weather forecast, Spotify information, and anything else I find useful
 
 
-## Dependencies
+## dependencies
 - requests (`pip install requests`)
 - [cabinet](https://pypi.org/project/cabinet/)
-- Data comes from logs or information in `cabinet` produced by modules in this repo or other repos; see the code for details
-
-# Note: weatherAPIKey should be obtained for free through openweathermap.org.
+- Data comes from logs or information in `cabinet` produced by `../weather.py`
