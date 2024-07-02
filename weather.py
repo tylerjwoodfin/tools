@@ -59,7 +59,7 @@ def update_weather_data():
     response_forecast = requests.get(url_forecast, timeout=10)
     if response_forecast.status_code != 200:
         cab.log(f"Could not get weather: {response_forecast.json().get('detail', 'Unknown error')}",
-                level="error")
+                level="info")
         return
 
     response_forecast = response_forecast.json()
