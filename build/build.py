@@ -66,41 +66,6 @@ class BuildTool:
         else:
             sys.exit("Invalid option selected.")
 
-    def bump_version(self) -> None:
-        """
-        Bumps the version of the configuration file by incrementing the patch version number.
-
-        The version follows the semantic versioning format: 1!MAJOR.MINOR.PATCH.
-        - If the file does not exist, exits the program with an error message.
-        - Reads the current version from the configuration file.
-        - Increments the PATCH version number by 1.
-        - Updates the version in the configuration file with the new version number.
-        """
-        try:
-            if os.path.isfile(self.default_config_file):
-                with open(self.default_config_file, 'r', encoding="utf8") as file_config:
-                    file_content = file_config.read()
-                    current_version = file_content.split("version = ")[1].split("\n")[0]
-                    # Remove the "1!" prefix and split the remaining part
-                    version_prefix, version_numbers = current_version.split("!")
-                    major, minor, patch = map(int, version_numbers.split("."))
-
-                    # Increment the patch version number
-                    new_patch = patch + 1
-                    new_version = f"{version_prefix}!{major}.{minor}.{new_patch}"
-
-                    # Replace the old version with the new version in the file content
-                    updated_content = file_content.replace(current_version, new_version)
-
-                with open(self.default_config_file, 'w', encoding="utf8") as file_config:
-                    file_config.write(updated_content)
-                    print(f"Bumped version to {new_version}")
-            else:
-                sys.exit(f"Cannot build; {self.default_config_file} does not exist")
-        except IOError as error:
-            print(error)
-            sys.exit("Could not read or write to setup.cfg")
-
     def delete_dist_directory(self) -> None:
         """
         delete `dist` directory.
@@ -139,7 +104,6 @@ class BuildTool:
         if self.selected_option == 'remindmail':
             self.cmd_pipreqs = "pipreqs --force --savepath requirements.md --mode no-pin;"
 
-        self.bump_version()
         self.delete_dist_directory()
         self.build_and_upload()
 
