@@ -4,40 +4,59 @@
 youtube downloader - see README.md
 """
 import sys
-from os import system
+import os
+import argparse
 import yt_dlp
 
 
-def help_usage():
-    """
-    describes how to use this script
-    """
-    print("Usage: main.py {audio/video} {url}")
-    sys.exit(0)
+def parse_arguments():
+    """parse command line arguments"""
+    parser = argparse.ArgumentParser(description="YouTube Downloader")
+    parser.add_argument("media_type", choices=["audio", "video"], help="Type of media to download")
+    parser.add_argument("url", help="YouTube URL to download from")
+    parser.add_argument("-d", "--destination", default=".",
+                        help="Destination directory for downloaded files")
+    return parser.parse_args()
 
 
-IS_VIDEO = True
-URL = ''
+def download_media(url, is_video, destination):
+    """download media from youtube"""
+    # set options for audio download
+    ydl_opts = {
+        'format': 'mp3/bestaudio/best',
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+        }],
+        'outtmpl': os.path.join(destination, '%(title)s.%(ext)s'),
+    }
 
-if len(sys.argv) < 3:
-    help_usage()
-else:
-    if not sys.argv[2].startswith('http'):
-        help_usage()
+    # use default options for video download
+    options = ydl_opts if not is_video else \
+        {'outtmpl': os.path.join(destination, '%(title)s.%(ext)s')}
 
-    URL = sys.argv[2]
-    IS_VIDEO = sys.argv[1].lower() == 'video'
+    # perform the download
+    with yt_dlp.YoutubeDL(options) as ydl:
+        return ydl.download([url])
 
-ydl_opts = {
-    'format': 'mp3/bestaudio/best',
-    'postprocessors': [{  # Extract audio using ffmpeg
-        'key': 'FFmpegExtractAudio',
-        'preferredcodec': 'mp3',
-    }]
-}
 
-with yt_dlp.YoutubeDL(ydl_opts if not IS_VIDEO else None) as ydl:
-    ERROR_CODE = ydl.download(URL)
+def main():
+    """main function to run the script"""
+    args = parse_arguments()
 
-# move all downloads to desktop
-system("mv *.webm ~/Desktop; mv *.mp3 ~/Desktop")
+    # create destination directory if it doesn't exist
+    os.makedirs(args.destination, exist_ok=True)
+
+    # download the media
+    error_code = download_media(args.url, args.media_type == "video", args.destination)
+
+    # check for errors
+    if error_code:
+        print(f"An error occurred. Error code: {error_code}")
+        sys.exit(1)
+
+    print(f"Download completed successfully. Files saved to: {args.destination}")
+
+
+if __name__ == "__main__":
+    main()
