@@ -1,10 +1,31 @@
 #!/bin/zsh
-echo "starting"
+
+# Function to check if the script is being run from Python, crontab, or through subprocess
+check_parent_process() {
+    local parent_process=$(ps -o comm= -p $PPID)
+    local grandparent_process=$(ps -o comm= -p $(ps -o ppid= -p $PPID))
+    
+    if [[ $parent_process == "python"* || $parent_process == "cron" ]]; then
+        return 0
+    elif [[ $parent_process == "sh" || $parent_process == "bash" || $parent_process == "zsh" ]] && [[ $grandparent_process == "python"* ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Check if the script is being run from Python, crontab, or through subprocess
+if ! check_parent_process; then
+    echo "This script can only be run from a Python script or crontab."
+    exit 1
+fi
 
 if [[ -z "$2" ]]; then
   echo "Error: Missing argument. Please provide the second argument."
   exit 1
 fi
+
+echo "starting"
 
 home_directory=$(eval echo ~$USER)
 
