@@ -3,16 +3,17 @@
 # Function to check if the script is being run from Python, crontab, or through subprocess
 check_parent_process() {
     local parent_process=$(ps -o comm= -p $PPID)
-    local grandparent_process=$(ps -o comm= -p $(ps -o ppid= -p $PPID))
-    
-    if [[ $parent_process == "python"* || $parent_process == "cron" ]]; then
+    local grandparent_process=$(ps -o comm= -p $(ps -o ppid= -p $PPID) 2>/dev/null)
+
+    if [[ $parent_process == "cron" || $grandparent_process == "cron" ]]; then
         return 0
-    elif [[ $parent_process == "sh" || $parent_process == "bash" || $parent_process == "zsh" ]] && [[ $grandparent_process == "python"* ]]; then
+    elif [[ $parent_process == "python"* ]]; then
         return 0
     else
         return 1
     fi
 }
+
 
 # Check if the script is being run from Python, crontab, or through subprocess
 if ! check_parent_process; then
@@ -46,14 +47,15 @@ fi
 blocklist_domains=("${(@f)$(cat "${blocklist_file}")}")
 
 if [[ "$1" == "allow" ]]; then
-pihole_command=(/usr/local/bin/pihole --wild -d)
+    pihole_command=(/usr/local/bin/pihole --wild -d)
 else
-pihole_command=(/usr/local/bin/pihole --wild)
+    pihole_command=(/usr/local/bin/pihole --wild)
 fi
 
 for domain in $blocklist_domains; do
-echo "${pihole_command[@]} $domain"
-"${pihole_command[@]}" "$domain"
+    echo "${pihole_command[@]} $domain"
+    "${pihole_command[@]}" "$domain"
 done
 
 echo "done"
+
