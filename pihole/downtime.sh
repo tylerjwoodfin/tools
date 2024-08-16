@@ -7,7 +7,7 @@ check_parent_process() {
 
     if [[ $parent_process == "cron" || $grandparent_process == "cron" ]]; then
         return 0
-    elif [[ $parent_process == "python"* ]]; then
+    elif [[ $parent_process == "python"* || $grandparent_process == "python"* ]]; then
         return 0
     else
         return 1
