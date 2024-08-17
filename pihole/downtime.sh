@@ -1,18 +1,29 @@
 #!/bin/zsh
 
-# Function to check if the script is being run from Python, crontab, or through subprocess
+# Function to check if the script is being run from Python, crontab, or atd
 check_parent_process() {
-    local parent_process=$(ps -o comm= -p $PPID)
-    local grandparent_process=$(ps -o comm= -p $(ps -o ppid= -p $PPID) 2>/dev/null)
+    local parent_process grandparent_process
 
-    if [[ $parent_process == "cron" || $grandparent_process == "cron" ]]; then
-        return 0
-    elif [[ $parent_process == "python"* || $grandparent_process == "python"* ]]; then
-        return 0
-    else
-        return 1
-    fi
+    # Get the parent and grandparent process names
+    parent_process=$(ps -o comm= -p $PPID)
+    grandparent_process=$(ps -o comm= -p $(ps -o ppid= -p $PPID) 2>/dev/null)
+
+    # Check if the parent or grandparent process matches the criteria
+    case $parent_process in
+        cron|python*|atd)
+            return 0
+            ;;
+    esac
+
+    case $grandparent_process in
+        cron|python*|atd)
+            return 0
+            ;;
+    esac
+
+    return 1
 }
+
 
 
 # Check if the script is being run from Python, crontab, or through subprocess
