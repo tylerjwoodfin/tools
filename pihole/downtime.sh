@@ -24,8 +24,6 @@ check_parent_process() {
     return 1
 }
 
-
-
 # Check if the script is being run from Python, crontab, or through subprocess
 if ! check_parent_process; then
     echo "This script can only be run from a Python script or crontab."
@@ -59,14 +57,37 @@ blocklist_domains=("${(@f)$(cat "${blocklist_file}")}")
 
 if [[ "$1" == "allow" ]]; then
     pihole_command=(/usr/local/bin/pihole --wild -d)
+    verify_command="/usr/local/bin/pihole -q"
 else
     pihole_command=(/usr/local/bin/pihole --wild)
+    verify_command="/usr/local/bin/pihole -q"
 fi
+
+max_retries=3
 
 for domain in $blocklist_domains; do
     echo "${pihole_command[@]} $domain"
-    "${pihole_command[@]}" "$domain"
+    
+    attempt=1
+    while (( attempt <= max_retries )); do
+        "${pihole_command[@]}" "$domain"
+        result=$($verify_command "$domain")
+
+        if [[ "$1" == "allow" && -n "$result" ]]; then
+            echo "Domain $domain successfully allowed."
+            break
+        elif [[ "$1" != "allow" && -z "$result" ]]; then
+            echo "Domain $domain successfully blocked."
+            break
+        else
+            echo "Retrying for domain $domain (attempt $attempt)..."
+            (( attempt++ ))
+        fi
+    done
+
+    if (( attempt > max_retries )); then
+        /home/tyler/.local/bin/cabinet --log "Failed to process domain $domain after $max_retries attempts" --level "error"
+    fi
 done
 
 echo "done"
-
