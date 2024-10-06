@@ -55,12 +55,12 @@ fi
 # Properly read lines into an array
 blocklist_domains=("${(@f)$(cat "${blocklist_file}")}")
 
+verify_command=(/usr/local/bin/pihole -q)
 if [[ "$1" == "allow" ]]; then
     pihole_command=(/usr/local/bin/pihole --wild -d)
-    verify_command="/usr/local/bin/pihole -q"
 else
+    # block
     pihole_command=(/usr/local/bin/pihole --wild)
-    verify_command="/usr/local/bin/pihole -q"
 fi
 
 max_retries=3
@@ -71,16 +71,16 @@ for domain in $blocklist_domains; do
     attempt=1
     while (( attempt <= max_retries )); do
         "${pihole_command[@]}" "$domain"
-        result=$($verify_command "$domain")
+        result=$("${verify_command[@]}" "$domain")
 
         if [[ "$1" == "allow" && -n "$result" ]]; then
-            echo "Domain $domain successfully allowed."
+            /home/tyler/.local/bin/cabinet --log "Domain $domain successfully allowed."
             break
         elif [[ "$1" != "allow" && -z "$result" ]]; then
-            echo "Domain $domain successfully blocked."
+            /home/tyler/.local/bin/cabinet --log "Domain $domain successfully blocked."
             break
         else
-            echo "Retrying for domain $domain (attempt $attempt)..."
+            /home/tyler/.local/bin/cabinet --log "Retrying for domain $domain (attempt $attempt)..."
             (( attempt++ ))
         fi
     done
