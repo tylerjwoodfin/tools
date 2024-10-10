@@ -7,7 +7,7 @@
 # - immich CLI tool
 # - inotify-tools
 # - nvm
-# - Node.js 20
+# - Node.js v20.18.0
 # - zsh
 # - cabinet - https://github.com/tylerjwoodfin/cabinet
 
