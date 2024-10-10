@@ -1,5 +1,16 @@
 #!/bin/zsh
 
+# This script watches a directory for new files and uploads them to Immich
+# using the immich CLI tool.
+
+# Requirements:
+# - immich CLI tool
+# - inotify-tools
+# - nvm
+# - Node.js 20
+# - zsh
+# - cabinet - https://github.com/tylerjwoodfin/cabinet
+
 # upload new media to immich
 WATCH_DIR="$HOME/syncthing/photos/upload-queue"
 LOG_DIR="$HOME/git/log"
