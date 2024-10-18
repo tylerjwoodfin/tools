@@ -76,7 +76,7 @@ for domain in $blocklist_domains; do
         if [[ "$1" == "allow" && -n "$result" ]]; then
             /home/tyler/.local/bin/cabinet --log "Domain $domain successfully allowed."
             break
-        elif [[ "$1" != "allow" && -z "$result" ]]; then
+        elif [[ "$1" == "block" && ( "$result" == *"$domain"* || "$result" == *"Match found in"* ) ]]; then
             /home/tyler/.local/bin/cabinet --log "Domain $domain successfully blocked."
             break
         else
