@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  my-python-app:
+    build: .
+    container_name: my-python-app-container
+    volumes:
+      - ./cabinet-config:/root/.cabinet #you might need to run "cabinet -e" command in a shell to generate cabinet config file
+    command: ["python", "main.py"]
