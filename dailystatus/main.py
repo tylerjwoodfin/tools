@@ -30,7 +30,7 @@ _path_dot_cabinet: str = os.path.join(f"/home/{_path_user_home}/.cabinet")
 _path_backend: str = cab.get("path", "cabinet", "log-backup") or f"{_path_dot_cabinet}/log-backup"
 _path_zshrc: str = os.path.join(f"/home/{_path_user_home}/.zshrc")
 _path_notes: str = cab.get("path", "notes") or f"{_path_dot_cabinet}/notes"
-_log_path_today: str = os.path.join(cab.path_log, str(_today))
+_log_path_today: str = os.path.join(cab.path_dir_log, str(_today))
 _log_path_backend: str = os.path.join(_path_backend, "log")
 _log_path_backups: str = cab.get("path", "backups") or f"{_path_dot_cabinet}/backups"
 _log_backups_max: int = cab.get("backups", "log_backup_limit", return_type=int) or 14
