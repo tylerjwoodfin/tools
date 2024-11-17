@@ -3,12 +3,14 @@ Generate a daily status email detailing key activities, back up essential files,
 """
 
 import os
+import difflib
 import pwd
 import datetime
 import glob
 import subprocess
 import json
 import textwrap
+from pathlib import Path
 import cabinet
 
 # pylint: disable=invalid-name
@@ -42,6 +44,65 @@ def get_paths_and_config():
         "bedtime_key": bedtime_key,
     }
 
+def append_syncthing_conflict_check(email):
+    """
+    If there are conflicts (files with `.sync-conflict` in their name) for remind.md 
+    (cabinet -> remindmail -> path -> file),
+    return a merge conflict-style difference between the conflicting files
+    with HTML formatting.
+    """
+    # Get the absolute path to the file from Cabinet
+    target_file = cab.get("remindmail", "path", "file")
+
+    if not target_file or not os.path.isfile(target_file):
+        return "Error: Target file does not exist."
+
+    # Find files with `.sync-conflict` in the same directory as the target file
+    target_dir = os.path.dirname(target_file)
+    base_name = Path(target_file).stem
+    conflict_pattern = os.path.join(target_dir, f"{base_name}.sync-conflict*")
+    conflict_files = glob.glob(conflict_pattern)
+
+    if not conflict_files:
+        return email
+
+    # Read the contents of the original file
+    try:
+        with open(target_file, 'r', encoding='utf-8') as f:
+            original_content = f.readlines()
+    except (OSError, IOError) as e:
+        cab.log(f"Error reading original file: {str(e)}", level="error")
+        return email + f"Error reading original file: {str(e)}"
+
+    # Read and compare each conflict file
+    html_diffs = []
+    for conflict_file in conflict_files:
+        try:
+            with open(conflict_file, 'r', encoding='utf-8') as f:
+                conflict_content = f.readlines()
+        except (OSError, IOError) as e:
+            cab.log(f"Error reading conflict file {conflict_file}: {str(e)}", level="error")
+            return email + f"Error reading conflict file {conflict_file}: {str(e)}"
+
+        # Generate a unified diff and convert to HTML
+        diff = difflib.unified_diff(
+            original_content, conflict_content,
+            fromfile=base_name, tofile=os.path.basename(conflict_file),
+            lineterm=''
+        )
+        formatted_diff = "<br>".join(
+            [f"<span style='color: green;'>+{line[1:]}</span>" \
+                if line.startswith('+') and not line.startswith('+++') else
+             f"<span style='color: red;'>-{line[1:]}</span>" \
+                 if line.startswith('-') and not line.startswith('---') else
+             f"<span>{line}</span>" for line in diff]
+        )
+        html_diffs.append(f"<h3>remind.md has a conflict:</h3> \
+                          <pre style='font-family: monospace; white-space: pre-wrap;'>{
+                formatted_diff}</pre>")
+
+    # Combine all diffs into a single HTML string
+    return email + "<br>".join(html_diffs)
 
 def backup_files(paths):
     """back up essential files"""
@@ -108,7 +169,7 @@ def analyze_logs(paths, email):
     if daily_log_issues:
         daily_log_filtered = "<br>".join(daily_log_issues)
         email += textwrap.dedent(f"""
-            <b>Warning/Error/Critical Log:</b><br>
+            <h3>Warning/Error/Critical Log:</h3>
             <pre style="font-family: monospace; white-space: pre-wrap;">{daily_log_filtered}</pre>
             <br>
             """)
@@ -127,13 +188,13 @@ def append_spotify_info(paths, email):
             "WARNING" in log or "ERROR" in log or "CRITICAL" in log]
         if issues:
             spotify_issues = "<br>".join(issues)
-            email += f"<b>Spotify Issues:</b><br>{spotify_issues}<br><br>"
+            email += f"<h3>Spotify Issues:</h3>{spotify_issues}<br><br>"
 
     total_tracks = spotify_stats.get("total_tracks", "No Data")
     average_year = spotify_stats.get("average_year", "No Data")
 
     email += f"""
-    <b>Spotify Stats:</b><br>
+    <h3>Spotify Stats:</h3>
     <ul><b>Song Count:</b> {total_tracks}</ul>
     <ul><b>Average Year:</b> {average_year}</ul>
     <br>
@@ -147,7 +208,7 @@ def append_weather_info(email):
     weather_tomorrow_formatted = cab.get("weather", "data", "tomorrow_formatted") or {}
     if weather_tomorrow_formatted:
         email += f"""
-            <b>Weather Tomorrow:</b><br>
+            <h3>Weather Tomorrow:</h3>
             {weather_tomorrow_formatted}
         """
     return email
@@ -184,6 +245,9 @@ if __name__ == "__main__":
 
     # analyze logs
     status_email, has_warnings, has_errors = analyze_logs(config_data, status_email)
+
+    # add syncthing conflict check
+    status_email = append_syncthing_conflict_check(status_email)
 
     # add spotify info
     status_email = append_spotify_info(config_data, status_email)
