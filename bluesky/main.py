@@ -68,10 +68,11 @@ class BlueSkyTool:
 
 
 if __name__ == '__main__':
-    # ensure a message is provided as an argument
-    if len(sys.argv) != 2:
-        print("Usage: python bluesky.py '<message>'")
-    else:
-        message = sys.argv[1]
-        tool = BlueSkyTool()
-        tool.run(message)
+    # do not take any arguments
+    if len(sys.argv) > 1:
+        print("Usage: python main.py; no arguments are accepted.")
+        sys.exit(1)
+
+    message = input("> ")
+    tool = BlueSkyTool()
+    tool.run(message)
