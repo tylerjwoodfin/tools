@@ -43,17 +43,13 @@ BlueSkyTool is a Python script for posting messages to [BlueSky](https://bsky.ap
 
 ## Usage
 
-Run the script from the terminal with the message you want to post as an argument:
+Run the script from the terminal:
 
 ```bash
-python3 bluesky.py "Your message here"
+python3 bluesky.py
 ```
 
-### Example
-
-```bash
-python3 bluesky.py "Hello, BlueSky world!"
-```
+You will be prompted to enter a message to post.
 
 ## Code Overview
 
