@@ -97,9 +97,11 @@ def append_syncthing_conflict_check(email):
                  if line.startswith('-') and not line.startswith('---') else
              f"<span>{line}</span>" for line in diff]
         )
-        html_diffs.append(f"<h3>remind.md has a conflict:</h3> \
-                          <pre style='font-family: monospace; white-space: pre-wrap;'>{
-                formatted_diff}</pre>")
+        html_diffs.append(
+            f"<h3>remind.md has a conflict:</h3>"
+            f"<pre style='font-family: monospace; white-space: pre-wrap;'>"
+            f"{formatted_diff}</pre>"
+        )
 
     # Combine all diffs into a single HTML string
     return email + "<br>".join(html_diffs)
