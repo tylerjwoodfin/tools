@@ -106,31 +106,41 @@ def append_syncthing_conflict_check(email):
     # Combine all diffs into a single HTML string
     return email + "<br>".join(html_diffs)
 
-def backup_files(paths):
-    """back up essential files"""
+def backup_files(paths: dict) -> None:
+    """
+    Back up essential files.
+
+    Args:
+        paths (dict): A dictionary containing paths and other related configuration values.
+
+    Returns:
+        None
+    """
+    # construct backup file paths
+    path_cron_today = os.path.join(paths["path_backend"], "cron", f"Cron {paths['today']}.md")
+    path_bash_today = os.path.join(paths["path_backend"], "bash", f"Bash {paths['today']}.md")
+    path_notes_today = os.path.join(paths["path_backend"], "notes", f"notes {paths['today']}.zip")
+    path_log_backup = os.path.join(
+        paths["log_backups_location"], f"log folder backup {paths['today']}.zip"
+    )
+
+    # define backup commands
     backup_commands = [
-        f"/usr/bin/crontab -l > '{os.path.join(paths['path_backend'],
-        'cron',
-        f'Cron {paths['today']}.md')}'",
-        f"cp -r {paths['path_zshrc']} '{os.path.join(paths['path_backend'],
-        'bash',
-        f'Bash {paths['today']}.md')}'",
-        f"zip -r '{os.path.join(paths['path_backend'],
-        'notes',
-        f'notes {paths['today']}.zip')}' {paths['path_notes']}",
-        f"zip -r '{os.path.join(paths['log_backups_location'],
-        f'log folder backup {paths['today']}.zip')}'\
-            {paths['path_backend']} --exclude='{os.path.join(paths['path_backend'],
-            'songs', '*')}'",
+        f"/usr/bin/crontab -l > '{path_cron_today}'",
+        f"cp -r {paths['path_zshrc']} '{path_bash_today}'",
+        f"zip -r '{path_notes_today}' {paths['path_notes']}",
+        f"zip -r '{path_log_backup}' {paths['path_backend']} "
+        f"--exclude='{os.path.join(paths['path_backend'], 'songs', '*')}'",
     ]
 
+    # execute each backup command
     try:
         for command in backup_commands:
             subprocess.run(command, shell=True, check=True)
     except subprocess.CalledProcessError as error:
-        cab.log(f"command failed: {command} with error: {str(error)}", level="error")
+        cab.log(f"Command failed: {command} with error: {str(error)}", level="error")
     except OSError as error:
-        cab.log(f"os error for: {command} with error: {str(error)}", level="error")
+        cab.log(f"OS error for: {command} with error: {str(error)}", level="error")
 
 
 def prune_old_backups(paths, max_backups=14):
