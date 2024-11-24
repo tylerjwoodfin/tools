@@ -57,6 +57,5 @@ def main():
 
     print(f"Download completed successfully. Files saved to: {args.destination}")
 
-
 if __name__ == "__main__":
     main()

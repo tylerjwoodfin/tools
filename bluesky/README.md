@@ -1,7 +1,6 @@
-```markdown
-# BlueSkyTool
+# BlueSky
 
-BlueSkyTool is a Python script for posting messages to [BlueSky](https://bsky.app) directly from the terminal using the official `atproto` library. The tool retrieves your credentials securely from a `Cabinet` instance and simplifies the process of posting content.
+BlueSky is a Python script for posting messages to [BlueSky](https://bsky.app) directly from the terminal.
 
 ## Features
 
@@ -14,7 +13,7 @@ BlueSkyTool is a Python script for posting messages to [BlueSky](https://bsky.ap
 - Python 3.9 or newer
 - Dependencies:
   - `atproto` library
-  - `cabinet` library
+  - [Cabinet](https://www.github.com/tylerjwoodfin/cabinet)
 - Your BlueSky credentials stored in a `Cabinet` instance under the key `bluesky`.
 
 ## Installation
@@ -61,6 +60,3 @@ The core functionality is encapsulated in the `BlueSkyTool` class:
 ## License
 
 This project is licensed under the MIT License.
-```
-
-This README provides essential information about the script, its usage, and installation steps. Adjust `<repository_url>` and other placeholders as needed.
