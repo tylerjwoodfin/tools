@@ -1,6 +1,6 @@
-# BlueSkyTool
+# BlueSky
 
-BlueSkyTool is a Python script for posting messages to [BlueSky](https://bsky.app) directly from the terminal.
+BlueSky is a Python script for posting messages to [BlueSky](https://bsky.app) directly from the terminal.
 
 ## Features
 
