@@ -16,7 +16,7 @@ class BuildTool:
         self.build_options = ['remindmail', 'cabinet', 'website']
         self.selected_option: str = ""
         self.current_working_directory: str = os.getcwd()
-        self.path_remindmail: str = self.cab.get("path", "remindmail", "src") or \
+        self.path_remindmail: str = self.cab.get("remindmail", "path", "src") or \
             os.path.join(os.path.expanduser('~'), 'git', 'remindmail')
         self.path_cabinet: str = self.cab.get("path", "cabinet", "src") or \
             os.path.join(os.path.expanduser('~'), 'git', 'cabinet')

@@ -3,7 +3,7 @@
 ## dependencies
 
 - [cabinet](https://pypi.org/project/cabinet/)
-  - `cabinet config` for setup
+  - `cabinet --configure` for setup
 
 ## setup
 
