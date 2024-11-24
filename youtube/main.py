@@ -56,3 +56,6 @@ def main():
         sys.exit(1)
 
     print(f"Download completed successfully. Files saved to: {args.destination}")
+
+if __name__ == "__main__":
+    main()
