@@ -83,8 +83,9 @@ class BuildTool:
 
         os.system(f"cd {self.path_src}; {self.cmd_pipreqs} python3 -m build")
 
-        # push to pypi
-        os.system(f"cd {self.path_src}; python3 -m twine upload dist/* --verbose")
+        # create pex, push to pypi
+        os.system(f"cd {self.path_src} && pex . -o {self.selected_option}.pex "
+                  f"--script={self.selected_option} && python3 -m twine upload dist/* --verbose")
 
         print("\n\nFinished! Remember to commit any new changes.")
 

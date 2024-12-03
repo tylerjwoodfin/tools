@@ -1,6 +1,6 @@
-# Venmo Transaction Parser
+# Finance Transaction Parser
 
-A simple Python script to read a Venmo transaction CSV and parse it into categories.
+A simple Python script to read bank-specific transaction CSVs and parse them into categories.
 
 ## Dependencies
 - Python 3.6+
