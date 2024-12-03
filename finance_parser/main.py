@@ -3,10 +3,12 @@ Multi-file transaction parser for Venmo and Citi CSV files.
 """
 
 import json
+import argparse
 from pathlib import Path
 from tkinter import Tk
 from tkinter.filedialog import askopenfilename
 from typing import Dict
+import argcomplete
 import pandas as pd  # type: ignore # pylint: disable=import-error
 
 class BaseParser:
@@ -18,6 +20,7 @@ class BaseParser:
         self.category_file = category_file
         self.transactions_df = pd.DataFrame()
         self.category_mapping: Dict[str, list] = {}
+        self.filtered_rows: list = []
 
     def load_categories(self) -> None:
         """Loads categories from the specified JSON file."""
@@ -81,7 +84,18 @@ class VenmoParser(BaseParser):
     """
     def load_transactions(self) -> None:
         """Loads Venmo transactions from the CSV file."""
-        self.transactions_df = pd.read_csv(self.file_path, skiprows=2, dtype=str)
+        # Automatically find the header row
+        with open(self.file_path, 'r', encoding='utf-8') as file:
+            for i, line in enumerate(file):
+                if "Datetime" in line and "Note" in line:
+                    header_row = i
+                    break
+            else:
+                print("Error: Could not find the header row in the Venmo CSV file.")
+                exit()
+
+        # Load the CSV starting from the header row
+        self.transactions_df = pd.read_csv(self.file_path, skiprows=header_row, dtype=str)
         print("Venmo CSV file successfully loaded!")
 
     def process_transactions(self, source: str = "Venmo") -> pd.DataFrame:
@@ -91,8 +105,7 @@ class VenmoParser(BaseParser):
             self.transactions_df['Note'].apply(self.categorize_transaction)
 
         self.transactions_df['Adjusted Amount'] = self.transactions_df.apply(
-            lambda row: -self.clean_amount(row['Amount (total)']) if row['Type'] == 'Charge'
-            else self.clean_amount(row['Amount (total)']),
+            lambda row: -self.clean_amount(row['Amount (total)']),
             axis=1
         )
 
@@ -108,14 +121,38 @@ class CitiParser(BaseParser):
     """
     Parses Citi transactions from a CSV file.
     """
+    def load_categories(self) -> None:
+        """Loads categories and filtered rows from the specified JSON file."""
+        try:
+            with open(self.category_file, 'r', encoding='utf-8') as file:
+                config = json.load(file)
+                self.category_mapping = config['categories']
+                self.filtered_rows = config.get('filteredRows', [])
+        except FileNotFoundError:
+            print("Categories JSON file not found.")
+            exit()
+
     def load_transactions(self) -> None:
         """Loads Citi transactions from the CSV file."""
-        raw_data = pd.read_csv(self.file_path,
-                               skiprows=1, names=["Amount", "Date", "Description"], dtype=str)
-        raw_data = raw_data[~raw_data["Amount"].str.contains("Total", na=False)]
-        raw_data = raw_data.dropna(subset=["Amount", "Description"])
-        raw_data["Amount"] = raw_data["Amount"].str.replace("[^0-9.-]", "", regex=True)
-        self.transactions_df = raw_data
+        with open(self.file_path, 'r', encoding='utf-8') as file:
+            lines = file.readlines()
+
+        # Filter out lines matching any value in filteredRows
+        lines = [line for line in lines if line.strip() not in self.filtered_rows]
+
+        # Parse every 3 lines as a single transaction
+        data = []
+        for i in range(0, len(lines), 3):
+            try:
+                date = lines[i].strip()
+                description = lines[i + 1].strip()
+                amount = lines[i + 2].strip()
+                data.append({"Date": date, "Description": description, "Amount": amount})
+            except IndexError:
+                print(f"Skipping incomplete transaction at line {i}.")
+                continue
+
+        self.transactions_df = pd.DataFrame(data)
         print("Citi CSV file successfully loaded!")
 
     def process_transactions(self, source: str = "Citi") -> pd.DataFrame:
@@ -133,7 +170,6 @@ class CitiParser(BaseParser):
         return self.transactions_df.loc[:, ['Datetime',
                                             'Category', 'Adjusted Amount', 'Description', 'Source']]
 
-
 def ask_for_file(file_description: str) -> str:
     """Prompts the user to select a file via a file dialog."""
     print(f"Please select the {file_description} file.")
@@ -147,12 +183,23 @@ def ask_for_file(file_description: str) -> str:
 
 def main() -> None:
     """Main function to handle argument parsing and execution."""
+    parser = argparse.ArgumentParser(description=
+                                     "Parse and categorize transactions from relevant CSV files.")
+    parser.add_argument("-venmo", type=str,
+                        help="Path to the Venmo transactions CSV file", required=False)
+    parser.add_argument("-citi", type=str,
+                        help="Path to the Citi transactions CSV file", required=False)
+    args = parser.parse_args()
+
+    # Enable autocompletion
+    argcomplete.autocomplete(parser)
+
     # Set the path for the category JSON file
     categories_file_path = Path.home() / "syncthing/md/docs/selfhosted/transaction_categories.json"
 
-    # Ask for Venmo and Citi files
-    venmo_file_path = ask_for_file("Venmo transactions CSV")
-    citi_file_path = ask_for_file("Citi transactions CSV")
+    # Use provided paths or fall back to file dialogs
+    venmo_file_path = args.venmo or ask_for_file("Venmo transactions CSV")
+    citi_file_path = args.citi or ask_for_file("Citi transactions CSV")
 
     # Process Venmo transactions
     venmo_parser = VenmoParser(file_path=venmo_file_path, category_file=categories_file_path)
@@ -168,7 +215,7 @@ def main() -> None:
 
     # Combine and sort transactions
     combined_df = pd.concat([venmo_summary_df, citi_summary_df]).sort_values(by=[
-        'Category', 'Datetime'])
+        'Source', 'Category', 'Datetime'])
     print("\nCombined Transactions:")
     print(combined_df.to_string(index=False))
 
