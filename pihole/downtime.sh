@@ -24,8 +24,24 @@ check_parent_process() {
     return 1
 }
 
+# Function to clean up scheduled at jobs
+cleanup_scheduled_jobs() {
+    local script_path=$0
+    local mode=$2
+
+    # List all pending at jobs
+    atq | while read job_number rest; do
+        # Check if this job contains our script and the reblock command
+        at -c "$job_number" | grep -q "$script_path.*block.*$mode" && {
+            atrm "$job_number"
+            /home/tyler/.local/bin/cabinet --log "Removed scheduled job #$job_number for $mode"
+        }
+    done
+}
+
 # Check if the script is being run from Python, crontab, or through subprocess
-if ! check_parent_process; then
+parent_process=$(check_parent_process)
+if [ $? -ne 0 ]; then
     echo "This script can only be run from a Python script or crontab."
     exit 1
 fi
@@ -36,6 +52,12 @@ if [[ -z "$2" ]]; then
 fi
 
 echo "starting"
+
+# If running in allow mode from crontab, clean up scheduled jobs
+if [[ "$1" == "allow" && "$parent_process" == "cron" ]]; then
+    echo "Cleaning up scheduled jobs..."
+    cleanup_scheduled_jobs "$@"
+fi
 
 home_directory=$(eval echo ~$USER)
 
