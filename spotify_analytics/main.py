@@ -12,6 +12,7 @@ from typing import List, Dict, Optional
 from statistics import mean
 import logging
 from pathlib import Path
+from collections import Counter
 
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
@@ -93,6 +94,18 @@ class SpotifyAnalyzer:
                                  level="error")
                     raise
 
+    def _check_duplicates(self, tracks: List[str], playlist_name: str):
+        """Check for duplicate tracks within a playlist."""
+        track_counts = Counter(tracks)
+        duplicates = {track: count for track, count in track_counts.items() if count > 1}
+
+        if duplicates:
+            for track, count in duplicates.items():
+                self.cab.log(
+                    f"Duplicate found in {playlist_name}: {track} appears {count} times",
+                    level="warning"
+                )
+
     def _process_tracks(self, tracks: Dict, playlist_name: str,
                         playlist_index: int, total_tracks: int) -> List[str]:
         """Process tracks from a playlist and return track URLs."""
@@ -159,6 +172,9 @@ class SpotifyAnalyzer:
                     break
                 tracks = self.spotify_client.next(tracks)
 
+            # Check for duplicates in the playlist
+            self._check_duplicates(playlist_tracks, playlist_name)
+
             self.playlist_data.append(PlaylistData(name=playlist_name, tracks=playlist_tracks))
 
         self._save_data()
@@ -166,7 +182,6 @@ class SpotifyAnalyzer:
 
     def _save_data(self):
         """Save processed track data to JSON file."""
-
         log_backup_path: str = self.cab.get('path', 'cabinet', 'log-backup') or str(Path.home())
         output_path = Path(log_backup_path) / "songs"
         output_path.mkdir(parents=True, exist_ok=True)
