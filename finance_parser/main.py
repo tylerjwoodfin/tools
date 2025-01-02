@@ -26,6 +26,7 @@ class BaseParser:
         """Loads categories from the specified JSON file."""
         try:
             with open(self.category_file, 'r', encoding='utf-8') as file:
+                print("Opening categories JSON file:", self.category_file)
                 self.category_mapping = json.load(file)['categories']
         except FileNotFoundError:
             print("Categories JSON file not found.")
@@ -119,7 +120,9 @@ class VenmoParser(BaseParser):
 
 class CitiParser(BaseParser):
     """
-    Parses Citi transactions from a CSV file.
+    Parses Citi transactions from a CSV file in the format:
+    Status,Date,Description,Debit,Credit
+    For budget tracking: debits (spending) are positive, credits (money received) are negative
     """
     def load_categories(self) -> None:
         """Loads categories and filtered rows from the specified JSON file."""
@@ -134,41 +137,51 @@ class CitiParser(BaseParser):
 
     def load_transactions(self) -> None:
         """Loads Citi transactions from the CSV file."""
-        with open(self.file_path, 'r', encoding='utf-8') as file:
-            lines = file.readlines()
+        try:
+            self.transactions_df = pd.read_csv(self.file_path, dtype=str)
+            print("Citi CSV file successfully loaded!")
+        except Exception as e: # pylint: disable=broad-except
+            print(f"Error loading Citi CSV file: {e}")
+            exit()
 
-        # Filter out lines matching any value in filteredRows
-        lines = [line for line in lines if line.strip() not in self.filtered_rows]
-
-        # Parse every 3 lines as a single transaction
-        data = []
-        for i in range(0, len(lines), 3):
-            try:
-                date = lines[i].strip()
-                description = lines[i + 1].strip()
-                amount = lines[i + 2].strip()
-                data.append({"Date": date, "Description": description, "Amount": amount})
-            except IndexError:
-                print(f"Skipping incomplete transaction at line {i}.")
-                continue
-
-        self.transactions_df = pd.DataFrame(data)
-        print("Citi CSV file successfully loaded!")
+    def should_include_transaction(self, description: str) -> bool:
+        """
+        Determines if a transaction should be included based on filtered rows.
+        """
+        return not any(filtered_text.lower() in description.lower() 
+                      for filtered_text in self.filtered_rows)
 
     def process_transactions(self, source: str = "Citi") -> pd.DataFrame:
         """Processes Citi transactions to categorize and clean amounts."""
+        # Filter out unwanted transactions
+        self.transactions_df = self.transactions_df[
+            self.transactions_df['Description'].apply(self.should_include_transaction)
+        ]
+
+        # Categorize based on Description
         self.transactions_df['Category'] = \
             self.transactions_df['Description'].apply(self.categorize_transaction)
 
+        # Handle amount calculation from Debit and Credit columns
+        def calculate_amount(row):
+            debit = self.clean_amount(row['Debit']) if pd.notna(row['Debit']) else 0
+            credit = self.clean_amount(row['Credit']) if pd.notna(row['Credit']) else 0
+            # Debits should be positive (money spent)
+            # Credits remain negative (money received)
+            return debit + credit
+
         self.transactions_df['Adjusted Amount'] = \
-            self.transactions_df['Amount'].apply(self.clean_amount)
+            self.transactions_df.apply(calculate_amount, axis=1)
 
+        # Convert date string to datetime
         self.transactions_df['Datetime'] = pd.to_datetime(
-            self.transactions_df['Date'], errors='coerce')
+            self.transactions_df['Date'], format='%m/%d/%Y', errors='coerce')
 
+        # Add source column
         self.transactions_df['Source'] = source
-        return self.transactions_df.loc[:, ['Datetime',
-                                            'Category', 'Adjusted Amount', 'Description', 'Source']]
+
+        # Return only the columns we need
+        return self.transactions_df.loc[:, ['Datetime', 'Category', 'Adjusted Amount', 'Description', 'Source']]
 
 def ask_for_file(file_description: str) -> str:
     """Prompts the user to select a file via a file dialog."""
