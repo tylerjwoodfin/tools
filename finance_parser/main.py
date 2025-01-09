@@ -8,13 +8,13 @@ from pathlib import Path
 from tkinter import Tk
 from tkinter.filedialog import askopenfilename
 from typing import Dict
-import argcomplete
+import argcomplete  # type: ignore # pylint: disable=import-error
 import pandas as pd  # type: ignore # pylint: disable=import-error
+import pyperclip  # type: ignore # pylint: disable=import-error
+import ezodf  # type: ignore # pylint: disable=import-error
 
 class BaseParser:
-    """
-    Base class for all parsers.
-    """
+    """Base class for all parsers."""
     def __init__(self, file_path: str, category_file: Path):
         self.file_path = file_path
         self.category_file = category_file
@@ -33,9 +33,7 @@ class BaseParser:
             exit()
 
     def categorize_transaction(self, note: str) -> str:
-        """
-        Categorizes transactions based on keywords from the JSON file.
-        """
+        """Categorizes transactions based on keywords from the JSON file."""
         note_lower = note.lower()
         for category, keywords in self.category_mapping.items():
             if any(keyword.lower() in note_lower for keyword in keywords):
@@ -43,9 +41,7 @@ class BaseParser:
         return 'Other'
 
     def clean_amount(self, value: str) -> float:
-        """
-        Cleans and converts the amount to a float.
-        """
+        """Cleans and converts the amount to a float."""
         if isinstance(value, str):
             cleaned_value = value.replace('$', '').replace(',', '').replace(' ', '').strip()
             return float(cleaned_value)
@@ -77,7 +73,6 @@ class BaseParser:
 
         print("\nCategory Totals:")
         print(totals_df.to_string(index=False))
-
 
 class VenmoParser(BaseParser):
     """
@@ -148,7 +143,7 @@ class CitiParser(BaseParser):
         """
         Determines if a transaction should be included based on filtered rows.
         """
-        return not any(filtered_text.lower() in description.lower() 
+        return not any(filtered_text.lower() in description.lower()
                       for filtered_text in self.filtered_rows)
 
     def process_transactions(self, source: str = "Citi") -> pd.DataFrame:
@@ -181,27 +176,79 @@ class CitiParser(BaseParser):
         self.transactions_df['Source'] = source
 
         # Return only the columns we need
-        return self.transactions_df.loc[:, ['Datetime', 'Category', 'Adjusted Amount', 'Description', 'Source']]
+        return self.transactions_df.loc[:, ['Datetime',
+                                           'Category', 'Adjusted Amount', 'Description', 'Source']]
+
 
 def ask_for_file(file_description: str) -> str:
     """Prompts the user to select a file via a file dialog."""
-    print(f"Please select the {file_description} file.")
+    print(f"Please select the {file_description}.")
     Tk().withdraw()
-    file_path = askopenfilename(filetypes=[("CSV files", "*.csv")])
+    file_path = askopenfilename(filetypes=[("CSV files", "*.csv"), ("ODS files", "*.ods")])
     if not file_path:
         print("No file selected.")
         exit()
     return file_path
 
+def update_spreadsheet_with_totals(spreadsheet_path: str, totals_df: pd.DataFrame) -> None:
+    """Reads an ODS spreadsheet, allows the user to select a sheet, and updates only Column C."""
+    # Open the spreadsheet
+    doc = ezodf.opendoc(spreadsheet_path)
+    sheet_names = [sheet.name for sheet in doc.sheets]
+
+    # Display available sheets
+    print("Available sheets:")
+    for i, sheet in enumerate(sheet_names, start=1):
+        print(f"{i}. {sheet}")
+
+    # Ask user to select a sheet
+    selected_index = int(input(f"Select a sheet (1-{len(sheet_names)}): ")) - 1
+    if selected_index < 0 or selected_index >= len(sheet_names):
+        print("Invalid sheet selection.")
+        return
+
+    selected_sheet = doc.sheets[selected_index]
+
+    # Map totals to their respective categories
+    unmatched_categories = []
+    for _, row in totals_df.iterrows():
+        category = row['Category']
+        total = row['Adjusted Amount']
+        matched = False
+
+        # Iterate over rows in the selected sheet
+        for row_idx in range(1, selected_sheet.nrows()):  # Skip the header
+            cell_value = selected_sheet[row_idx, 0].value  # Column A
+            if isinstance(cell_value, str) and cell_value.strip().lower() == category.lower():
+                # Write the total to Column C
+                selected_sheet[row_idx, 2].set_value(total)
+                matched = True
+                break
+
+        if not matched:
+            unmatched_categories.append(category)
+
+    # Save the updated document
+    doc.save()
+    print(f"Spreadsheet updated successfully: {spreadsheet_path}")
+
+    # Print unmatched categories
+    if unmatched_categories:
+        print("\nUnmatched categories:")
+        print("\n".join(unmatched_categories))
+    else:
+        print("\nAll categories matched successfully.")
 
 def main() -> None:
     """Main function to handle argument parsing and execution."""
-    parser = argparse.ArgumentParser(description=
-                                     "Parse and categorize transactions from relevant CSV files.")
-    parser.add_argument("-venmo", type=str,
-                        help="Path to the Venmo transactions CSV file", required=False)
-    parser.add_argument("-citi", type=str,
-                        help="Path to the Citi transactions CSV file", required=False)
+    parser = argparse.ArgumentParser(
+        description="Parse and categorize transactions from relevant CSV files.")
+    parser.add_argument("-venmo",
+                        type=str, help="Path to the Venmo transactions CSV file", required=False)
+    parser.add_argument("-citi",
+                        type=str, help="Path to the Citi transactions CSV file", required=False)
+    parser.add_argument("-spreadsheet",
+                        type=str, help="Path to the spreadsheet file", required=False)
     args = parser.parse_args()
 
     # Enable autocompletion
@@ -213,6 +260,7 @@ def main() -> None:
     # Use provided paths or fall back to file dialogs
     venmo_file_path = args.venmo or ask_for_file("Venmo transactions CSV")
     citi_file_path = args.citi or ask_for_file("Citi transactions CSV")
+    spreadsheet_path = args.spreadsheet or ask_for_file("Spreadsheet file")
 
     # Process Venmo transactions
     venmo_parser = VenmoParser(file_path=venmo_file_path, category_file=categories_file_path)
@@ -227,8 +275,8 @@ def main() -> None:
     citi_summary_df = citi_parser.process_transactions()
 
     # Combine and sort transactions
-    combined_df = pd.concat([venmo_summary_df, citi_summary_df]).sort_values(by=[
-        'Source', 'Category', 'Datetime'])
+    combined_df = pd.concat([
+        venmo_summary_df, citi_summary_df]).sort_values(by=['Source', 'Category', 'Datetime'])
     print("\nCombined Transactions:")
     print(combined_df.to_string(index=False))
 
@@ -236,6 +284,15 @@ def main() -> None:
     print("\nTotal Amounts by Category:")
     totals_df = combined_df.groupby('Category')['Adjusted Amount'].sum().reset_index()
     print(totals_df.to_string(index=False))
+
+    totals_csv = totals_df.to_csv(index=False)  # Convert totals DataFrame to CSV format (no index)
+
+    # Copy the CSV to the clipboard
+    pyperclip.copy(totals_csv)
+    print("\nThe CSV output has been copied to your clipboard!")
+
+    # Update spreadsheet with totals
+    update_spreadsheet_with_totals(spreadsheet_path, totals_df)
 
 
 if __name__ == "__main__":
