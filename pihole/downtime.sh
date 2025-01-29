@@ -41,7 +41,7 @@ cleanup_scheduled_jobs() {
 
 # Check if the script is being run from Python, crontab, or through subprocess
 parent_process=$(check_parent_process)
-if [ $? -ne 0 && "1" == "block"]; then
+if [ $? -ne 0 ] && [ "1" == "block" ]; then
     echo "This script can only be run from a Python script or crontab."
     exit 1
 fi
@@ -86,30 +86,83 @@ else
 fi
 
 max_retries=3
+failed_domains=()
 
+# Process all domains first
 for domain in $blocklist_domains; do
     echo "${pihole_command[@]} $domain"
-    
-    attempt=1
-    while (( attempt <= max_retries )); do
-        "${pihole_command[@]}" "$domain"
-        result=$("${verify_command[@]}" "$domain")
+    "${pihole_command[@]}" "$domain"
+done
 
-        if [[ "$1" == "allow" && -n "$result" ]]; then
-            /home/tyler/.local/bin/cabinet --log "Domain $domain successfully allowed."
-            break
-        elif [[ "$1" == "block" && ( "$result" == *"$domain"* || "$result" == *"Match found in"* ) ]]; then
-            /home/tyler/.local/bin/cabinet --log "Domain $domain successfully blocked."
-            break
+# Parallel verification using xargs
+verify_results=$(echo "$blocklist_domains" | xargs -P 10 -n 1 "${verify_command[@]}")
+
+failed_domains=()
+for domain in $blocklist_domains; do
+    result=$("${verify_command[@]}" "$domain")
+
+    # Unblocking case: If `allow` is used, check if the domain is still blocked
+    if [[ "$1" == "allow" ]]; then
+        if [[ "$result" == *"Match found in exact whitelist"* || "$result" == *"No results found"* ]]; then
+            echo "✅ $domain is correctly unblocked."
         else
-            /home/tyler/.local/bin/cabinet --log "Retrying for domain $domain (attempt $attempt)..."
-            (( attempt++ ))
+            # Make sure the match is for the exact domain, not a subdomain
+            if echo "$result" | grep -qE "Match found in.*\b$domain\b"; then
+                echo "❌ $domain is still blocked, adding to failed_domains"
+                failed_domains+=("$domain")
+            else
+                echo "✅ $domain is not blocked."
+            fi
         fi
-    done
 
-    if (( attempt > max_retries )); then
-        /home/tyler/.local/bin/cabinet --log "Failed to process domain $domain after $max_retries attempts" --level "error"
+    # Blocking case: If `block` is used, check if the domain is still missing from blocklist
+    elif [[ "$1" == "block" ]]; then
+        if [[ "$result" == *"Match found in exact blacklist"* || "$result" == *"Match found in"* ]]; then
+            # Ensure the match is for the exact domain
+            if echo "$result" | grep -qE "Match found in.*\b$domain\b"; then
+                echo "✅ $domain is correctly blocked."
+            else
+                echo "✅ $domain is not blocked."
+            fi
+        else
+            echo "❌ $domain is not in the blocklist, adding to failed_domains"
+            failed_domains+=("$domain")
+        fi
     fi
 done
+
+# Retry failed domains (Parallelized)
+for attempt in {1..$max_retries}; do
+    [[ ${#failed_domains[@]} -eq 0 ]] && break
+    
+    echo "Retrying failed domains (Attempt $attempt)..."
+    temp_failed=()
+    
+    # Run commands in parallel
+    echo "${failed_domains[@]}" | xargs -P 10 -n 1 "${pihole_command[@]}"
+    
+    verify_results=$(echo "${failed_domains[@]}" | xargs -P 10 -n 1 "${verify_command[@]}")
+    
+    while IFS= read -r domain; do
+        result=$(echo "$verify_results" | grep "$domain")
+
+        if [[ "$1" == "allow" && -z "$result" ]]; then
+            temp_failed+=("$domain")
+        elif [[ "$1" == "block" && ( "$result" != *"$domain"* && "$result" != *"Match found in"* ) ]]; then
+            temp_failed+=("$domain")
+        fi
+    done <<< "${failed_domains[@]}"
+
+    failed_domains=("${temp_failed[@]}")
+done
+
+# Logging results
+if [[ ${#failed_domains[@]} -eq 0 ]]; then
+    /home/tyler/.local/bin/cabinet --log "All domains successfully processed."
+else
+    for domain in "${failed_domains[@]}"; do
+        /home/tyler/.local/bin/cabinet --log "Failed to process domain $domain after $max_retries attempts" --level "error"
+    done
+fi
 
 echo "done"
