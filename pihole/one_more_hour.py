@@ -4,6 +4,7 @@ This script allows me one hour of unblocking my "distraction list"
 in Pihole. After 1 hour, it reintroduces the block.
 """
 
+import re
 import argparse
 import subprocess
 from datetime import datetime, timedelta
@@ -41,10 +42,21 @@ def schedule_commands():
     # Log Times Used
     cabinet.put("pihole", "times_unblocked", times_used + 1)
 
-
     # Capture the at job ID
     result = subprocess.run(at_command, shell=True, check=True, capture_output=True, text=True)
-    job_id = result.stdout.strip().split()[-1]  # Extract job ID
+
+    # Combine stdout and stderr
+    job_str = result.stdout.strip() or result.stderr.strip()
+
+    # Use regex to extract the job ID (first number in the output)
+    match = re.search(r'job (\d+) ', job_str)
+    if match:
+        job_id = match.group(1)  # Extract just the job number
+        cabinet.put("pihole", "scheduled_reblock_job", job_id)
+        cabinet.update_cache()
+        print(f"Scheduled re-block with job ID: {job_id}")
+    else:
+        print("Failed to extract job ID.")
 
     # Store the job ID
     cabinet.put("pihole", "scheduled_reblock_job", job_id)
