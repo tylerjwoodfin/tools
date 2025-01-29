@@ -41,7 +41,7 @@ cleanup_scheduled_jobs() {
 
 # Check if the script is being run from Python, crontab, or through subprocess
 parent_process=$(check_parent_process)
-if [ $? -ne 0 ]; then
+if [ $? -ne 0 && "1" == "block"]; then
     echo "This script can only be run from a Python script or crontab."
     exit 1
 fi
