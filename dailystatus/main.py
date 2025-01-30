@@ -8,7 +8,6 @@ import pwd
 import datetime
 import glob
 import subprocess
-import json
 import textwrap
 from pathlib import Path
 import cabinet
@@ -31,7 +30,6 @@ def get_paths_and_config():
     log_path_today = os.path.join(cab.path_dir_log, str(today))
     log_path_backups = cab.get("path", "backups") or f"{path_dot_cabinet}/backups"
     log_backups_location = os.path.join(log_path_backups, "log")
-    bedtime_key = os.path.join(path_backend, "log", "keys", "BEDTIME")
 
     return {
         "today": today,
@@ -40,8 +38,7 @@ def get_paths_and_config():
         "path_zshrc": path_zshrc,
         "path_notes": path_notes,
         "log_path_today": log_path_today,
-        "log_backups_location": log_backups_location,
-        "bedtime_key": bedtime_key,
+        "log_backups_location": log_backups_location
     }
 
 def append_syncthing_conflict_check(email):
@@ -153,21 +150,6 @@ def prune_old_backups(paths, max_backups=14):
         os.remove(zip_files[i])
 
 
-def manage_bedtime_key(paths):
-    """publish bedtime limit"""
-    bedtime_output = json.dumps(cab.get("bedtime", "limit"))
-    os.makedirs(os.path.dirname(paths["bedtime_key"]), exist_ok=True)
-
-    try:
-        with open(paths["bedtime_key"], "x", encoding="utf-8") as file:
-            file.write(bedtime_output)
-    except FileExistsError:
-        with open(paths["bedtime_key"], "w", encoding="utf-8") as file:
-            file.write(bedtime_output)
-    except (IOError, OSError) as error:
-        cab.log(f"could not write bedtime key: {error}", level="error")
-
-
 def analyze_logs(paths, email):
     """append daily log analysis"""
     daily_log_file = cab.get_file_as_array(f"LOG_DAILY_{paths['today']}.log",
@@ -251,9 +233,6 @@ if __name__ == "__main__":
 
     # prune old backups
     prune_old_backups(config_data)
-
-    # manage bedtime key
-    manage_bedtime_key(config_data)
 
     # analyze logs
     status_email, has_warnings, has_errors = analyze_logs(config_data, status_email)

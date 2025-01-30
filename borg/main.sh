@@ -1,8 +1,7 @@
 #!/bin/zsh
 
-# Setting this, so the repo does not need to be given on the command line:
-borg_repo=$(cat "$HOME/syncthing/cabinet/keys/BORG_REPO")
-borg_passphrase=$(cat "$HOME/syncthing/cabinet/keys/BORG_PASSPHRASE")
+borg_repo=$($HOME/.local/bin/cabinet -g "keys" "borg" "repo";)
+borg_passphrase=$($HOME/.local/bin/cabinet -g "keys" "borg" "passphrase";)
 export BORG_REPO=$borg_repo
 export BORG_PASSPHRASE=$borg_passphrase
 
