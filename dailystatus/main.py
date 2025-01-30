@@ -9,6 +9,7 @@ import datetime
 import glob
 import subprocess
 import textwrap
+import socket
 from pathlib import Path
 import cabinet
 
@@ -22,6 +23,7 @@ mail = cabinet.Mail()
 def get_paths_and_config():
     """retrieve and configure paths"""
     today = datetime.date.today()
+    device_name = socket.gethostname()
     user_home = pwd.getpwuid(os.getuid())[0]
     path_dot_cabinet = os.path.join(f"/home/{user_home}/.cabinet")
     path_backend = cab.get("path", "cabinet", "log-backup") or f"{path_dot_cabinet}/log-backup"
@@ -33,6 +35,7 @@ def get_paths_and_config():
 
     return {
         "today": today,
+        "device_name": device_name,
         "user_home": user_home,
         "path_backend": path_backend,
         "path_zshrc": path_zshrc,
@@ -113,13 +116,19 @@ def backup_files(paths: dict) -> None:
     Returns:
         None
     """
-    # construct backup file paths
-    path_cron_today = os.path.join(paths["path_backend"], "cron", f"Cron {paths['today']}.md")
-    path_bash_today = os.path.join(paths["path_backend"], "bash", f"Bash {paths['today']}.md")
-    path_notes_today = os.path.join(paths["path_backend"], "notes", f"notes {paths['today']}.zip")
-    path_log_backup = os.path.join(
-        paths["log_backups_location"], f"log folder backup {paths['today']}.zip"
-    )
+
+    def build_backup_path(category):
+        """Helper function to construct backup file paths."""
+        return os.path.join(paths["path_backend"], paths["device_name"],
+                            category, f"{category} {paths['today']}.md")
+
+    # Construct backup file paths
+    path_cron_today = build_backup_path("cron")
+    path_bash_today = build_backup_path("zsh")
+    path_notes_today = os.path.join(paths["path_backend"],
+                                    paths["device_name"], "notes", f"notes {paths['today']}.zip")
+    path_log_backup = os.path.join(paths["log_backups_location"],
+                                   f"log folder backup {paths['today']}.zip")
 
     # define backup commands
     backup_commands = [
