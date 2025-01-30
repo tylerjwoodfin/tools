@@ -1,18 +1,34 @@
 #!/bin/zsh
 
-# Setting this, so the repo does not need to be given on the command line:
-borg_repo=$(cat "$HOME/syncthing/cabinet/keys/BORG_REPO")
-borg_passphrase=$(cat "$HOME/syncthing/cabinet/keys/BORG_PASSPHRASE")
-export BORG_REPO=$borg_repo
-export BORG_PASSPHRASE=$borg_passphrase
+#!/bin/zsh
 
-echo "$borg_repo"
-echo "$BORG_PASSPHRASE"
+# Define paths
+CABINET="$HOME/.local/bin/cabinet"
 
-# Some helpers and error handling:
-info() { $HOME/.local/bin/cabinet --log "$*"; }
-error() { $HOME/.local/bin/cabinet --log "$*" --level 'error'; }
-trap 'echo $(date) Backup interrupted >&2; exit 2' INT TERM
+# Fetch Borg repo and passphrase securely
+BORG_REPO=$("$CABINET" -g "keys" "borg" "repo") || {
+    echo "Error: Failed to retrieve Borg repo path." >&2
+    exit 1
+}
+
+BORG_PASSPHRASE=$("$CABINET" -g "keys" "borg" "passphrase") || {
+    echo "Error: Failed to retrieve Borg passphrase." >&2
+    exit 1
+}
+
+# Export for Borg to use
+export BORG_REPO
+export BORG_PASSPHRASE
+
+# Log repo
+echo "Borg repository: $BORG_REPO"
+
+# Logging functions
+info() { "$CABINET" --log "$*"; }
+error() { "$CABINET" --log "$*" --level 'error'; }
+
+# Graceful exit on SIGINT/SIGTERM
+trap 'echo "$(date) Backup interrupted" >&2; exit 2' INT TERM
 
 info 'Starting Borg Backup...'
 
