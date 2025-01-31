@@ -6,6 +6,7 @@ youtube downloader - see README.md
 import sys
 import os
 import argparse
+import time
 import yt_dlp
 
 
@@ -42,6 +43,10 @@ def download_media(url, is_video, destination):
 
 def main():
     """main function to run the script"""
+    print("Hint: use `plex` instead to save as a video to Plex library")
+
+    time.sleep(2)
+
     args = parse_arguments()
 
     # create destination directory if it doesn't exist
