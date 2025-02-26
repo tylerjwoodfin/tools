@@ -7,8 +7,8 @@ hours.
 
 ## usage
 For my use case:
-- `bash downtime.sh block overnight` is run at a predetermined time in the evening
-- `bash downtime.sh allow overnight` is run at at a predetermined time overnight such that I
+- `zsh downtime.sh block overnight` is run at a predetermined time in the evening
+- `zsh downtime.sh allow overnight` is run at at a predetermined time overnight such that I
 can wake up without restrictions.
 
 ## explanation
