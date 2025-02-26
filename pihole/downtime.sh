@@ -78,11 +78,21 @@ fi
 blocklist_domains=("${(@f)$(cat "${blocklist_file}")}")
 
 verify_command=(/usr/local/bin/pihole -q)
+
 if [[ "$1" == "allow" ]]; then
-    pihole_command=(/usr/local/bin/pihole --wild -d)
+    for domain in $blocklist_domains; do
+        echo "Unblocking: $domain"
+        /usr/local/bin/pihole --regex -d "$domain"
+        /usr/local/bin/pihole --wild -d "$domain"
+    done
+elif [[ "$1" == "block" ]]; then
+    for domain in $blocklist_domains; do
+        echo "Blocking: $domain"
+        /usr/local/bin/pihole --wild "$domain"
+    done
 else
-    # block
-    pihole_command=(/usr/local/bin/pihole --wild)
+    echo "Invalid argument: $1. Use 'allow' or 'block'."
+    exit 1
 fi
 
 max_retries=3
@@ -99,35 +109,13 @@ verify_results=$(echo "$blocklist_domains" | xargs -P 10 -n 1 "${verify_command[
 
 failed_domains=()
 for domain in $blocklist_domains; do
-    result=$("${verify_command[@]}" "$domain")
-
-    # Unblocking case: If `allow` is used, check if the domain is still blocked
     if [[ "$1" == "allow" ]]; then
-        if [[ "$result" == *"Match found in exact whitelist"* || "$result" == *"No results found"* ]]; then
-            echo "✅ $domain is correctly unblocked."
-        else
-            # Make sure the match is for the exact domain, not a subdomain
-            if echo "$result" | grep -qE "Match found in.*\b$domain\b"; then
-                echo "❌ $domain is still blocked, adding to failed_domains"
-                failed_domains+=("$domain")
-            else
-                echo "✅ $domain is not blocked."
-            fi
-        fi
-
-    # Blocking case: If `block` is used, check if the domain is still missing from blocklist
-    elif [[ "$1" == "block" ]]; then
-        if [[ "$result" == *"Match found in exact blacklist"* || "$result" == *"Match found in"* ]]; then
-            # Ensure the match is for the exact domain
-            if echo "$result" | grep -qE "Match found in.*\b$domain\b"; then
-                echo "✅ $domain is correctly blocked."
-            else
-                echo "✅ $domain is not blocked."
-            fi
-        else
-            echo "❌ $domain is not in the blocklist, adding to failed_domains"
-            failed_domains+=("$domain")
-        fi
+    result=$("${verify_command[@]}" "$domain")
+    if [[ "$result" == *"No results found"* ]]; then
+        echo "✅ $domain is correctly unblocked."
+    else
+        echo "❌ $domain is still blocked, adding to failed_domains"
+        failed_domains+=("$domain")
     fi
 done
 
