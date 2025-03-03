@@ -5,23 +5,23 @@ check_parent_process() {
     local parent_process grandparent_process
 
     # Get the parent and grandparent process names
-    parent_process=$(ps -o comm= -p $PPID)
-    grandparent_process=$(ps -o comm= -p $(ps -o ppid= -p $PPID) 2>/dev/null)
+    parent_process=$(ps -o comm= -p $PPID 2>/dev/null | tr -d ' ')
+    grandparent_process=$(ps -o comm= -p $(ps -o ppid= -p $PPID 2>/dev/null) 2>/dev/null | tr -d ' ')
 
-    # Check if the parent or grandparent process matches the criteria
-    case $parent_process in
+    # Check if the parent or grandparent process matches the allowed processes
+    case "$parent_process" in
         cron|python*|atd)
-            return 0
+            return 0  # Allowed process
             ;;
     esac
 
-    case $grandparent_process in
+    case "$grandparent_process" in
         cron|python*|atd)
-            return 0
+            return 0  # Allowed process
             ;;
     esac
 
-    return 1
+    return 1  # Not allowed
 }
 
 # Function to clean up scheduled at jobs
@@ -39,13 +39,14 @@ cleanup_scheduled_jobs() {
     done
 }
 
-# Check if the script is being run from Python, crontab, or through subprocess
-parent_process=$(check_parent_process)
-if [ $? -ne 0 ] && [ "1" == "block" ]; then
+# Check if the script is being run from Python, crontab, or atd
+check_parent_process
+if [ $? -ne 0 ] && [ "$1" != "block" ]; then
     echo "This script can only be run from a Python script or crontab."
     exit 1
 fi
 
+# Ensure the second argument is provided
 if [[ -z "$2" ]]; then
   echo "Error: Missing argument. Please provide the second argument."
   exit 1
@@ -93,64 +94,6 @@ elif [[ "$1" == "block" ]]; then
 else
     echo "Invalid argument: $1. Use 'allow' or 'block'."
     exit 1
-fi
-
-max_retries=3
-failed_domains=()
-
-# Process all domains first
-for domain in $blocklist_domains; do
-    echo "${pihole_command[@]} $domain"
-    "${pihole_command[@]}" "$domain"
-done
-
-# Parallel verification using xargs
-verify_results=$(echo "$blocklist_domains" | xargs -P 10 -n 1 "${verify_command[@]}")
-
-failed_domains=()
-for domain in $blocklist_domains; do
-    if [[ "$1" == "allow" ]]; then
-    result=$("${verify_command[@]}" "$domain")
-    if [[ "$result" == *"No results found"* ]]; then
-        echo "✅ $domain is correctly unblocked."
-    else
-        echo "❌ $domain is still blocked, adding to failed_domains"
-        failed_domains+=("$domain")
-    fi
-done
-
-# Retry failed domains (Parallelized)
-for attempt in {1..$max_retries}; do
-    [[ ${#failed_domains[@]} -eq 0 ]] && break
-    
-    echo "Retrying failed domains (Attempt $attempt)..."
-    temp_failed=()
-    
-    # Run commands in parallel
-    echo "${failed_domains[@]}" | xargs -P 10 -n 1 "${pihole_command[@]}"
-    
-    verify_results=$(echo "${failed_domains[@]}" | xargs -P 10 -n 1 "${verify_command[@]}")
-    
-    while IFS= read -r domain; do
-        result=$(echo "$verify_results" | grep "$domain")
-
-        if [[ "$1" == "allow" && -z "$result" ]]; then
-            temp_failed+=("$domain")
-        elif [[ "$1" == "block" && ( "$result" != *"$domain"* && "$result" != *"Match found in"* ) ]]; then
-            temp_failed+=("$domain")
-        fi
-    done <<< "${failed_domains[@]}"
-
-    failed_domains=("${temp_failed[@]}")
-done
-
-# Logging results
-if [[ ${#failed_domains[@]} -eq 0 ]]; then
-    /home/tyler/.local/bin/cabinet --log "All domains successfully processed."
-else
-    for domain in "${failed_domains[@]}"; do
-        /home/tyler/.local/bin/cabinet --log "Failed to process domain $domain after $max_retries attempts" --level "error"
-    done
 fi
 
 echo "done"
