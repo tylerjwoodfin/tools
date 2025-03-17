@@ -10,6 +10,7 @@ import glob
 import subprocess
 import textwrap
 import socket
+import json
 from pathlib import Path
 import cabinet
 
@@ -43,6 +44,33 @@ def get_paths_and_config():
         "log_path_today": log_path_today,
         "log_backups_location": log_backups_location
     }
+
+def append_food_log(email):
+    """check if food has been logged today, print total calories or an error if none found."""
+    log_file = os.path.expanduser("~/syncthing/log/food.json")
+    today = datetime.date.today().isoformat()
+
+    if not os.path.exists(log_file):
+        cab.log("Food log file does not exist.", level="error")
+        return
+
+    try:
+        with open(log_file, "r", encoding="utf-8") as f:
+            log_data = json.load(f)
+
+        if today not in log_data or not log_data[today]:
+            cab.log("No food logged for today.", level="error")
+        else:
+            total_calories = sum(entry["calories"] for entry in log_data[today])
+            return email + textwrap.dedent(f"""
+            <h3>Calories Eaten Today:</h3>
+            <pre style="font-family: monospace; white-space: pre-wrap;">{total_calories} calories</pre>
+            <br>
+            """)
+
+    except (json.JSONDecodeError, OSError):
+        cab.log("Error reading food log file.", level="error")
+        return email
 
 def append_syncthing_conflict_check(email):
     """
@@ -236,6 +264,9 @@ if __name__ == "__main__":
 
     # set up email content
     status_email = "Dear Tyler,<br><br>This is your daily status report.<br><br>"
+
+    # check if food has been logged today
+    status_email = append_food_log(status_email)
 
     # back up files
     backup_files(config_data)
