@@ -96,7 +96,7 @@ def main():
         else:
             calories = sys.argv[2]
 
-        if not calories.isnumeric():
+        if not isinstance(calories, int) and not calories.isnumeric():
             raise ValueError("Calorie count must be a number.")
 
         calories = int(calories)
