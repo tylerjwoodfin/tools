@@ -44,6 +44,11 @@ def log_food(food_name, calories):
     if today not in log_data:
         log_data[today] = []
 
+    if isinstance(calories, str) and calories.isnumeric():
+        calories = int(calories)
+    elif not isinstance(calories, int):
+        raise ValueError("Calories must be an integer or a numeric string.")
+
     log_data[today].append({"food": food_name, "calories": calories})
     save_json(FOOD_LOG_FILE, log_data)
     print(f"Logged: {food_name} ({calories} cal)")
@@ -73,33 +78,39 @@ def display_today_calories():
         print("No food logged for today.")
 
 def main():
-    """parse command-line arguments and log food entry."""
+    """Parse command-line arguments and log food entry."""
+
     if len(sys.argv) < 2:
         display_today_calories()
         sys.exit(0)
 
     try:
-        food_name = sys.argv[1]
-        if food_name.isnumeric():
-            raise ValueError("First argument must be a food name, not a number.")
+        if len(sys.argv) < 2:
+            raise ValueError("Usage: foodlog.py <food name> <calories>")
 
-        lookup_data = load_json(FOOD_LOOKUP_FILE)
-        if len(sys.argv) == 2:
+        food_name = " ".join(sys.argv[1:-1])
+        calories = sys.argv[-1]
+
+        # last arg is a string -> calories not set; get from lookup
+        if isinstance(calories, str) and not calories.isnumeric():
+            food_name = " ".join(sys.argv[1:])
+            lookup_data = load_json(FOOD_LOOKUP_FILE)
+
             if food_name in lookup_data:
                 choice = input(f"{lookup_data[food_name]} cal? (y/n): ").strip().lower()
                 if choice == 'y':
                     calories = lookup_data[food_name]
                 else:
                     calories = input("Enter calorie count: ").strip()
+                    if not calories.isnumeric():
+                        raise ValueError("Calorie count must be a number.")
+                    calories = int(calories)
             else:
                 calories = input("Enter calorie count: ").strip()
-        else:
-            calories = sys.argv[2]
+                if not calories.isnumeric():
+                    raise ValueError("Calorie count must be a number.")
+                calories = int(calories)
 
-        if not isinstance(calories, int) and not calories.isnumeric():
-            raise ValueError("Calorie count must be a number.")
-
-        calories = int(calories)
         log_food(food_name, calories)
         update_food_lookup(food_name, calories)
 
