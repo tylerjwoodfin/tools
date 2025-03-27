@@ -83,8 +83,10 @@ def display_today_calories():
         total_calories = 0
 
         # Find the maximum length of calories for alignment
-        max_calories_length = max(len(str(entry["calories"])) for entry in log_data[today_str])
-
+        if log_data[today_str]:
+            max_calories_length = max(len(str(entry["calories"])) for entry in log_data[today_str])
+        else:
+            max_calories_length = 0
         for entry in log_data[today_str]:
             food = entry["food"]
             calories = entry["calories"]
