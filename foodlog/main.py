@@ -1,21 +1,18 @@
-"""Food Diary Script
-This script logs food entries and their calorie counts for the current day.
-It maintains a log of food entries in a JSON file and allows for updating
-a lookup file for food names and their corresponding calorie counts.
-It also provides a summary of total calories logged for the current day.
-Usage:
-    python main.py <food_name> [calories]
-If no food name is provided, it displays the total calories logged for today.
-"""
 #!/usr/bin/env python3
+
+"""A simple food logging tool that logs food entries and calorie counts."""
 
 import json
 import sys
 import os
 import datetime
+from prompt_toolkit import print_formatted_text, HTML
+from cabinet import Cabinet
+
+cabinet = Cabinet()
 
 # define file paths
-LOG_DIR = os.path.expanduser("~/syncthing/log")
+LOG_DIR = cabinet.get("path", "cabinet", "log") or os.path.expanduser("~/.cabinet/log")
 FOOD_LOG_FILE = os.path.join(LOG_DIR, "food.json")
 FOOD_LOOKUP_FILE = os.path.join(LOG_DIR, "food_lookup.json")
 
@@ -51,14 +48,21 @@ def log_food(food_name, calories):
 
     log_data[today].append({"food": food_name, "calories": calories})
     save_json(FOOD_LOG_FILE, log_data)
-    print(f"Logged: {food_name} ({calories} cal)")
+    print_formatted_text(HTML(
+        f'<green>Logged:</green> {food_name} <yellow>({calories} cal)</yellow>'))
+
+    display_today_calories()
 
 def update_food_lookup(food_name, calories):
     """update food lookup file with food and calorie information."""
     lookup_data = load_json(FOOD_LOOKUP_FILE)
 
+    if isinstance(calories, str) and calories.isnumeric():
+        calories = int(calories)
+
     if food_name in lookup_data and lookup_data[food_name] != calories:
-        print(f"{food_name} is already recorded with {lookup_data[food_name]} cal.")
+        print_formatted_text(HTML(
+            f'<yellow>{food_name}</yellow> has <yellow>{lookup_data[food_name]} cal</yellow>.'))
         choice = input("Overwrite? (y/n): ").strip().lower()
         if choice != 'y':
             return
@@ -67,15 +71,43 @@ def update_food_lookup(food_name, calories):
     save_json(FOOD_LOOKUP_FILE, lookup_data)
 
 def display_today_calories():
-    """display total calorie count for today."""
+    """display total calorie count and entries for today."""
     log_data = load_json(FOOD_LOG_FILE)
-    today = datetime.date.today().isoformat()
+    today = datetime.date.today()
+    today_str = today.isoformat()
 
-    if today in log_data:
-        total_calories = sum(entry["calories"] for entry in log_data[today])
-        print(f"Total calories today:\n{total_calories}")
+    if today_str in log_data:
+        # Format the date as "Food for Day, YYYY-MM-DD"
+        formatted_date = f"\n{today.strftime('%a')}, {today_str}"
+        print_formatted_text(HTML(f'<underline><bold>{formatted_date}</bold></underline>'))
+        total_calories = 0
+
+        # Find the maximum length of calories for alignment
+        max_calories_length = max(len(str(entry["calories"])) for entry in log_data[today_str])
+
+        for entry in log_data[today_str]:
+            food = entry["food"]
+            calories = entry["calories"]
+            total_calories += calories
+
+            # Pad calories to maintain consistent alignment
+            padded_calories = str(calories).rjust(max_calories_length)
+
+            print_formatted_text(HTML(
+                f'<blue>{padded_calories} cal - </blue> <green>{food}</green>'))
+
+        # Color-code total calories
+        if total_calories <= 1700:
+            total_color = 'green'
+        elif total_calories <= 2000:
+            total_color = 'yellow'
+        else:
+            total_color = 'red'
+
+        print_formatted_text(HTML(
+            f'\n<bold>Total today:</bold> <{total_color}>{total_calories}</{total_color}>'))
     else:
-        print("No food logged for today.")
+        print_formatted_text(HTML('<yellow>No food logged for today.</yellow>'))
 
 def main():
     """Parse command-line arguments and log food entry."""
@@ -84,9 +116,13 @@ def main():
         display_today_calories()
         sys.exit(0)
 
+    if sys.argv[1] == "--edit":
+        edit_food_json()
+        sys.exit(0)
+
     try:
         if len(sys.argv) < 2:
-            raise ValueError("Usage: foodlog.py <food name> <calories>")
+            raise ValueError("Usage: main.py <food name> <calories>")
 
         food_name = " ".join(sys.argv[1:-1])
         calories = sys.argv[-1]
@@ -97,7 +133,8 @@ def main():
             lookup_data = load_json(FOOD_LOOKUP_FILE)
 
             if food_name in lookup_data:
-                choice = input(f"{lookup_data[food_name]} cal? (y/n): ").strip().lower()
+                print(f"{lookup_data[food_name]} cal found for {food_name}.\n")
+                choice = input("Use this? (y/n): ").strip().lower()
                 if choice == 'y':
                     calories = lookup_data[food_name]
                 else:
@@ -115,8 +152,12 @@ def main():
         update_food_lookup(food_name, calories)
 
     except ValueError as e:
-        print(f"Error: {e}")
+        print_formatted_text(HTML(f'<red>Error: {e}</red>'))
         sys.exit(1)
+
+def edit_food_json():
+    """Edit the food.json file."""
+    os.system(f"{cabinet.editor} {FOOD_LOG_FILE}")
 
 if __name__ == "__main__":
     main()
