@@ -6,6 +6,7 @@ import json
 import sys
 import os
 import datetime
+from openai import OpenAI
 from prompt_toolkit import print_formatted_text, HTML
 from cabinet import Cabinet
 
@@ -16,23 +17,23 @@ LOG_DIR = cabinet.get("path", "cabinet", "log") or os.path.expanduser("~/.cabine
 FOOD_LOG_FILE = os.path.join(LOG_DIR, "food.json")
 FOOD_LOOKUP_FILE = os.path.join(LOG_DIR, "food_lookup.json")
 
-def ensure_log_directory():
+def ensure_log_directory() -> None:
     """create log directory if it doesn't exist."""
     os.makedirs(LOG_DIR, exist_ok=True)
 
-def load_json(file_path):
+def load_json(file_path: str) -> dict:
     """load json data from a file, return empty dict if file doesn't exist."""
     if os.path.exists(file_path):
         with open(file_path, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
 
-def save_json(file_path, data):
+def save_json(file_path: str, data: dict) -> None:
     """save data to a json file."""
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
 
-def log_food(food_name, calories):
+def log_food(food_name: str, calories: int) -> None:
     """log food entry for today's date."""
     ensure_log_directory()
     log_data = load_json(FOOD_LOG_FILE)
@@ -53,7 +54,7 @@ def log_food(food_name, calories):
 
     display_today_calories()
 
-def update_food_lookup(food_name, calories):
+def update_food_lookup(food_name: str, calories: int) -> None:
     """update food lookup file with food and calorie information."""
     lookup_data = load_json(FOOD_LOOKUP_FILE)
 
@@ -70,7 +71,7 @@ def update_food_lookup(food_name, calories):
     lookup_data[food_name] = calories
     save_json(FOOD_LOOKUP_FILE, lookup_data)
 
-def display_today_calories():
+def display_today_calories() -> None:
     """display total calorie count and entries for today."""
     log_data = load_json(FOOD_LOG_FILE)
     today = datetime.date.today()
@@ -96,23 +97,49 @@ def display_today_calories():
             padded_calories = str(calories).rjust(max_calories_length)
 
             print_formatted_text(HTML(
-                f'<blue>{padded_calories} cal - </blue> <green>{food}</green>'))
+                f'{padded_calories} cal - <green>{food}</green>'))
 
-        # Color-code total calories
-        if total_calories <= 1700:
+        calorie_target = cabinet.get("foodlog", "calorie_target")
+        if calorie_target is None:
+            cabinet.log("Calorie target not set, using 1750", level="warning")
+            calorie_target = 1750
+
+        # Color-code total calories. +- 150 is green, 150-300 is yellow, over 300 is red
+        if abs(total_calories - calorie_target) <= 150:
             total_color = 'green'
-        elif total_calories <= 2000:
+        elif abs(total_calories - calorie_target) <= 300:
             total_color = 'yellow'
         else:
             total_color = 'red'
-
+            
         print_formatted_text(HTML(
             f'\n<bold>Total today:</bold> <{total_color}>{total_calories}</{total_color}>'))
     else:
         print_formatted_text(HTML('<yellow>No food logged for today.</yellow>'))
 
-def main():
-    """Parse command-line arguments and log food entry."""
+def get_calories(food_name: str, lookup_data: dict) -> int:
+    """get calorie count for a food item, either from lookup or user input."""
+    if food_name in lookup_data:
+        print(f"{lookup_data[food_name]} cal found for {food_name}.\n")
+        choice = input("Use this? (y/n): ").strip().lower()
+        if choice == 'y':
+            return lookup_data[food_name]
+
+    calories = input("Enter calorie count, or 'ai' to ask ChatGPT: ").strip()
+    if calories == 'ai':
+        ai_calories = query_chatgpt(food_name)
+        print(f"\nChatGPT suggests: {ai_calories} calories")
+        calories = input("Use this value? (y/n): ").strip().lower()
+        if calories == 'y':
+            return int(ai_calories)
+        calories = input("Enter calorie count: ").strip()
+
+    if not calories.isnumeric():
+        raise ValueError("Calorie count must be a number.")
+    return int(calories)
+
+def main() -> None:
+    """parse command-line arguments and log food entry."""
 
     if len(sys.argv) < 2:
         display_today_calories()
@@ -123,9 +150,6 @@ def main():
         sys.exit(0)
 
     try:
-        if len(sys.argv) < 2:
-            raise ValueError("Usage: main.py <food name> <calories>")
-
         food_name = " ".join(sys.argv[1:-1])
         calories = sys.argv[-1]
 
@@ -133,22 +157,9 @@ def main():
         if isinstance(calories, str) and not calories.isnumeric():
             food_name = " ".join(sys.argv[1:])
             lookup_data = load_json(FOOD_LOOKUP_FILE)
-
-            if food_name in lookup_data:
-                print(f"{lookup_data[food_name]} cal found for {food_name}.\n")
-                choice = input("Use this? (y/n): ").strip().lower()
-                if choice == 'y':
-                    calories = lookup_data[food_name]
-                else:
-                    calories = input("Enter calorie count: ").strip()
-                    if not calories.isnumeric():
-                        raise ValueError("Calorie count must be a number.")
-                    calories = int(calories)
-            else:
-                calories = input("Enter calorie count: ").strip()
-                if not calories.isnumeric():
-                    raise ValueError("Calorie count must be a number.")
-                calories = int(calories)
+            calories = get_calories(food_name, lookup_data)
+        else:
+            calories = int(calories)
 
         log_food(food_name, calories)
         update_food_lookup(food_name, calories)
@@ -157,9 +168,44 @@ def main():
         print_formatted_text(HTML(f'<red>Error: {e}</red>'))
         sys.exit(1)
 
-def edit_food_json():
+def edit_food_json() -> None:
     """Edit the food.json file."""
     os.system(f"{cabinet.editor} {FOOD_LOG_FILE}")
 
+def query_chatgpt(food_name: str) -> str:
+    """Query ChatGPT for the calorie count of a food item."""
+    client = OpenAI(api_key=cabinet.get("keys", "openai"))
+
+    response = client.responses.create(
+        model="gpt-4o",
+        input=[
+            {
+            "role": "system",
+            "content": [
+                {
+                "type": "input_text",
+                "text": f"You are a nutrition expert. How many calories are in {food_name}? Output your best guess. Only output a number."
+                }
+            ]
+            }
+        ],
+        text={
+            "format": {
+            "type": "text"
+            }
+        },
+        reasoning={},
+        tools=[],
+        temperature=1,
+        max_output_tokens=2048,
+        top_p=1,
+        store=True
+    )
+
+    return response.output_text.strip() if response.output_text else "0"
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(0)
