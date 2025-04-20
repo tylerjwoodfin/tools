@@ -138,40 +138,6 @@ def get_calories(food_name: str, lookup_data: dict) -> int:
         raise ValueError("Calorie count must be a number.")
     return int(calories)
 
-def main() -> None:
-    """parse command-line arguments and log food entry."""
-
-    if len(sys.argv) < 2:
-        display_today_calories()
-        sys.exit(0)
-
-    if sys.argv[1] == "--edit":
-        edit_food_json()
-        sys.exit(0)
-
-    try:
-        food_name = " ".join(sys.argv[1:-1])
-        calories = sys.argv[-1]
-
-        # last arg is a string -> calories not set; get from lookup
-        if isinstance(calories, str) and not calories.isnumeric():
-            food_name = " ".join(sys.argv[1:])
-            lookup_data = load_json(FOOD_LOOKUP_FILE)
-            calories = get_calories(food_name, lookup_data)
-        else:
-            calories = int(calories)
-
-        log_food(food_name, calories)
-        update_food_lookup(food_name, calories)
-
-    except ValueError as e:
-        print_formatted_text(HTML(f'<red>Error: {e}</red>'))
-        sys.exit(1)
-
-def edit_food_json() -> None:
-    """Edit the food.json file."""
-    os.system(f"{cabinet.editor} {FOOD_LOG_FILE}")
-
 def query_chatgpt(food_name: str) -> str:
     """Query ChatGPT for the calorie count of a food item."""
     client = OpenAI(api_key=cabinet.get("keys", "openai"))
@@ -203,6 +169,205 @@ def query_chatgpt(food_name: str) -> str:
     )
 
     return response.output_text.strip() if response.output_text else "0"
+
+def classify_food(food_names: list[str]) -> dict[str, str]:
+    """Classify multiple food items as 'junk' or 'healthy' using AI."""
+    client = OpenAI(api_key=cabinet.get("keys", "openai"))
+    
+    # Create a prompt that lists all foods and asks for classification
+    food_list = "\n".join([f"- {food}" for food in food_names])
+    prompt = f"""Classify each of these food items as either 'junk' or 'healthy'.
+For each item, output the food name followed by a colon and its classification.
+Only use the words 'junk' or 'healthy' for classification.
+
+Foods to classify:
+{food_list}
+
+Output format:
+food1: junk
+food2: healthy
+food3: junk
+"""
+
+    response = client.responses.create(
+        model="gpt-4o",
+        input=[
+            {
+            "role": "system",
+            "content": [
+                {
+                "type": "input_text",
+                "text": prompt
+                }
+            ]
+            }
+        ],
+        text={
+            "format": {
+            "type": "text"
+            }
+        },
+        reasoning={},
+        tools=[],
+        temperature=0.3,
+        max_output_tokens=2048,
+        top_p=1,
+        store=True
+    )
+
+    # Parse the response into a dictionary
+    classifications = {}
+    for line in response.output_text.strip().split('\n'):
+        if ':' in line:
+            food, classification = line.split(':', 1)
+            classifications[food.strip()] = classification.strip().lower()
+    
+    return classifications
+
+def show_summary() -> None:
+    """Display a summary of the past 7 days of food entries with AI classification."""
+    log_data = load_json(FOOD_LOG_FILE)
+    lookup_data = load_json(FOOD_LOOKUP_FILE)
+    today = datetime.date.today()
+    
+    print_formatted_text(HTML('<bold><underline>Food Summary (Last 7 Days)</underline></bold>\n'))
+    
+    # First, collect all unique food items from the past 7 days
+    all_foods = set()
+    daily_totals = {}  # Store daily totals for the bar graph
+    daily_healthy = {}  # Store daily healthy calories
+    daily_junk = {}     # Store daily junk calories
+    for i in range(7):
+        date = today - datetime.timedelta(days=i)
+        date_str = date.isoformat()
+        if date_str in log_data:
+            daily_totals[date] = sum(entry["calories"] for entry in log_data[date_str])
+            daily_healthy[date] = 0
+            daily_junk[date] = 0
+            for entry in log_data[date_str]:
+                all_foods.add(entry["food"])
+    
+    # Get classifications for all foods at once
+    foods_to_classify = [food for food in all_foods if food not in lookup_data or "type" not in lookup_data[food]]
+    
+    if foods_to_classify:
+        classifications = classify_food(foods_to_classify)
+        
+        # Update the lookup file with new classifications
+        for food, classification in classifications.items():
+            if food not in lookup_data:
+                lookup_data[food] = {"calories": 0, "type": classification}
+            else:
+                lookup_data[food]["type"] = classification
+        save_json(FOOD_LOOKUP_FILE, lookup_data)
+    else:
+        classifications = {}
+    
+    total_calories = 0
+    healthy_calories = 0
+    junk_calories = 0
+    
+    # Display entries in reverse chronological order
+    for i in range(6, -1, -1):
+        date = today - datetime.timedelta(days=i)
+        date_str = date.isoformat()
+        
+        if date_str in log_data:
+            print_formatted_text(HTML(f'\n<bold>{date.strftime("%a, %Y-%m-%d")}</bold>'))
+            
+            for entry in log_data[date_str]:
+                food = entry["food"]
+                calories = entry["calories"]
+                total_calories += calories
+                
+                # Get the classification from the lookup file or from AI
+                classification = lookup_data.get(food, {}).get("type") or classifications.get(food, "unknown")
+                if classification == "healthy":
+                    healthy_calories += calories
+                    daily_healthy[date] += calories
+                    food_color = "green"
+                else:
+                    junk_calories += calories
+                    daily_junk[date] += calories
+                    food_color = "red"
+                
+                print_formatted_text(HTML(
+                    f'  {calories} cal - <{food_color}>{food}</{food_color}> ({classification})'))
+    
+    # Print summary statistics
+    print_formatted_text(HTML('\n<bold>Summary Statistics:</bold>'))
+    print_formatted_text(HTML(f'  Total calories: {total_calories}'))
+    if total_calories > 0:
+        print_formatted_text(HTML(f'  Healthy calories: <green>{healthy_calories}</green> ({healthy_calories/total_calories*100:.1f}%)'))
+        print_formatted_text(HTML(f'  Junk calories: <red>{junk_calories}</red> ({junk_calories/total_calories*100:.1f}%)'))
+    else:
+        print_formatted_text(HTML('  No calories logged in the past 7 days'))
+    
+    # Add daily totals bar graph
+    print_formatted_text(HTML('\n<bold>Daily Calorie Totals:</bold>'))
+    
+    # Find the maximum calories for scaling the bar graph
+    max_calories = max(daily_totals.values()) if daily_totals else 0
+    bar_width = 25  # Maximum width of the bar graph in characters
+    
+    # Display bars in reverse chronological order
+    for i in range(6, -1, -1):
+        date = today - datetime.timedelta(days=i)
+        if date in daily_totals:
+            total = daily_totals[date]
+            healthy = daily_healthy[date]
+            junk = daily_junk[date]
+            
+            # Calculate the scaled bar length based on total calories
+            scaled_length = int((total / max_calories) * bar_width) if max_calories > 0 else 0
+            
+            # Calculate the healthy/junk ratio within the scaled length
+            healthy_length = int((healthy / total) * scaled_length) if total > 0 else 0
+            junk_length = scaled_length - healthy_length
+            
+            # Create the bar with both colors
+            bar = f'<green>{"█" * healthy_length}</green><red>{"█" * junk_length}</red>'
+            
+            print_formatted_text(HTML(
+                f'  {date.strftime("%a")}: {bar} {total} cal'))
+
+def main() -> None:
+    """parse command-line arguments and log food entry."""
+
+    if len(sys.argv) < 2:
+        display_today_calories()
+        sys.exit(0)
+
+    if sys.argv[1] == "--edit":
+        edit_food_json()
+        sys.exit(0)
+        
+    if sys.argv[1] == "--summary":
+        show_summary()
+        sys.exit(0)
+
+    try:
+        food_name = " ".join(sys.argv[1:-1])
+        calories = sys.argv[-1]
+
+        # last arg is a string -> calories not set; get from lookup
+        if isinstance(calories, str) and not calories.isnumeric():
+            food_name = " ".join(sys.argv[1:])
+            lookup_data = load_json(FOOD_LOOKUP_FILE)
+            calories = get_calories(food_name, lookup_data)
+        else:
+            calories = int(calories)
+
+        log_food(food_name, calories)
+        update_food_lookup(food_name, calories)
+
+    except ValueError as e:
+        print_formatted_text(HTML(f'<red>Error: {e}</red>'))
+        sys.exit(1)
+
+def edit_food_json() -> None:
+    """Edit the food.json file."""
+    os.system(f"{cabinet.editor} {FOOD_LOG_FILE}")
 
 if __name__ == "__main__":
     try:

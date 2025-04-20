@@ -1,64 +1,62 @@
-# foodlog
+# Food Log
 
-A simple command-line tool for tracking daily food intake and calories.
+A simple command-line tool for logging food entries and tracking calories. The tool automatically classifies foods as healthy or junk and provides a visual summary of your eating habits.
 
 ## Features
 
-- 🍽️ Log food entries with calories
-- 📊 Track daily calorie intake
-- 🔍 Food lookup and memory
-- 🌈 Color-coded calorie tracking
-- 📝 Easy editing of food log
-
-## Installation
-
-1. Ensure you have Python 3.7+ installed
-2. Install required dependencies:
-   ```bash
-   pip install prompt_toolkit
-   ```
+- Log food entries with calorie counts
+- Automatic food classification (healthy vs junk)
+- Visual summary of daily calorie intake with healthy/junk breakdown
+- Food lookup database to remember calorie counts
+- AI-powered calorie suggestions for unknown foods
 
 ## Usage
 
-### Log a Food Entry
-
+### Basic Logging
 ```bash
-# Log a food item with calories
-python main.py "Chicken Salad" 350
-
-# Log a food item by name (if in lookup)
-python main.py "Chicken Salad"
+foodlog "food name" calories
 ```
 
-### View Today's Food Log
-
+Example:
 ```bash
-# Simply run without arguments to display today's entries
-python main.py
+foodlog "chicken salad" 540
 ```
+
+### View Today's Log
+```bash
+foodlog
+```
+
+### View Summary
+```bash
+foodlog --summary
+```
+The summary view shows:
+- Food entries for the past 7 days
+- Total calories and percentage of healthy vs junk food
+- Visual bar graph where:
+  - Bar length represents total calories (shorter = fewer calories)
+  - Green portion represents healthy calories
+  - Red portion represents junk calories
 
 ### Edit Food Log
-
 ```bash
-# Open food log in default editor
-python main.py --edit
+foodlog --edit
 ```
 
-## How It Works
+## Data Storage
 
-- Logs are stored in `~/.cabinet/log/food.json`
-- Food calories are remembered in `~/.cabinet/log/food_lookup.json`
-- Calories are color-coded:
-  - 🟢 Green: ≤ 1700 calories
-  - 🟡 Yellow: Between 1700-2000 calories
-  - 🔴 Red: > 2000 calories
-
-## Dependencies
-
-- Python 3.7+
-- `prompt_toolkit`
-- `cabinet` (custom library)
+- Food entries are stored in `~/.cabinet/log/food.json`
+- Food lookup database is stored in `~/.cabinet/log/food_lookup.json`
 
 ## Configuration
 
-The tool uses [Cabinet](https://www.github.com/tylerjwoodfin/cabinet) to determine log directories and editor preferences.
+The tool uses [Cabinet](https://www.github.com/tylerjwoodfin/cabinet). You can set:
+- `foodlog.calorie_target`: Your daily calorie target (default: 1750)
+- `keys.openai`: Your OpenAI API key for AI-powered features
+
+## Notes
+
+- The tool automatically classifies foods as healthy or junk based on common nutritional knowledge
+- For new foods, you can use the 'ai' option to get calorie suggestions from ChatGPT
+- The summary view's bar graph scales based on your highest calorie day, making it easy to compare daily intake
