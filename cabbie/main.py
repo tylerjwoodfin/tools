@@ -127,9 +127,16 @@ def main():
         client = OpenAI(api_key=api_key)
         debug_print("Initialized OpenAI client")
 
-        # Get hostnamectl
+        # Get system info in a cross-platform way
         debug_print("Getting device info")
-        device_type = subprocess.check_output(["hostnamectl"]).decode("utf-8")
+        try:
+            # Try hostnamectl first (Linux)
+            device_type = subprocess.check_output(["hostnamectl"]).decode("utf-8")
+        except:
+            # Fall back to uname (macOS and other Unix-like systems)
+            device_type = subprocess.check_output(["uname", "-a"]).decode("utf-8")
+        debug_print(f"Device info: {device_type}")
+
         command = " ".join(sys.argv[1:])
         if not command:
             print("Error: No command received from user")
