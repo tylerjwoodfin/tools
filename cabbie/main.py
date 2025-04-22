@@ -112,7 +112,7 @@ def main():
 
         # Get command from OpenAI
         debug_print("Getting command from OpenAI")
-        command_to_run = ChatGPT().query(prompt)
+        command_to_run = chatgpt.query(prompt)
         command_to_run = clean_command(command_to_run)
         
         if not command_to_run:
