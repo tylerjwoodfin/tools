@@ -62,9 +62,10 @@ def update_food_lookup(food_name: str, calories: int) -> None:
     if isinstance(calories, str) and calories.isnumeric():
         calories = int(calories)
 
-    if food_name in lookup_data and lookup_data[food_name] != calories:
+    if food_name in lookup_data and lookup_data[food_name] and \
+        lookup_data[food_name]["calories"] != calories:
         print_formatted_text(HTML(
-            f'<yellow>{food_name}</yellow> has <yellow>{lookup_data[food_name]} cal</yellow>.'))
+            f'<yellow>{food_name}</yellow> has <yellow>{lookup_data[food_name]["calories"]} cal</yellow>.'))
         choice = input("Overwrite? (y/n): ").strip().lower()
         if choice != 'y':
             return
@@ -198,7 +199,12 @@ def show_summary() -> None:
                 all_foods.add(entry["food"])
     
     # Get classifications for all foods at once
-    foods_to_classify = [food for food in all_foods if food not in lookup_data or "type" not in lookup_data[food]]
+    foods_to_classify = []
+    for food in all_foods:
+        if food not in lookup_data:
+            foods_to_classify.append(food)
+        elif isinstance(lookup_data[food], dict) and "type" not in lookup_data[food]:
+            foods_to_classify.append(food)
     
     if foods_to_classify:
         classifications = classify_food(foods_to_classify)
@@ -207,8 +213,12 @@ def show_summary() -> None:
         for food, classification in classifications.items():
             if food not in lookup_data:
                 lookup_data[food] = {"calories": 0, "type": classification}
-            else:
+            elif isinstance(lookup_data[food], dict):
                 lookup_data[food]["type"] = classification
+            else:
+                # Convert old format to new format
+                calories = lookup_data[food]
+                lookup_data[food] = {"calories": calories, "type": classification}
         save_json(FOOD_LOOKUP_FILE, lookup_data)
     else:
         classifications = {}
@@ -231,7 +241,17 @@ def show_summary() -> None:
                 total_calories += calories
                 
                 # Get the classification from the lookup file or from AI
-                classification = lookup_data.get(food, {}).get("type") or classifications.get(food, "unknown")
+                if food in lookup_data:
+                    if isinstance(lookup_data[food], dict):
+                        classification = lookup_data[food].get("type", "unknown")
+                    else:
+                        # Old format - convert to new format
+                        classification = classifications.get(food, "unknown")
+                        lookup_data[food] = {"calories": lookup_data[food], "type": classification}
+                        save_json(FOOD_LOOKUP_FILE, lookup_data)
+                else:
+                    classification = classifications.get(food, "unknown")
+                
                 if classification == "healthy":
                     healthy_calories += calories
                     daily_healthy[date] += calories
