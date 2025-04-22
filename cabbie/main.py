@@ -6,11 +6,11 @@ import sys
 import time
 import os
 import signal
-from cabinet import Cabinet
-from openai import OpenAI
+from tyler_python_helpers import ChatGPT
 
 # Debug mode - set to True to enable debug logging
 DEBUG = False
+chatgpt = ChatGPT()
 
 def debug_print(message: str) -> None:
     """Print debug messages if DEBUG is True."""
@@ -30,43 +30,6 @@ def clean_command(command: str) -> str:
         cleaned = cleaned[4:].strip()
     debug_print(f"Cleaned command: {cleaned}")
     return cleaned
-
-
-def get_openai_response(client: OpenAI, prompt: str) -> str:
-    """Helper function to get response from OpenAI API."""
-    debug_print("Getting response from OpenAI")
-    try:
-        response = client.responses.create(
-            model="gpt-4o",
-            input=[
-                {
-                    "role": "system",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": prompt
-                        }
-                    ]
-                }
-            ],
-            text={
-                "format": {
-                    "type": "text"
-                }
-            },
-            reasoning={},
-            tools=[],
-            temperature=0.5,
-            max_output_tokens=1000,
-            top_p=1,
-            store=True
-        )
-        debug_print(f"OpenAI response: {response}")
-        return response.output_text.strip() if response.output_text else ""
-    except Exception as e:
-        debug_print(f"Error calling OpenAI API: {e}")
-        raise
-
 
 def run_command(command: str, timeout: int = 6) -> tuple[str, str]:
     """Run a command in the background and capture its output."""
@@ -114,18 +77,6 @@ def run_command(command: str, timeout: int = 6) -> tuple[str, str]:
 
 def main():
     try:
-        debug_print("Starting cabbie")
-        cabinet = Cabinet()
-        debug_print("Initialized Cabinet")
-        
-        api_key = cabinet.get("keys", "openai")
-        if not api_key:
-            print("Error: OpenAI API key not found in Cabinet")
-            sys.exit(1)
-            
-        debug_print("Got OpenAI API key")
-        client = OpenAI(api_key=api_key)
-        debug_print("Initialized OpenAI client")
 
         # Get system info in a cross-platform way
         debug_print("Getting device info")
@@ -161,7 +112,7 @@ def main():
 
         # Get command from OpenAI
         debug_print("Getting command from OpenAI")
-        command_to_run = get_openai_response(client, prompt)
+        command_to_run = ChatGPT().query(prompt)
         command_to_run = clean_command(command_to_run)
         
         if not command_to_run:
@@ -201,7 +152,7 @@ def main():
         """
         
         # Get summary from OpenAI
-        summary = get_openai_response(client, summary_prompt)
+        summary = chatgpt.query(summary_prompt)
         debug_print("Got summary from OpenAI")
         print(summary)
 

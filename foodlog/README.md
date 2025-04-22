@@ -51,9 +51,13 @@ foodlog --edit
 
 ## Configuration
 
-The tool uses [Cabinet](https://www.github.com/tylerjwoodfin/cabinet). You can set:
-- `foodlog.calorie_target`: Your daily calorie target (default: 1750)
-- `keys.openai`: Your OpenAI API key for AI-powered features
+The tool uses:
+- [Cabinet](https://www.github.com/tylerjwoodfin/cabinet). 
+  - You can set:
+    - `foodlog -> calorie_target`: Your daily calorie target (default: 1750)
+    - `keys -> openai`: Your OpenAI API key for AI-powered features
+- [tyler-python-helpers](https://github.com/tylerjwoodfin/python-helpers)
+  - `pipx install tyler-python-helpers`
 
 ## Notes
 

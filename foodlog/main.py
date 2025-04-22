@@ -6,11 +6,12 @@ import json
 import sys
 import os
 import datetime
-from openai import OpenAI
+from tyler_python_helpers import ChatGPT
 from prompt_toolkit import print_formatted_text, HTML
 from cabinet import Cabinet
 
 cabinet = Cabinet()
+chatgpt = ChatGPT()
 
 # define file paths
 LOG_DIR = cabinet.get("path", "cabinet", "log") or os.path.expanduser("~/.cabinet/log")
@@ -140,39 +141,12 @@ def get_calories(food_name: str, lookup_data: dict) -> int:
 
 def query_chatgpt(food_name: str) -> str:
     """Query ChatGPT for the calorie count of a food item."""
-    client = OpenAI(api_key=cabinet.get("keys", "openai"))
-
-    response = client.responses.create(
-        model="gpt-4o",
-        input=[
-            {
-            "role": "system",
-            "content": [
-                {
-                "type": "input_text",
-                "text": f"You are a nutrition expert. How many calories are in {food_name}? Output your best guess. Only output a number."
-                }
-            ]
-            }
-        ],
-        text={
-            "format": {
-            "type": "text"
-            }
-        },
-        reasoning={},
-        tools=[],
-        temperature=1,
-        max_output_tokens=2048,
-        top_p=1,
-        store=True
-    )
-
-    return response.output_text.strip() if response.output_text else "0"
+    query = f"What is the calorie count of {food_name}? \
+        Only output your best guess as a number, no other text."
+    return chatgpt.query(query)
 
 def classify_food(food_names: list[str]) -> dict[str, str]:
     """Classify multiple food items as 'junk' or 'healthy' using AI."""
-    client = OpenAI(api_key=cabinet.get("keys", "openai"))
     
     # Create a prompt that lists all foods and asks for classification
     food_list = "\n".join([f"- {food}" for food in food_names])
@@ -189,35 +163,11 @@ food2: healthy
 food3: junk
 """
 
-    response = client.responses.create(
-        model="gpt-4o",
-        input=[
-            {
-            "role": "system",
-            "content": [
-                {
-                "type": "input_text",
-                "text": prompt
-                }
-            ]
-            }
-        ],
-        text={
-            "format": {
-            "type": "text"
-            }
-        },
-        reasoning={},
-        tools=[],
-        temperature=0.3,
-        max_output_tokens=2048,
-        top_p=1,
-        store=True
-    )
+    response = chatgpt.query(prompt)
 
     # Parse the response into a dictionary
     classifications = {}
-    for line in response.output_text.strip().split('\n'):
+    for line in response.split('\n'):
         if ':' in line:
             food, classification = line.split(':', 1)
             classifications[food.strip()] = classification.strip().lower()
