@@ -295,6 +295,7 @@ def show_summary() -> None:
 
 def main() -> None:
     """parse command-line arguments and log food entry."""
+    is_yesterday = False
 
     if len(sys.argv) < 2:
         display_today_calories()
