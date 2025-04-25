@@ -44,6 +44,12 @@ The summary view shows:
 foodlog --edit
 ```
 
+### Log to Yesterda
+```bash
+# in case you forgot yesterday!
+foodlog "chicken salad" 500 --yesterday
+```
+
 ## Data Storage
 
 - Food entries are stored in `~/.cabinet/log/food.json`
