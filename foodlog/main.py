@@ -34,19 +34,20 @@ def save_json(file_path: str, data: dict) -> None:
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
 
-def log_food(food_name: str, calories: int) -> None:
+def log_food(food_name: str, calories: int, is_yesterday: bool = False) -> None:
     """log food entry for today's date."""
     ensure_log_directory()
     log_data = load_json(FOOD_LOG_FILE)
     today = datetime.date.today().isoformat()
+
+    if is_yesterday:
+        today = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
 
     if today not in log_data:
         log_data[today] = []
 
     if isinstance(calories, str) and calories.isnumeric():
         calories = int(calories)
-    elif not isinstance(calories, int):
-        raise ValueError("Calories must be an integer or a numeric string.")
 
     log_data[today].append({"food": food_name, "calories": calories})
     save_json(FOOD_LOG_FILE, log_data)
@@ -307,6 +308,11 @@ def main() -> None:
         show_summary()
         sys.exit(0)
 
+    if sys.argv[-1] == "--yesterday":
+        is_yesterday = True
+        # trim --yesterday from sys.argv
+        sys.argv = sys.argv[:-1]
+
     try:
         food_name = " ".join(sys.argv[1:-1])
         calories = sys.argv[-1]
@@ -319,7 +325,7 @@ def main() -> None:
         else:
             calories = int(calories)
 
-        log_food(food_name, calories)
+        log_food(food_name, calories, is_yesterday)
         update_food_lookup(food_name, calories)
 
     except ValueError as e:
