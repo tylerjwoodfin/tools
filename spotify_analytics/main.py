@@ -205,6 +205,41 @@ class SpotifyAnalyzer:
 
             self.cab.log(log_entry, log_name="SPOTIPY_AVERAGE_YEAR_LOG",
                          log_folder_path=str(log_path))
+            
+            # Get the last 3 days of data
+            log_backup_path: str = self.cab.get('path', 'cabinet', 'log-backup') or str(Path.home())
+            songs_path = Path(log_backup_path) / "songs"
+            
+            if songs_path.exists():
+                # Get today and previous 2 days
+                today = datetime.date.today()
+                dates = [today - datetime.timedelta(days=i) for i in range(3)]
+                avg_years = []
+                total_tracks = []
+                
+                for date in dates:
+                    json_file = songs_path / f"{date}.json"
+                    if json_file.exists():
+                        try:
+                            with open(json_file, 'r', encoding='utf-8') as f:
+                                data = json.load(f)
+                                if data:
+                                    years = [int(track['release_date'].split('-')[0]) for track in data]
+                                    avg_years.append(mean(years))
+                                    total_tracks.append(len(data))
+                        except (json.JSONDecodeError, KeyError, ValueError) as e:
+                            self.cab.log(f"Error reading {json_file}: {str(e)}", level="warning")
+                            continue
+                
+                # If we have all 3 days of data and the average years are equal
+                if len(avg_years) == 3 and len(set(avg_years)) == 1:
+                    # Check if track counts have changed
+                    if len(set(total_tracks)) > 1:
+                        self.cab.log(
+                            f"Warning: Average year ({avg_years[0]:.1f}) has remained the same for 3 days "
+                            f"while track count changed from {total_tracks[2]} to {total_tracks[0]}",
+                            level="warning"
+                        )
 
     def validate_playlists(self):
         """Validate playlist contents according to business rules."""
