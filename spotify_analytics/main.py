@@ -232,9 +232,11 @@ class SpotifyAnalyzer:
                                                 year = int(release_date.split('-')[0])
                                                 years.append(year)
                                             except (ValueError, AttributeError):
-                                                self.cab.log(f"Invalid release date format for track in {json_file}: {release_date}", level="debug")
+                                                self.cab.log(f"Invalid release date format for track in {json_file}: {release_date}",
+                                                             level="debug", is_quiet=True)
                                         else:
-                                            self.cab.log(f"Missing release date for track in {json_file}: {track}", level="debug")
+                                            self.cab.log(f"Missing release date for track in {json_file}: {track}",
+                                                         level="debug", is_quiet=True)
                                     if years:
                                         avg_years.append(mean(years))
                                         total_tracks.append(len(data))
