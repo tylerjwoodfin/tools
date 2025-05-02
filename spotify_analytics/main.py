@@ -224,9 +224,20 @@ class SpotifyAnalyzer:
                             with open(json_file, 'r', encoding='utf-8') as f:
                                 data = json.load(f)
                                 if data:
-                                    years = [int(track['release_date'].split('-')[0]) for track in data]
-                                    avg_years.append(mean(years))
-                                    total_tracks.append(len(data))
+                                    years = []
+                                    for track in data:
+                                        release_date = track.get('release_date')
+                                        if release_date and release_date != 'None':
+                                            try:
+                                                year = int(release_date.split('-')[0])
+                                                years.append(year)
+                                            except (ValueError, AttributeError):
+                                                self.cab.log(f"Invalid release date format for track in {json_file}: {release_date}", level="debug")
+                                        else:
+                                            self.cab.log(f"Missing release date for track in {json_file}: {track}", level="debug")
+                                    if years:
+                                        avg_years.append(mean(years))
+                                        total_tracks.append(len(data))
                         except (json.JSONDecodeError, KeyError, ValueError) as e:
                             self.cab.log(f"Error reading {json_file}: {str(e)}", level="warning")
                             continue
