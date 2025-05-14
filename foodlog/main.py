@@ -46,7 +46,10 @@ def log_food(food_name: str, calories: int, is_yesterday: bool = False) -> None:
     if today not in log_data:
         log_data[today] = []
 
-    if isinstance(calories, str) and calories.isnumeric():
+    # Ensure calories is an integer
+    if isinstance(calories, dict):
+        calories = calories.get("calories", 0)
+    elif isinstance(calories, str) and calories.isnumeric():
         calories = int(calories)
 
     log_data[today].append({"food": food_name, "calories": calories})
@@ -96,13 +99,16 @@ def display_today_calories() -> None:
         for entry in log_data[today_str]:
             food = entry["food"]
             calories = entry["calories"]
+            # Ensure calories is an integer
+            if isinstance(calories, dict):
+                calories = calories.get("calories", 0)
             total_calories += calories
 
             # Pad calories to maintain consistent alignment
-            padded_calories = str(calories).rjust(max_calories_length)
+            padded_calories = str(calories).ljust(4)  # Use fixed width of 4 characters
 
             print_formatted_text(HTML(
-                f'{padded_calories} cal - <green>{food}</green>'))
+                f'{padded_calories}cal - <green>{food}</green>'))
 
         calorie_target = cabinet.get("foodlog", "calorie_target")
         if calorie_target is None:
@@ -125,10 +131,13 @@ def display_today_calories() -> None:
 def get_calories(food_name: str, lookup_data: dict) -> int:
     """get calorie count for a food item, either from lookup or user input."""
     if food_name in lookup_data:
-        print(f"{lookup_data[food_name]} cal found for {food_name}.\n")
+        calories = lookup_data[food_name].get("calories")
+        if calories is None:
+            raise ValueError(f"No calorie data found for {food_name}")
+        print(f"{calories} cal found for {food_name}.\n")
         choice = input("Use this? (y/n): ").strip().lower()
         if choice == 'y':
-            return lookup_data[food_name]
+            return calories
 
     calories = input("Enter calorie count, or 'ai' to ask ChatGPT: ").strip()
     if calories == 'ai':
