@@ -22,6 +22,20 @@ Example:
 foodlog "chicken salad" 540
 ```
 
+### Multiple Entries
+You can log multiple food entries in a single command using `//` as a separator. Each side of `//` is treated as a separate command:
+
+```bash
+# Log two foods with their own calorie counts
+foodlog "apple" 50 // "banana" 60
+
+# Mix and match with lookup
+foodlog "apple" // "banana" 60 // "cookies"
+
+# Use with --yesterday (only applies to the command it's associated with)
+foodlog "apple" 50 // "banana" 60 --yesterday
+```
+
 ### View Today's Log
 ```bash
 foodlog

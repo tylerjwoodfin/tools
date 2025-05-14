@@ -318,12 +318,30 @@ def main() -> None:
         show_summary()
         sys.exit(0)
 
-    if sys.argv[-1] == "--yesterday":
-        is_yesterday = True
-        # trim --yesterday from sys.argv
-        sys.argv = sys.argv[:-1]
-
     try:
+        # Join all arguments and split by //
+        full_command = " ".join(sys.argv[1:])
+        if "//" in full_command:
+            # Split into separate commands and process each one
+            commands = [cmd.strip() for cmd in full_command.split("//")]
+            for cmd in commands:
+                # Create new sys.argv for each command
+                cmd_args = cmd.split()
+                # Save original sys.argv and restore it after each command
+                original_argv = sys.argv.copy()
+                sys.argv = [sys.argv[0]] + cmd_args
+                try:
+                    main()
+                finally:
+                    sys.argv = original_argv
+            return
+
+        # Check if --yesterday is present and remove it
+        if "--yesterday" in sys.argv:
+            is_yesterday = True
+            sys.argv.remove("--yesterday")
+
+        # Regular single command processing
         food_name = " ".join(sys.argv[1:-1])
         calories = sys.argv[-1]
 
