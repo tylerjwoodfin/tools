@@ -129,7 +129,7 @@ class SpotifyAnalyzer:
                         self.song_years.append(year)
                     except ValueError:
                         self.cab.log(f"Invalid release date format for track: {track['name']}",
-                                     level="warning")
+                                     level="debug", is_quiet=True)
 
                 print(f"Processed {len(self.main_tracks)} of {total_tracks} in {playlist_name}")
 
@@ -139,7 +139,7 @@ class SpotifyAnalyzer:
         """Main method to analyze all configured playlists."""
         playlists = self.cab.get("spotipy", "playlists")
         if not playlists or len(playlists) < 2:
-            self.cab.log("Insufficient playlist configuration")
+            self.cab.log("Insufficient playlist configuration", level="error")
             raise ValueError("At least two playlists must be configured")
 
         for index, item in enumerate(playlists):
@@ -234,14 +234,11 @@ class SpotifyAnalyzer:
                                             except (ValueError, AttributeError):
                                                 self.cab.log(f"Invalid release date format for track in {json_file}: {release_date}",
                                                              level="debug", is_quiet=True)
-                                        else:
-                                            self.cab.log(f"Missing release date for track in {json_file}: {track}",
-                                                         level="debug", is_quiet=True)
                                     if years:
                                         avg_years.append(mean(years))
                                         total_tracks.append(len(data))
                         except (json.JSONDecodeError, KeyError, ValueError) as e:
-                            self.cab.log(f"Error reading {json_file}: {str(e)}", level="warning")
+                            self.cab.log(f"Error reading {json_file}: {str(e)}", level="error")
                             continue
                 
                 # If we have all 3 days of data and the average years are equal
@@ -249,7 +246,7 @@ class SpotifyAnalyzer:
                     # Check if track counts have changed
                     if len(set(total_tracks)) > 1:
                         self.cab.log(
-                            f"Warning: Average year ({avg_years[0]:.1f}) has remained the same for 3 days "
+                            f"Average year ({avg_years[0]:.1f}) has remained the same for 3 days "
                             f"while track count changed from {total_tracks[2]} to {total_tracks[0]}",
                             level="warning"
                         )
@@ -292,13 +289,13 @@ class SpotifyAnalyzer:
         """Verify that all tracks in subset appear in superset."""
         missing = set(subset.tracks) - set(superset.tracks)
         if missing:
-            self.cab.log(f"Tracks from {subset.name} missing from {superset.name}: {missing}")
+            self.cab.log(f"Tracks from {subset.name} missing from {superset.name}: {missing}", level="warning")
 
     def _check_playlist_exclusion(self, excluded: PlaylistData, main_playlist: PlaylistData):
         """Verify that no tracks from excluded appear in main."""
         present = set(excluded.tracks) & set(main_playlist.tracks)
         if present:
-            self.cab.log(f"Removed tracks still present in {main_playlist.name}: {present}")
+            self.cab.log(f"Removed tracks still present in {main_playlist.name}: {present}", level="warning")
 
 def main():
     """Main entry point for the script."""
