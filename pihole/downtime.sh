@@ -78,18 +78,18 @@ fi
 # Properly read lines into an array
 blocklist_domains=("${(@f)$(cat "${blocklist_file}")}")
 
-verify_command=(/usr/local/bin/pihole -q)
+verify_command=(docker exec pihole pihole -q)
 
 if [[ "$1" == "allow" ]]; then
     for domain in $blocklist_domains; do
         echo "Unblocking: $domain"
-        /usr/local/bin/pihole --regex -d "$domain"
-        /usr/local/bin/pihole --wild -d "$domain"
+        docker exec pihole pihole --regex -d "$domain"
+        docker exec pihole pihole --wild -d "$domain"
     done
 elif [[ "$1" == "block" ]]; then
     for domain in $blocklist_domains; do
         echo "Blocking: $domain"
-        /usr/local/bin/pihole --wild "$domain"
+        docker exec pihole pihole --wild "$domain"
     done
 else
     echo "Invalid argument: $1. Use 'allow' or 'block'."
