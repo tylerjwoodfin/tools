@@ -39,6 +39,6 @@ if TODAY.weekday() == 5:
     cab.log("Saturday - no workout to be sent")
     sys.exit(0)
 
-message = f"Hi Tyler,<br><br>Here's your {WORKOUT_TYPE} workout for today:<br><br>{WORKOUT_MSG}"
+MESSAGE = f"Hi Tyler,<br><br>Here's your {WORKOUT_TYPE} workout for today:<br><br>{WORKOUT_MSG}"
 
-mail.send(f"{WORKOUT_TYPE} for {TODAY}", message)
+mail.send(f"{WORKOUT_TYPE} for {TODAY}", MESSAGE)

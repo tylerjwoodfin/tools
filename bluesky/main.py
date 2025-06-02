@@ -4,7 +4,7 @@ This script allows users to post directly to BlueSky using the official atproto 
 """
 
 import sys
-from atproto import Client, client_utils
+from atproto import Client, client_utils # pylint: disable=import-error # type: ignore
 from cabinet import Cabinet
 
 

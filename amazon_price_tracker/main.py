@@ -6,7 +6,7 @@ see README.md for more information
 
 from typing import List, Optional, TypedDict
 import re
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup  # type: ignore # pylint: disable=import-error
 import requests
 from cabinet import Cabinet, Mail
 
@@ -123,10 +123,9 @@ def main() -> None:
     """
     mail = Mail()
 
-    amazon_data: AmazonTrackerData | None = cabinet.get("amazon_tracker",
-                                                        return_type=AmazonTrackerData)
+    amazon_data = cabinet.get("amazon_tracker", return_type=AmazonTrackerData)
 
-    if not amazon_data or not amazon_data["items"]:
+    if not amazon_data or not amazon_data.get("items"):
         cabinet.log("No Amazon items set. Exiting.")
         return
 
