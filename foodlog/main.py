@@ -69,7 +69,8 @@ def update_food_lookup(food_name: str, calories: int) -> None:
     if food_name in lookup_data:
         if lookup_data[food_name]["calories"] != calories:
             print_formatted_text(HTML(
-                f'<yellow>{food_name}</yellow> has <yellow>{lookup_data[food_name]["calories"]} cal</yellow>.'))
+                f'<yellow>{food_name}</yellow> has <yellow>{\
+                    lookup_data[food_name]["calories"]} cal</yellow>.'))
             choice = input("Overwrite? (y/n): ").strip().lower()
             if choice != 'y':
                 return
@@ -92,10 +93,6 @@ def display_today_calories() -> None:
         total_calories = 0
 
         # Find the maximum length of calories for alignment
-        if log_data[today_str]:
-            max_calories_length = max(len(str(entry["calories"])) for entry in log_data[today_str])
-        else:
-            max_calories_length = 0
         for entry in log_data[today_str]:
             food = entry["food"]
             calories = entry["calories"]
@@ -122,7 +119,7 @@ def display_today_calories() -> None:
             total_color = 'yellow'
         else:
             total_color = 'red'
-            
+
         print_formatted_text(HTML(
             f'\n<bold>Total today:</bold> <{total_color}>{total_calories}</{total_color}>'))
     else:
@@ -160,7 +157,7 @@ def query_chatgpt(food_name: str) -> str:
 
 def classify_food(food_names: list[str]) -> dict[str, str]:
     """Classify multiple food items as 'junk' or 'healthy' using AI."""
-    
+
     # Create a prompt that lists all foods and asks for classification
     food_list = "\n".join([f"- {food}" for food in food_names])
     prompt = f"""Classify each of these food items as either 'junk' or 'healthy'.
@@ -184,7 +181,7 @@ food3: junk
         if ':' in line:
             food, classification = line.split(':', 1)
             classifications[food.strip()] = classification.strip().lower()
-    
+
     return classifications
 
 def show_summary() -> None:
@@ -192,9 +189,9 @@ def show_summary() -> None:
     log_data = load_json(FOOD_LOG_FILE)
     lookup_data = load_json(FOOD_LOOKUP_FILE)
     today = datetime.date.today()
-    
+
     print_formatted_text(HTML('<bold><underline>Food Summary (Last 7 Days)</underline></bold>\n'))
-    
+
     # First, collect all unique food items from the past 7 days
     all_foods = set()
     daily_totals = {}  # Store daily totals for the bar graph
@@ -209,17 +206,17 @@ def show_summary() -> None:
             daily_junk[date] = 0
             for entry in log_data[date_str]:
                 all_foods.add(entry["food"])
-    
+
     # Get classifications for all foods at once
     foods_to_classify = []
     for food in all_foods:
         if food not in lookup_data or "type" not in lookup_data[food] or \
             lookup_data[food]["type"] == "unknown":
             foods_to_classify.append(food)
-    
+
     if foods_to_classify:
         classifications = classify_food(foods_to_classify)
-        
+
         # Update the lookup file with new classifications
         for food, classification in classifications.items():
             if food not in lookup_data:
@@ -229,30 +226,30 @@ def show_summary() -> None:
         save_json(FOOD_LOOKUP_FILE, lookup_data)
     else:
         classifications = {}
-    
+
     total_calories = 0
     healthy_calories = 0
     junk_calories = 0
-    
+
     # Display entries in reverse chronological order
     for i in range(6, -1, -1):
         date = today - datetime.timedelta(days=i)
         date_str = date.isoformat()
-        
+
         if date_str in log_data:
             print_formatted_text(HTML(f'\n<bold>{date.strftime("%a, %Y-%m-%d")}</bold>'))
-            
+
             for entry in log_data[date_str]:
                 food = entry["food"]
                 calories = entry["calories"]
                 total_calories += calories
-                
+
                 # Get the classification from the lookup file
                 if food in lookup_data:
                     classification = lookup_data[food].get("type", "unknown")
                 else:
                     classification = "unknown"
-                
+
                 if classification == "healthy":
                     healthy_calories += calories
                     daily_healthy[date] += calories
@@ -261,46 +258,47 @@ def show_summary() -> None:
                     junk_calories += calories
                     daily_junk[date] += calories
                     food_color = "red"
-                
+
                 print_formatted_text(HTML(
                     f'  {calories} cal - <{food_color}>{food}</{food_color}> ({classification})'))
-    
+
     # Print summary statistics
     print_formatted_text(HTML('\n<bold>Summary Statistics:</bold>'))
     print_formatted_text(HTML(f'  Total calories: {total_calories}'))
     if total_calories > 0:
-        print_formatted_text(HTML(f'  Healthy calories: <green>{healthy_calories}</green> ({healthy_calories/total_calories*100:.1f}%)'))
-        print_formatted_text(HTML(f'  Junk calories: <red>{junk_calories}</red> ({junk_calories/total_calories*100:.1f}%)'))
+        print_formatted_text(HTML(f'  Healthy calories: <green>{healthy_calories}</green> \
+            ({healthy_calories/total_calories*100:.1f}%)'))
+        print_formatted_text(HTML(f'  Junk calories: <red>{junk_calories}</red> \
+            ({junk_calories/total_calories*100:.1f}%)'))
     else:
         print_formatted_text(HTML('  No calories logged in the past 7 days'))
-    
+
     # Add daily totals bar graph
     print_formatted_text(HTML('\n<bold>Daily Calorie Totals:</bold>'))
-    
+
     # Find the maximum calories for scaling the bar graph
     max_calories = max(daily_totals.values()) if daily_totals else 0
     bar_width = 25  # Maximum width of the bar graph in characters
-    
+
     # Display bars in reverse chronological order
     for i in range(6, -1, -1):
         date = today - datetime.timedelta(days=i)
         if date in daily_totals:
             total = daily_totals[date]
             healthy = daily_healthy[date]
-            junk = daily_junk[date]
-            
+
             # Calculate the scaled bar length based on total calories
             scaled_length = int((total / max_calories) * bar_width) if max_calories > 0 else 0
-            
+
             # Calculate the healthy/junk ratio within the scaled length
             healthy_length = int((healthy / total) * scaled_length) if total > 0 else 0
             junk_length = scaled_length - healthy_length
-            
+
             # Create the bar with both colors
-            bar = f'<green>{"█" * healthy_length}</green><red>{"█" * junk_length}</red>'
-            
+            health_bar = f'<green>{"█" * healthy_length}</green><red>{"█" * junk_length}</red>'
+
             print_formatted_text(HTML(
-                f'  {date.strftime("%a")}: {bar} {total} cal'))
+                f'  {date.strftime("%a")}: {health_bar} {total} cal'))
 
 def main() -> None:
     """parse command-line arguments and log food entry."""
@@ -313,7 +311,7 @@ def main() -> None:
     if sys.argv[1] == "--edit":
         edit_food_json()
         sys.exit(0)
-        
+
     if sys.argv[1] == "--summary":
         show_summary()
         sys.exit(0)
