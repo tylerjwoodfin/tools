@@ -19,7 +19,7 @@ def submit(query, log="", debug=False):
     """
     submits `query` to openai
     """
-    response = openai.Completion.create(
+    response = openai.Completion.create( # pylint: disable=no-member  # type: ignore
         model="text-davinci-002",
         prompt=f"""{log}\n{query}""",
         temperature=0.6,

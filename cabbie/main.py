@@ -1,12 +1,15 @@
-# Cabbie
+"""
+Cabbie
+
+A tool that uses OpenAI to generate commands to run on the user's behalf.
+"""
+
 #! /usr/bin/env python3
 
 import subprocess
 import sys
-import time
 import os
-import signal
-from tyler_python_helpers import ChatGPT
+from tyler_python_helpers import ChatGPT # pylint: disable=import-error # type: ignore
 
 # Debug mode - set to True to enable debug logging
 DEBUG = False
@@ -34,7 +37,7 @@ def clean_command(command: str) -> str:
 def run_command(command: str, timeout: int = 6) -> tuple[str, str]:
     """Run a command in the background and capture its output."""
     debug_print(f"Running command with {timeout}s timeout: {command}")
-    
+
     try:
         # Use subprocess.run with a timeout
         result = subprocess.run(
@@ -44,29 +47,17 @@ def run_command(command: str, timeout: int = 6) -> tuple[str, str]:
             stderr=subprocess.PIPE,
             text=True,
             timeout=timeout,
+            check=True,
             preexec_fn=os.setsid  # Create new process group
         )
-        
+
         debug_print("Command completed successfully")
         return result.stdout, result.stderr
-        
-    except subprocess.TimeoutExpired as e:
+
+    except subprocess.TimeoutExpired as exc:
         debug_print("Command timed out, attempting to terminate...")
-        # Get the process group ID from the TimeoutExpired exception
-        if hasattr(e, 'process'):
-            try:
-                os.killpg(os.getpgid(e.process.pid), signal.SIGTERM)
-                debug_print("Sent SIGTERM to process group")
-                time.sleep(0.5)  # Give it a moment to terminate
-                try:
-                    os.killpg(os.getpgid(e.process.pid), signal.SIGKILL)
-                    debug_print("Sent SIGKILL to process group")
-                except:
-                    debug_print("Failed to send SIGKILL")
-            except:
-                debug_print("Failed to kill process group")
-        raise TimeoutError(f"Command timed out after {timeout} seconds")
-        
+        raise TimeoutError(f"Command timed out after {timeout} seconds") from exc
+
     except KeyboardInterrupt:
         debug_print("Received keyboard interrupt")
         raise
@@ -76,6 +67,9 @@ def run_command(command: str, timeout: int = 6) -> tuple[str, str]:
 
 
 def main():
+    """
+    main function
+    """
     try:
 
         # Get system info in a cross-platform way
@@ -83,7 +77,7 @@ def main():
         try:
             # Try hostnamectl first (Linux)
             device_type = subprocess.check_output(["hostnamectl"]).decode("utf-8")
-        except:
+        except Exception: # pylint: disable=broad-exception-caught
             # Fall back to uname (macOS and other Unix-like systems)
             device_type = subprocess.check_output(["uname", "-a"]).decode("utf-8")
         debug_print(f"Device info: {device_type}")
@@ -93,7 +87,7 @@ def main():
             print("Error: No command received from user")
             sys.exit(1)
         debug_print(f"User command: {command}")
-        
+
         prompt = f"""
         You are a helpful assistant that can run commands on behalf of the user.
         You are running on a {device_type} device.
@@ -114,11 +108,11 @@ def main():
         debug_print("Getting command from OpenAI")
         command_to_run = chatgpt.query(prompt)
         command_to_run = clean_command(command_to_run)
-        
+
         if not command_to_run:
             print("Error: No command received from OpenAI")
             sys.exit(1)
-        
+
         # Run the command and store the output
         try:
             debug_print("Executing command")
@@ -150,7 +144,7 @@ def main():
         Interpret the output within a single sentence in a user-friendly way.
         Do not refer to the command or the output as 'output' or 'command'.
         """
-        
+
         # Get summary from OpenAI
         summary = chatgpt.query(summary_prompt)
         debug_print("Got summary from OpenAI")
@@ -159,7 +153,7 @@ def main():
     except KeyboardInterrupt:
         print("\nProgram interrupted by user")
         sys.exit(1)
-    except Exception as e:
+    except Exception as e: # pylint: disable=broad-exception-caught
         debug_print(f"Unexpected error in main: {e}")
         print(f"Unexpected error: {e}")
         sys.exit(1)

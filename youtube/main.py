@@ -7,7 +7,7 @@ import sys
 import os
 import argparse
 import time
-import yt_dlp
+import yt_dlp # pylint: disable=import-error # type: ignore
 
 
 def parse_arguments():

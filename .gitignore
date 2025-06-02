@@ -6,3 +6,4 @@ cache.json
 *.out
 *.log
 .cache
+.DS_Store

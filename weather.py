@@ -8,7 +8,7 @@ import sys
 
 from datetime import datetime
 from typing import Tuple, Optional
-from pytz import timezone
+from pytz import timezone # pylint: disable=import-error # type: ignore
 import requests
 from cabinet import Cabinet
 

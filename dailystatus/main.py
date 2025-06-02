@@ -64,7 +64,8 @@ def append_food_log(email):
             total_calories = sum(entry["calories"] for entry in log_data[today])
             return email + textwrap.dedent(f"""
             <h3>Calories Eaten Today:</h3>
-            <pre style="font-family: monospace; white-space: pre-wrap;">{total_calories} calories</pre>
+            <pre style="font-family: monospace; white-space: pre-wrap;"
+            >{total_calories} calories</pre>
             <br>
             """)
 
