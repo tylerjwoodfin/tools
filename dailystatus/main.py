@@ -52,7 +52,7 @@ def append_food_log(email):
 
     if not os.path.exists(log_file):
         cab.log("Food log file does not exist.", level="error")
-        return
+        return email
 
     try:
         with open(log_file, "r", encoding="utf-8") as f:
@@ -60,6 +60,7 @@ def append_food_log(email):
 
         if today not in log_data or not log_data[today]:
             cab.log("No food logged for today.", level="error")
+            return email
         else:
             total_calories = sum(entry["calories"] for entry in log_data[today])
             return email + textwrap.dedent(f"""
@@ -84,7 +85,7 @@ def append_syncthing_conflict_check(email):
     target_file = cab.get("remindmail", "path", "file")
 
     if not target_file or not os.path.isfile(target_file):
-        return "Error: Target file does not exist."
+        return email
 
     # Find files with `.sync-conflict` in the same directory as the target file
     target_dir = os.path.dirname(target_file)
