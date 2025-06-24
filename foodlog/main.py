@@ -52,7 +52,9 @@ def log_food(food_name: str, calories: int, is_yesterday: bool = False) -> None:
     elif isinstance(calories, str) and calories.isnumeric():
         calories = int(calories)
 
-    log_data[today].append({"food": food_name, "calories": calories})
+    # Store food name in lowercase for consistency
+    food_name_lower = food_name.lower()
+    log_data[today].append({"food": food_name_lower, "calories": calories})
     save_json(FOOD_LOG_FILE, log_data)
     print_formatted_text(HTML(
         f'<green>Logged:</green> {food_name} <yellow>({calories} cal)</yellow>'))
@@ -66,17 +68,20 @@ def update_food_lookup(food_name: str, calories: int) -> None:
     if isinstance(calories, str) and calories.isnumeric():
         calories = int(calories)
 
-    if food_name in lookup_data:
-        if lookup_data[food_name]["calories"] != calories:
+    # Store food name in lowercase for case-insensitive lookups
+    food_name_lower = food_name.lower()
+
+    if food_name_lower in lookup_data:
+        if lookup_data[food_name_lower]["calories"] != calories:
             print_formatted_text(HTML(
                 f'<yellow>{food_name}</yellow> has <yellow>{\
-                    lookup_data[food_name]["calories"]} cal</yellow>.'))
+                    lookup_data[food_name_lower]["calories"]} cal</yellow>.'))
             choice = input("Overwrite? (y/n): ").strip().lower()
             if choice != 'y':
                 return
-        lookup_data[food_name]["calories"] = calories
+        lookup_data[food_name_lower]["calories"] = calories
     else:
-        lookup_data[food_name] = {"calories": calories, "type": "unknown"}
+        lookup_data[food_name_lower] = {"calories": calories, "type": "unknown"}
 
     save_json(FOOD_LOOKUP_FILE, lookup_data)
 
@@ -127,8 +132,11 @@ def display_today_calories() -> None:
 
 def get_calories(food_name: str, lookup_data: dict) -> int:
     """get calorie count for a food item, either from lookup or user input."""
-    if food_name in lookup_data:
-        calories = lookup_data[food_name].get("calories")
+    # Convert food name to lowercase for case-insensitive lookup
+    food_name_lower = food_name.lower()
+
+    if food_name_lower in lookup_data:
+        calories = lookup_data[food_name_lower].get("calories")
         if calories is None:
             raise ValueError(f"No calorie data found for {food_name}")
         print(f"{calories} cal found for {food_name}.\n")
@@ -210,8 +218,9 @@ def show_summary() -> None:
     # Get classifications for all foods at once
     foods_to_classify = []
     for food in all_foods:
-        if food not in lookup_data or "type" not in lookup_data[food] or \
-            lookup_data[food]["type"] == "unknown":
+        food_lower = food.lower()
+        if food_lower not in lookup_data or "type" not in lookup_data[food_lower] or \
+            lookup_data[food_lower]["type"] == "unknown":
             foods_to_classify.append(food)
 
     if foods_to_classify:
@@ -219,10 +228,11 @@ def show_summary() -> None:
 
         # Update the lookup file with new classifications
         for food, classification in classifications.items():
-            if food not in lookup_data:
-                lookup_data[food] = {"calories": 0, "type": classification}
+            food_lower = food.lower()
+            if food_lower not in lookup_data:
+                lookup_data[food_lower] = {"calories": 0, "type": classification}
             else:
-                lookup_data[food]["type"] = classification
+                lookup_data[food_lower]["type"] = classification
         save_json(FOOD_LOOKUP_FILE, lookup_data)
     else:
         classifications = {}
@@ -244,9 +254,10 @@ def show_summary() -> None:
                 calories = entry["calories"]
                 total_calories += calories
 
-                # Get the classification from the lookup file
-                if food in lookup_data:
-                    classification = lookup_data[food].get("type", "unknown")
+                # Get the classification from the lookup file (using lowercase)
+                food_lower = food.lower()
+                if food_lower in lookup_data:
+                    classification = lookup_data[food_lower].get("type", "unknown")
                 else:
                     classification = "unknown"
 
