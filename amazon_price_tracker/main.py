@@ -75,6 +75,8 @@ def parse_price(html_content: str) -> Optional[float]:
         'span.priceToPay span.a-offscreen'
     ]
 
+    price: Optional[float] = None
+
     for selector in price_selectors:
         try:
             element = soup.select_one(selector)
@@ -103,7 +105,7 @@ def parse_price(html_content: str) -> Optional[float]:
             continue
 
     # Try finding any price-like text in the page
-    if not price:
+    if price is None:
         price_pattern = r'\$\s*(\d+(?:,\d{3})*(?:\.\d{2})?)'
         matches = re.findall(price_pattern, html_content)
         if matches:
