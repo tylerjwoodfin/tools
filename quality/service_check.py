@@ -54,26 +54,32 @@ def main():
     
     cabinet.log("Starting comprehensive service check")
     
-    # Check Docker containers
-    docker_services = {
-        'immich': 'immich',
-        'dawarich': 'dawarich'
-    }
-    
-    for service_name, container_name in docker_services.items():
-        if check_docker_container(container_name):
-            cabinet.log(f"✓ {service_name} Docker container is running")
-        else:
-            cabinet.log(f"✗ {service_name} Docker container is NOT running", level="error")
-    
+    # Check Docker containers only on cloud device
+    if device_name == "cloud":
+        docker_services = {
+            'immich': 'immich',
+            'dawarich': 'dawarich'
+        }
+
+        for service_name, container_name in docker_services.items():
+            if check_docker_container(container_name):
+                cabinet.log(f"✓ {service_name} Docker container is running")
+            else:
+                cabinet.log(f"✗ {service_name} Docker container is NOT running", level="error")
+    else:
+        cabinet.log(f"Skipping Docker container checks on device: {device_name}")
+
     # Check system services
     system_services = ['rustdesk']
     
-    for service_name in system_services:
-        if check_system_service(service_name):
-            cabinet.log(f"✓ {service_name} system service is running")
-        else:
-            cabinet.log(f"✗ {service_name} system service is NOT running", level="error")
+    if device_name == "cloud":
+        for service_name in system_services:
+            if check_system_service(service_name):
+                cabinet.log(f"✓ {service_name} system service is running")
+            else:
+                cabinet.log(f"✗ {service_name} system service is NOT running", level="error")
+    else:
+        cabinet.log(f"Skipping system service checks on device: {device_name}")
     
     # Check disk space
     disk_info = get_disk_usage("/")
