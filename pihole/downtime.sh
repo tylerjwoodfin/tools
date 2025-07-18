@@ -43,7 +43,6 @@ cleanup_scheduled_jobs() {
 check_parent_process
 if [ $? -ne 0 ] && [ "$1" != "block" ]; then
     echo "This script can only be run from a Python script or crontab."
-    exit 1
 fi
 
 # Ensure the second argument is provided
