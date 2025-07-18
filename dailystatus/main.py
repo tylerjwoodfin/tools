@@ -47,8 +47,8 @@ def run_service_check():
 def append_free_space_info(email):
     """Append free space information from all devices as a table"""
     # Get all quality data from cabinet
-    quality_data = cab.get("quality") or {}
-    
+    quality_data = cab.get("quality", force_cache_update=True) or {}
+
     if not quality_data:
         email += """
         <h3>Disk Space:</h3>
@@ -110,26 +110,25 @@ def append_free_space_info(email):
 
 
 def append_service_check_summary(email):
-    """Append a summary of service check results"""
+    """Append a summary of service check results only if there are errors"""
     # Get today's log to find service check results
     today = datetime.date.today()
     log_path_today = os.path.join(cab.path_dir_log, str(today))
     daily_log_file = cab.get_file_as_array(f"LOG_DAILY_{today}.log",
                                            file_path=log_path_today) or []
     
-    # Filter for service check related entries
-    service_check_entries = [line for line in daily_log_file if 
-                           "Starting comprehensive service check" in line or
-                           "✓" in line or "✗" in line or "⚠" in line]
+    # Filter for service check error entries only
+    service_check_errors = [line for line in daily_log_file if
+                           "✗" in line or "⚠" in line]
     
-    if service_check_entries:
-        # Get the most recent service check entries (last 20 lines that match)
-        recent_entries = service_check_entries[-20:]
-        formatted_entries = "<br>".join(recent_entries)
+    if service_check_errors:
+        # Get the most recent service check error entries (last 20 lines that match)
+        recent_errors = service_check_errors[-20:]
+        formatted_errors = "<br>".join(recent_errors)
         
         email += f"""
-        <h3>Service Check Results:</h3>
-        <pre style="font-family: monospace; white-space: pre-wrap;">{formatted_entries}</pre>
+        <h3>Service Check Issues:</h3>
+        <pre style="font-family: monospace; white-space: pre-wrap;">{formatted_errors}</pre>
         <br>
         """
     
