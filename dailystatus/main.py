@@ -11,6 +11,7 @@ import subprocess
 import textwrap
 import socket
 import json
+import sys
 from pathlib import Path
 import cabinet
 
@@ -19,6 +20,119 @@ import cabinet
 # initialize cabinet for configuration and mail for notifications
 cab = cabinet.Cabinet()
 mail = cabinet.Mail()
+
+
+def run_service_check():
+    """Run the service check script and log any issues"""
+    service_check_script = os.path.join(os.path.dirname(__file__), "..", "quality", "service_check.py")
+    
+    if not os.path.exists(service_check_script):
+        cab.log(f"Service check script not found: {service_check_script}", level="error")
+        return False
+    
+    try:
+        # Run the service check script
+        result = subprocess.run([sys.executable, service_check_script], 
+                              capture_output=True, text=True, check=True)
+        cab.log("Service check completed successfully")
+        return True
+    except subprocess.CalledProcessError as e:
+        cab.log(f"Service check failed: {e.stderr}", level="error")
+        return False
+    except Exception as e:
+        cab.log(f"Error running service check: {str(e)}", level="error")
+        return False
+
+
+def append_free_space_info(email):
+    """Append free space information from all devices as a table"""
+    # Get all quality data from cabinet
+    quality_data = cab.get("quality", force_cache_update=True) or {}
+
+    if not quality_data:
+        email += """
+        <h3>Disk Space:</h3>
+        <p>No disk space data available</p>
+        <br>
+        """
+        return email
+    
+    # Build HTML table
+    table_html = """
+    <h3>Disk Space:</h3>
+    <table border="1" style="border-collapse: collapse; width: 100%;">
+        <tr style="background-color: #f2f2f2;">
+            <th style="padding: 8px; text-align: left;">Device</th>
+            <th style="padding: 8px; text-align: left;">Free Space (GB)</th>
+        </tr>
+    """
+    
+    for device_name, device_data in quality_data.items():
+        # Handle nested structure from service check script
+        if isinstance(device_data, dict):
+            # Check if it has the nested structure from service check
+            if "free_gb" in device_data:
+                free_gb = device_data["free_gb"]
+            else:
+                # Try to get free_gb directly from device_data
+                free_gb = device_data
+        else:
+            # Direct value
+            free_gb = device_data
+        
+        # Ensure free_gb is a number
+        try:
+            free_gb = float(free_gb)
+        except (ValueError, TypeError):
+            continue
+        
+        # Color code based on available space
+        if free_gb < 10:
+            row_style = "background-color: #ffebee; color: #c62828;"
+        elif free_gb < 50:
+            row_style = "background-color: #fff3e0; color: #ef6c00;"
+        else:
+            row_style = "background-color: #e8f5e8; color: #2e7d32;"
+        
+        table_html += f"""
+    <tr style="{row_style}">
+        <td style="padding: 8px;">{device_name}</td>
+        <td style="padding: 8px;">{free_gb:.2f}</td>
+    </tr>
+        """
+    
+    table_html += """
+    </table>
+    <br>
+    """
+    
+    return email + table_html
+
+
+def append_service_check_summary(email):
+    """Append a summary of service check results only if there are errors"""
+    # Get today's log to find service check results
+    today = datetime.date.today()
+    log_path_today = os.path.join(cab.path_dir_log, str(today))
+    daily_log_file = cab.get_file_as_array(f"LOG_DAILY_{today}.log",
+                                           file_path=log_path_today) or []
+    
+    # Filter for service check error entries only
+    service_check_errors = [line for line in daily_log_file if
+                           "✗" in line or "⚠" in line]
+    
+    if service_check_errors:
+        # Get the most recent service check error entries (last 20 lines that match)
+        recent_errors = service_check_errors[-20:]
+        formatted_errors = "<br>".join(recent_errors)
+        
+        email += f"""
+        <h3>Service Check Issues:</h3>
+        <pre style="font-family: monospace; white-space: pre-wrap;">{formatted_errors}</pre>
+        <br>
+        """
+    
+    return email
 
 
 def get_paths_and_config():
@@ -267,6 +381,9 @@ if __name__ == "__main__":
     # set up email content
     status_email = "Dear Tyler,<br><br>This is your daily status report.<br><br>"
 
+    # run service check first to gather latest data
+    run_service_check()
+
     # check if food has been logged today
     status_email = append_food_log(status_email)
 
@@ -287,6 +404,12 @@ if __name__ == "__main__":
 
     # append weather info
     status_email = append_weather_info(status_email)
+
+    # append free space info
+    status_email = append_free_space_info(status_email)
+
+    # append service check summary
+    status_email = append_service_check_summary(status_email)
 
     # send the email
     send_status_email(status_email, has_warnings, has_errors, config_data["today"])
