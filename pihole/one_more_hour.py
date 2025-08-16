@@ -2,18 +2,20 @@
 """
 This script allows me one hour of unblocking my "distraction list"
 in Pihole. After 1 hour, it reintroduces the block.
+Uses the Python downtime.py script for blocking/unblocking operations.
 """
 
-import re
 import argparse
+import os
+import re
 import subprocess
 from datetime import datetime, timedelta
 from cabinet import Cabinet
 
 # Define common variables
-SCRIPT_PATH = "/home/tyler/git/tools/pihole/downtime.sh"
-CMD_UNBLOCK = f"zsh {SCRIPT_PATH} allow afternoon"
-CMD_REBLOCK = f"zsh {SCRIPT_PATH} block afternoon"
+SCRIPT_PATH = os.path.expanduser("~/git/tools/pihole/downtime.py")
+CMD_UNBLOCK = f"/usr/bin/python3 {SCRIPT_PATH} allow afternoon"
+CMD_REBLOCK = f"/usr/bin/python3 {SCRIPT_PATH} block afternoon"
 
 cabinet = Cabinet()
 times_used = cabinet.get("pihole", "times_unblocked") or 0
@@ -84,8 +86,7 @@ def reblock():
     print("\nThank you. Get some rest, please.")
 
     # syntax in crontab to reblock:
-    # 00 13 * * 1-5 zsh -c "atrm $(atq | awk '{print $1}') 2>/dev/null; \
-    # zsh $HOME/git/tools/pihole/downtime.sh allow afternoon"
+    # 00 13 * * 1-5 /usr/bin/python3 ~/git/tools/pihole/downtime.py allow afternoon
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Manage Pihole unblock scheduling.")
