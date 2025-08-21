@@ -156,8 +156,8 @@ def schedule_commands():
     else:
         print("Failed to extract job ID.")
 
-    print(f"Fine, unblocking, but you've used this {new_times_used}/6 times today.")
-    print("Sleep is important!")
+    print(f"You have until {reblock_time.strftime('%H:%M')}.")
+    print(f"You've used this {new_times_used}/6 times today.")
     print("\n\nRun 'one-hour-of-distraction end' to end the unblock early.")
 
 
