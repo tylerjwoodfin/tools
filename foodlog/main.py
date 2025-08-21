@@ -18,9 +18,11 @@ LOG_DIR = cabinet.get("path", "cabinet", "log") or os.path.expanduser("~/.cabine
 FOOD_LOG_FILE = os.path.join(LOG_DIR, "food.json")
 FOOD_LOOKUP_FILE = os.path.join(LOG_DIR, "food_lookup.json")
 
+
 def ensure_log_directory() -> None:
     """create log directory if it doesn't exist."""
     os.makedirs(LOG_DIR, exist_ok=True)
+
 
 def load_json(file_path: str) -> dict:
     """load json data from a file, return empty dict if file doesn't exist."""
@@ -29,10 +31,12 @@ def load_json(file_path: str) -> dict:
             return json.load(f)
     return {}
 
+
 def save_json(file_path: str, data: dict) -> None:
     """save data to a json file."""
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
+
 
 def log_food(food_name: str, calories: int, is_yesterday: bool = False) -> None:
     """log food entry for today's date."""
@@ -56,10 +60,12 @@ def log_food(food_name: str, calories: int, is_yesterday: bool = False) -> None:
     food_name_lower = food_name.lower()
     log_data[today].append({"food": food_name_lower, "calories": calories})
     save_json(FOOD_LOG_FILE, log_data)
-    print_formatted_text(HTML(
-        f'<green>Logged:</green> {food_name} <yellow>({calories} cal)</yellow>'))
+    print_formatted_text(
+        HTML(f"<green>Logged:</green> {food_name} <yellow>({calories} cal)</yellow>")
+    )
 
-    display_today_calories()
+    display_daily_calories()
+
 
 def update_food_lookup(food_name: str, calories: int) -> None:
     """update food lookup file with food and calorie information."""
@@ -73,11 +79,14 @@ def update_food_lookup(food_name: str, calories: int) -> None:
 
     if food_name_lower in lookup_data:
         if lookup_data[food_name_lower]["calories"] != calories:
-            print_formatted_text(HTML(
-                f'<yellow>{food_name}</yellow> has <yellow>{\
-                    lookup_data[food_name_lower]["calories"]} cal</yellow>.'))
+            print_formatted_text(
+                HTML(
+                    f'<yellow>{food_name}</yellow> has <yellow>{\
+                    lookup_data[food_name_lower]["calories"]} cal</yellow>.'
+                )
+            )
             choice = input("Overwrite? (y/n): ").strip().lower()
-            if choice != 'y':
+            if choice != "y":
                 return
         lookup_data[food_name_lower]["calories"] = calories
     else:
@@ -85,20 +94,25 @@ def update_food_lookup(food_name: str, calories: int) -> None:
 
     save_json(FOOD_LOOKUP_FILE, lookup_data)
 
-def display_today_calories() -> None:
-    """display total calorie count and entries for today."""
-    log_data = load_json(FOOD_LOG_FILE)
-    today = datetime.date.today()
-    today_str = today.isoformat()
 
-    if today_str in log_data:
+def display_daily_calories(target_date: datetime.date = None) -> None:
+    """display total calorie count and entries for a specific date (defaults to today)."""
+    log_data = load_json(FOOD_LOG_FILE)
+    if target_date is None:
+        target_date = datetime.date.today()
+
+    target_date_str = target_date.isoformat()
+
+    if target_date_str in log_data:
         # Format the date as "Food for Day, YYYY-MM-DD"
-        formatted_date = f"\n{today.strftime('%a')}, {today_str}"
-        print_formatted_text(HTML(f'<underline><bold>{formatted_date}</bold></underline>'))
+        formatted_date = f"\n{target_date.strftime('%a')}, {target_date_str}"
+        print_formatted_text(
+            HTML(f"<underline><bold>{formatted_date}</bold></underline>")
+        )
         total_calories = 0
 
         # Find the maximum length of calories for alignment
-        for entry in log_data[today_str]:
+        for entry in log_data[target_date_str]:
             food = entry["food"]
             calories = entry["calories"]
             # Ensure calories is an integer
@@ -109,8 +123,7 @@ def display_today_calories() -> None:
             # Pad calories to maintain consistent alignment
             padded_calories = str(calories).ljust(4)  # Use fixed width of 4 characters
 
-            print_formatted_text(HTML(
-                f'{padded_calories}cal - <green>{food}</green>'))
+            print_formatted_text(HTML(f"{padded_calories}cal - <green>{food}</green>"))
 
         calorie_target = cabinet.get("foodlog", "calorie_target")
         if calorie_target is None:
@@ -119,16 +132,27 @@ def display_today_calories() -> None:
 
         # Color-code total calories. +- 150 is green, 150-300 is yellow, over 300 is red
         if abs(total_calories - calorie_target) <= 150:
-            total_color = 'green'
+            total_color = "green"
         elif abs(total_calories - calorie_target) <= 300:
-            total_color = 'yellow'
+            total_color = "yellow"
         else:
-            total_color = 'red'
+            total_color = "red"
 
-        print_formatted_text(HTML(
-            f'\n<bold>Total today:</bold> <{total_color}>{total_calories}</{total_color}>'))
+        print_formatted_text(
+            HTML(
+                f"\n<bold>Total:</bold> <{total_color}>{total_calories}</{total_color}>"
+            )
+        )
     else:
-        print_formatted_text(HTML('<yellow>No food logged for today.</yellow>'))
+        date_description = (
+            "today"
+            if target_date == datetime.date.today()
+            else f"for {target_date.strftime('%A, %Y-%m-%d')}"
+        )
+        print_formatted_text(
+            HTML(f"<yellow>No food logged {date_description}.</yellow>")
+        )
+
 
 def get_calories(food_name: str, lookup_data: dict) -> int:
     """get calorie count for a food item, either from lookup or user input."""
@@ -141,15 +165,15 @@ def get_calories(food_name: str, lookup_data: dict) -> int:
             raise ValueError(f"No calorie data found for {food_name}")
         print(f"{calories} cal found for {food_name}.\n")
         choice = input("Use this? (y/n): ").strip().lower()
-        if choice == 'y':
+        if choice == "y":
             return calories
 
     calories = input("Enter calorie count, or 'ai' to ask ChatGPT: ").strip()
-    if calories == 'ai':
+    if calories == "ai":
         ai_calories = query_chatgpt(food_name)
         print(f"\nChatGPT suggests: {ai_calories} calories")
         calories = input("Use this value? (y/n): ").strip().lower()
-        if calories == 'y':
+        if calories == "y":
             return int(ai_calories)
         calories = input("Enter calorie count: ").strip()
 
@@ -157,11 +181,13 @@ def get_calories(food_name: str, lookup_data: dict) -> int:
         raise ValueError("Calorie count must be a number.")
     return int(calories)
 
+
 def query_chatgpt(food_name: str) -> str:
     """Query ChatGPT for the calorie count of a food item."""
     query = f"What is the calorie count of {food_name}? \
         Only output your best guess as a number, no other text."
     return chatgpt.query(query)
+
 
 def classify_food(food_names: list[str]) -> dict[str, str]:
     """Classify multiple food items as 'junk' or 'healthy' using AI."""
@@ -185,12 +211,13 @@ food3: junk
 
     # Parse the response into a dictionary
     classifications = {}
-    for line in response.split('\n'):
-        if ':' in line:
-            food, classification = line.split(':', 1)
+    for line in response.split("\n"):
+        if ":" in line:
+            food, classification = line.split(":", 1)
             classifications[food.strip()] = classification.strip().lower()
 
     return classifications
+
 
 def show_summary() -> None:
     """Display a summary of the past 7 days of food entries with AI classification."""
@@ -198,13 +225,15 @@ def show_summary() -> None:
     lookup_data = load_json(FOOD_LOOKUP_FILE)
     today = datetime.date.today()
 
-    print_formatted_text(HTML('<bold><underline>Food Summary (Last 7 Days)</underline></bold>\n'))
+    print_formatted_text(
+        HTML("<bold><underline>Food Summary (Last 7 Days)</underline></bold>\n")
+    )
 
     # First, collect all unique food items from the past 7 days
     all_foods = set()
     daily_totals = {}  # Store daily totals for the bar graph
     daily_healthy = {}  # Store daily healthy calories
-    daily_junk = {}     # Store daily junk calories
+    daily_junk = {}  # Store daily junk calories
     for i in range(7):
         date = today - datetime.timedelta(days=i)
         date_str = date.isoformat()
@@ -219,8 +248,11 @@ def show_summary() -> None:
     foods_to_classify = []
     for food in all_foods:
         food_lower = food.lower()
-        if food_lower not in lookup_data or "type" not in lookup_data[food_lower] or \
-            lookup_data[food_lower]["type"] == "unknown":
+        if (
+            food_lower not in lookup_data
+            or "type" not in lookup_data[food_lower]
+            or lookup_data[food_lower]["type"] == "unknown"
+        ):
             foods_to_classify.append(food)
 
     if foods_to_classify:
@@ -247,7 +279,9 @@ def show_summary() -> None:
         date_str = date.isoformat()
 
         if date_str in log_data:
-            print_formatted_text(HTML(f'\n<bold>{date.strftime("%a, %Y-%m-%d")}</bold>'))
+            print_formatted_text(
+                HTML(f'\n<bold>{date.strftime("%a, %Y-%m-%d")}</bold>')
+            )
 
             for entry in log_data[date_str]:
                 food = entry["food"]
@@ -270,22 +304,33 @@ def show_summary() -> None:
                     daily_junk[date] += calories
                     food_color = "red"
 
-                print_formatted_text(HTML(
-                    f'  {calories} cal - <{food_color}>{food}</{food_color}> ({classification})'))
+                print_formatted_text(
+                    HTML(
+                        f"  {calories} cal - <{food_color}>{food}</{food_color}> ({classification})"
+                    )
+                )
 
     # Print summary statistics
-    print_formatted_text(HTML('\n<bold>Summary Statistics:</bold>'))
-    print_formatted_text(HTML(f'  Total calories: {total_calories}'))
+    print_formatted_text(HTML("\n<bold>Calorie Summary:</bold>"))
     if total_calories > 0:
-        print_formatted_text(HTML(f'  Healthy calories: <green>{healthy_calories}</green> \
-            ({healthy_calories/total_calories*100:.1f}%)'))
-        print_formatted_text(HTML(f'  Junk calories: <red>{junk_calories}</red> \
-            ({junk_calories/total_calories*100:.1f}%)'))
+        print_formatted_text(
+            HTML(
+                f"  Healthy: <green>{healthy_calories}</green> ({healthy_calories/total_calories*100:.1f}%)"
+            )
+        )
+        print_formatted_text(
+            HTML(
+                f"  Junk:    <red>{junk_calories}</red> ({junk_calories/total_calories*100:.1f}%)"
+            )
+        )
+        print("")
+        print_formatted_text(HTML(f"  Total: {total_calories} cal"))
+        print_formatted_text(HTML(f"  Daily Average: {total_calories / 7} cal"))
     else:
-        print_formatted_text(HTML('  No calories logged in the past 7 days'))
+        print_formatted_text(HTML("  No calories logged in the past 7 days"))
 
     # Add daily totals bar graph
-    print_formatted_text(HTML('\n<bold>Daily Calorie Totals:</bold>'))
+    print_formatted_text(HTML("\n<bold>Daily Calorie Totals:</bold>"))
 
     # Find the maximum calories for scaling the bar graph
     max_calories = max(daily_totals.values()) if daily_totals else 0
@@ -299,25 +344,42 @@ def show_summary() -> None:
             healthy = daily_healthy[date]
 
             # Calculate the scaled bar length based on total calories
-            scaled_length = int((total / max_calories) * bar_width) if max_calories > 0 else 0
+            scaled_length = (
+                int((total / max_calories) * bar_width) if max_calories > 0 else 0
+            )
 
             # Calculate the healthy/junk ratio within the scaled length
             healthy_length = int((healthy / total) * scaled_length) if total > 0 else 0
             junk_length = scaled_length - healthy_length
 
             # Create the bar with both colors
-            health_bar = f'<green>{"█" * healthy_length}</green><red>{"█" * junk_length}</red>'
+            health_bar = (
+                f'<green>{"█" * healthy_length}</green><red>{"█" * junk_length}</red>'
+            )
 
-            print_formatted_text(HTML(
-                f'  {date.strftime("%a")}: {health_bar} {total} cal'))
+            print_formatted_text(
+                HTML(f'  {date.strftime("%a")}: {health_bar} {total} cal')
+            )
+
 
 def main() -> None:
     """parse command-line arguments and log food entry."""
     is_yesterday = False
 
     if len(sys.argv) < 2:
-        display_today_calories()
+        display_daily_calories()
         sys.exit(0)
+
+    # Check if --yesterday is present and remove it
+    if "--yesterday" in sys.argv:
+        is_yesterday = True
+        sys.argv.remove("--yesterday")
+
+        # If no other arguments remain, display yesterday's data
+        if len(sys.argv) < 2:
+            yesterday = datetime.date.today() - datetime.timedelta(days=1)
+            display_daily_calories(yesterday)
+            sys.exit(0)
 
     if sys.argv[1] == "--edit":
         edit_food_json()
@@ -345,11 +407,6 @@ def main() -> None:
                     sys.argv = original_argv
             return
 
-        # Check if --yesterday is present and remove it
-        if "--yesterday" in sys.argv:
-            is_yesterday = True
-            sys.argv.remove("--yesterday")
-
         # Regular single command processing
         food_name = " ".join(sys.argv[1:-1])
         calories = sys.argv[-1]
@@ -366,12 +423,14 @@ def main() -> None:
         update_food_lookup(food_name, calories)
 
     except ValueError as e:
-        print_formatted_text(HTML(f'<red>Error: {e}</red>'))
+        print_formatted_text(HTML(f"<red>Error: {e}</red>"))
         sys.exit(1)
+
 
 def edit_food_json() -> None:
     """Edit the food.json file."""
     os.system(f"{cabinet.editor} {FOOD_LOG_FILE}")
+
 
 if __name__ == "__main__":
     try:
