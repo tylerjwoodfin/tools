@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import subprocess
 import os
+from datetime import datetime
+import time
 from cabinet import Cabinet
 
 def run_command(command):
@@ -85,6 +87,8 @@ def main():
     disk_info = get_disk_usage("/")
     if disk_info:
         cabinet.put("quality", device_name, "free_gb", disk_info['free_gb'])
+        timezone = time.tzname[time.daylight] if time.tzname[time.daylight] else "UNKNOWN"
+        cabinet.put("quality", device_name, "updated_at", datetime.now().strftime(f"%Y-%m-%d %H:%M:%S {timezone}"))
         cabinet.log(f"✓ Disk space: {disk_info['free_gb']}GB free out of {disk_info['total_gb']}GB total ({disk_info['usage_percent']}% used)")
         
         # Warn if disk usage is high
