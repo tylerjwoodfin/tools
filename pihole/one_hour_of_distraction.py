@@ -5,9 +5,10 @@ in Pihole. After 1 hour, it reintroduces the block.
 Uses the Python downtime.py script for blocking/unblocking operations.
 
 New features:
-- Limited to 6 uses per 24-hour period
+- Limited to configurable uses per rolling 24-hour period
 - No effect on weekends or holidays (except non-holiday Saturdays 12AM-4AM)
 - Renamed from one-more-hour to one-hour-of-distraction
+- Uses rolling 24-hour window instead of daily reset
 """
 
 import argparse
@@ -25,45 +26,83 @@ CMD_REBLOCK = f"/usr/bin/python3 {SCRIPT_PATH} block afternoon"
 cabinet = Cabinet()
 
 
-def get_usage_data():
+def get_usage_limit():
     """
-    Get usage data from cabinet, including times used and last reset date.
-
+    Get the usage limit from cabinet, defaulting to 6 if not set.
+    
     Returns:
-        tuple: (times_used, last_reset_date)
+        int: The maximum number of uses allowed in a 24-hour period
     """
-    times_used = cabinet.get("pihole", "distraction_times_used") or 0
-    last_reset_str = cabinet.get("pihole", "distraction_last_reset")
+    return cabinet.get("pihole", "distraction_usage_limit") or 6
 
-    if last_reset_str:
+
+def get_timestamps():
+    """
+    Get the list of timestamps from cabinet.
+    
+    Returns:
+        list: List of datetime objects representing usage timestamps
+    """
+    timestamps_data = cabinet.get("pihole", "timestamps") or []
+    timestamps = []
+    
+    for timestamp_str in timestamps_data:
         try:
-            last_reset = datetime.fromisoformat(last_reset_str)
+            timestamps.append(datetime.fromisoformat(timestamp_str))
         except ValueError:
-            last_reset = datetime.now() - timedelta(days=1)  # Reset if invalid date
-    else:
-        last_reset = datetime.now() - timedelta(days=1)  # Reset if no date
+            # Skip invalid timestamps
+            continue
+    
+    return timestamps
 
-    return times_used, last_reset
 
-
-def reset_usage_if_needed():
+def clean_old_timestamps(timestamps):
     """
-    Reset usage count if 24 hours have passed since last reset.
-
+    Remove timestamps older than 24 hours from the list.
+    
+    Args:
+        timestamps (list): List of datetime objects
+        
     Returns:
-        int: Current times used (after potential reset)
+        list: Filtered list with only timestamps from the last 24 hours
     """
-    times_used, last_reset = get_usage_data()
-    now = datetime.now()
+    cutoff_time = datetime.now() - timedelta(hours=24)
+    return [ts for ts in timestamps if ts > cutoff_time]
 
-    # If 24 hours have passed since last reset, reset the counter
-    if now - last_reset >= timedelta(days=1):
-        times_used = 0
-        cabinet.put("pihole", "distraction_times_used", times_used)
-        cabinet.put("pihole", "distraction_last_reset", now.isoformat())
-        cabinet.update_cache()
 
-    return times_used
+def save_timestamps(timestamps):
+    """
+    Save timestamps to cabinet.
+    
+    Args:
+        timestamps (list): List of datetime objects to save
+    """
+    timestamp_strings = [ts.isoformat() for ts in timestamps]
+    cabinet.put("pihole", "timestamps", timestamp_strings)
+    cabinet.update_cache()
+
+
+def get_current_usage():
+    """
+    Get current usage count within the rolling 24-hour window.
+    
+    Returns:
+        int: Number of times used in the last 24 hours
+    """
+    timestamps = get_timestamps()
+    timestamps = clean_old_timestamps(timestamps)
+    save_timestamps(timestamps)  # Save the cleaned list
+    return len(timestamps)
+
+
+def add_usage_timestamp():
+    """
+    Add current timestamp to the usage list.
+    """
+    timestamps = get_timestamps()
+    timestamps = clean_old_timestamps(timestamps)
+    timestamps.append(datetime.now())
+    save_timestamps(timestamps)
 
 
 def is_weekend_or_holiday() -> bool:
@@ -113,11 +152,12 @@ def schedule_commands():
     one to execute immediately and another to execute one hour later.
     """
     # Check usage limits
-    times_used = reset_usage_if_needed()
+    current_usage = get_current_usage()
+    usage_limit = get_usage_limit()
 
-    if times_used >= 6:
-        print("You've already used your 6 distraction hours for today.")
-        print("Please wait until tomorrow to use this feature again.")
+    if current_usage >= usage_limit:
+        print(f"You've already used your {usage_limit} distraction hours in the last 24 hours.")
+        print("Please wait until some time has passed to use this feature again.")
         return
 
     # Check weekend/holiday restrictions
@@ -133,10 +173,8 @@ def schedule_commands():
     reblock_time = datetime.now() + timedelta(hours=1)
     at_command = f"echo '{CMD_REBLOCK}' | at {reblock_time.strftime('%H:%M')}"
 
-    # Update usage count
-    new_times_used = times_used + 1
-    cabinet.put("pihole", "distraction_times_used", new_times_used)
-    cabinet.update_cache()
+    # Add current usage timestamp
+    add_usage_timestamp()
 
     # Capture the at job ID
     result = subprocess.run(
@@ -157,7 +195,7 @@ def schedule_commands():
         print("Failed to extract job ID.")
 
     print(f"You have until {reblock_time.strftime('%H:%M')}.")
-    print(f"You've used this {new_times_used}/6 times today.")
+    print(f"You've used this {current_usage + 1}/{usage_limit} times in the last 24 hours.")
     print("\n\nRun 'one-hour-of-distraction end' to end the unblock early.")
 
 
