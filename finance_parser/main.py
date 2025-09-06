@@ -427,7 +427,7 @@ def ask_for_file(file_description: str) -> str:
     file_path = askopenfilename(filetypes=[("CSV files", "*.csv"), ("ODS files", "*.ods")])
     if not file_path:
         print("No file selected.")
-        exit()
+        return None
     return file_path
 
 def update_spreadsheet_with_totals(spreadsheet_path: str, totals_df: pd.DataFrame,
@@ -522,7 +522,7 @@ def main() -> None:
             print(f"Found Citi files: {citi_files}")
 
         amazon_file_path = find_latest_file_in_downloads("amazon_order_history.csv") \
-            or ask_for_file("Amazon transactions CSV")
+            or ask_for_file("Amazon transactions CSV") or None
         schwab_file_path = find_latest_file_in_downloads("schwab.csv") \
             or ask_for_file("Schwab transactions CSV")
         spreadsheet_path = args.spreadsheet or get_default_spreadsheet_path()
@@ -542,10 +542,16 @@ def main() -> None:
         citi_summary_df = citi_parser.process_transactions()
 
         # Process Amazon transactions
-        amazon_parser = AmazonParser(file_path=amazon_file_path, category_file=categories_file_path)
-        amazon_parser.load_categories()
-        amazon_parser.load_transactions()
-        amazon_summary_df = amazon_parser.process_transactions()
+        amazon_parser = None
+        if amazon_file_path:
+            amazon_parser = AmazonParser(file_path=amazon_file_path, category_file=categories_file_path)
+
+        if amazon_parser:
+            amazon_parser.load_categories()
+            amazon_parser.load_transactions()
+            amazon_summary_df = amazon_parser.process_transactions()
+        else:
+            amazon_summary_df = None
 
         # Process Schwab transactions
         schwab_parser = SchwabParser(file_path=schwab_file_path, category_file=categories_file_path)
@@ -556,9 +562,8 @@ def main() -> None:
             if 'Balance' in schwab_summary_df.columns else 0.0
 
         # Combine and sort transactions
-        combined_df = pd.concat([
-            venmo_summary_df, citi_summary_df, amazon_summary_df, schwab_summary_df
-        ]).sort_values(by=['Source', 'Category', 'Datetime'])
+        dataframes = [venmo_summary_df, citi_summary_df, amazon_summary_df, schwab_summary_df]
+        combined_df = pd.concat([df for df in dataframes if df is not None]).sort_values(by=['Source', 'Category', 'Datetime'])
         print("\nCombined Transactions:")
         print(combined_df.to_string(index=False))
 

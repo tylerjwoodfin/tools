@@ -24,16 +24,24 @@ mail = cabinet.Mail()
 
 def run_service_check():
     """Run the service check script and log any issues"""
-    service_check_script = os.path.join(os.path.dirname(__file__), "..", "quality", "service_check.py")
-    
+    service_check_script = os.path.join(
+        os.path.dirname(__file__), "..", "quality", "service_check.py"
+    )
+
     if not os.path.exists(service_check_script):
-        cab.log(f"Service check script not found: {service_check_script}", level="error")
+        cab.log(
+            f"Service check script not found: {service_check_script}", level="error"
+        )
         return False
-    
+
     try:
         # Run the service check script
-        result = subprocess.run([sys.executable, service_check_script], 
-                              capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            [sys.executable, service_check_script],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         cab.log("Service check completed successfully")
         return True
     except subprocess.CalledProcessError as e:
@@ -56,7 +64,7 @@ def append_free_space_info(email):
         <br>
         """
         return email
-    
+
     # Build HTML table
     table_html = """
     <h3>Disk Space:</h3>
@@ -66,7 +74,7 @@ def append_free_space_info(email):
             <th style="padding: 8px; text-align: left;">Free Space (GB)</th>
         </tr>
     """
-    
+
     for device_name, device_data in quality_data.items():
         # Handle nested structure from service check script
         if isinstance(device_data, dict):
@@ -79,13 +87,13 @@ def append_free_space_info(email):
         else:
             # Direct value
             free_gb = device_data
-        
+
         # Ensure free_gb is a number
         try:
             free_gb = float(free_gb)
         except (ValueError, TypeError):
             continue
-        
+
         # Color code based on available space
         if free_gb < 10:
             row_style = "background-color: #ffebee; color: #c62828;"
@@ -93,19 +101,19 @@ def append_free_space_info(email):
             row_style = "background-color: #fff3e0; color: #ef6c00;"
         else:
             row_style = "background-color: #e8f5e8; color: #2e7d32;"
-        
+
         table_html += f"""
     <tr style="{row_style}">
         <td style="padding: 8px;">{device_name}</td>
         <td style="padding: 8px;">{free_gb:.2f}</td>
     </tr>
         """
-    
+
     table_html += """
     </table>
     <br>
     """
-    
+
     return email + table_html
 
 
@@ -114,24 +122,26 @@ def append_service_check_summary(email):
     # Get today's log to find service check results
     today = datetime.date.today()
     log_path_today = os.path.join(cab.path_dir_log, str(today))
-    daily_log_file = cab.get_file_as_array(f"LOG_DAILY_{today}.log",
-                                           file_path=log_path_today) or []
-    
+    daily_log_file = (
+        cab.get_file_as_array(f"LOG_DAILY_{today}.log", file_path=log_path_today) or []
+    )
+
     # Filter for service check error entries only
-    service_check_errors = [line for line in daily_log_file if
-                           "✗" in line or "⚠" in line]
-    
+    service_check_errors = [
+        line for line in daily_log_file if "✗" in line or "⚠" in line
+    ]
+
     if service_check_errors:
         # Get the most recent service check error entries (last 20 lines that match)
         recent_errors = service_check_errors[-20:]
         formatted_errors = "<br>".join(recent_errors)
-        
+
         email += f"""
         <h3>Service Check Issues:</h3>
         <pre style="font-family: monospace; white-space: pre-wrap;">{formatted_errors}</pre>
         <br>
         """
-    
+
     return email
 
 
@@ -141,7 +151,9 @@ def get_paths_and_config():
     device_name = socket.gethostname()
     user_home = pwd.getpwuid(os.getuid())[0]
     path_dot_cabinet = os.path.join(f"/home/{user_home}/.cabinet")
-    path_backend = cab.get("path", "cabinet", "log-backup") or f"{path_dot_cabinet}/log-backup"
+    path_backend = (
+        cab.get("path", "cabinet", "log-backup") or f"{path_dot_cabinet}/log-backup"
+    )
     path_zshrc = os.path.join(f"/home/{user_home}/.zshrc")
     path_notes = cab.get("path", "notes") or f"{path_dot_cabinet}/notes"
     log_path_today = os.path.join(cab.path_dir_log, str(today))
@@ -156,8 +168,9 @@ def get_paths_and_config():
         "path_zshrc": path_zshrc,
         "path_notes": path_notes,
         "log_path_today": log_path_today,
-        "log_backups_location": log_backups_location
+        "log_backups_location": log_backups_location,
     }
+
 
 def append_food_log(email):
     """check if food has been logged today, print total calories or an error if none found."""
@@ -177,20 +190,23 @@ def append_food_log(email):
             return email
         else:
             total_calories = sum(entry["calories"] for entry in log_data[today])
-            return email + textwrap.dedent(f"""
+            return email + textwrap.dedent(
+                f"""
             <h3>Calories Eaten Today:</h3>
             <pre style="font-family: monospace; white-space: pre-wrap;"
             >{total_calories} calories</pre>
             <br>
-            """)
+            """
+            )
 
     except (json.JSONDecodeError, OSError):
         cab.log("Error reading food log file.", level="error")
         return email
 
+
 def append_syncthing_conflict_check(email):
     """
-    If there are conflicts (files with `.sync-conflict` in their name) for remind.md 
+    If there are conflicts (files with `.sync-conflict` in their name) for remind.md
     (cabinet -> remindmail -> path -> file),
     return a merge conflict-style difference between the conflicting files
     with HTML formatting.
@@ -212,7 +228,7 @@ def append_syncthing_conflict_check(email):
 
     # Read the contents of the original file
     try:
-        with open(target_file, 'r', encoding='utf-8') as f:
+        with open(target_file, "r", encoding="utf-8") as f:
             original_content = f.readlines()
     except (OSError, IOError) as e:
         cab.log(f"Error reading original file: {str(e)}", level="error")
@@ -222,24 +238,35 @@ def append_syncthing_conflict_check(email):
     html_diffs = []
     for conflict_file in conflict_files:
         try:
-            with open(conflict_file, 'r', encoding='utf-8') as f:
+            with open(conflict_file, "r", encoding="utf-8") as f:
                 conflict_content = f.readlines()
         except (OSError, IOError) as e:
-            cab.log(f"Error reading conflict file {conflict_file}: {str(e)}", level="error")
+            cab.log(
+                f"Error reading conflict file {conflict_file}: {str(e)}", level="error"
+            )
             return email + f"Error reading conflict file {conflict_file}: {str(e)}"
 
         # Generate a unified diff and convert to HTML
         diff = difflib.unified_diff(
-            original_content, conflict_content,
-            fromfile=base_name, tofile=os.path.basename(conflict_file),
-            lineterm=''
+            original_content,
+            conflict_content,
+            fromfile=base_name,
+            tofile=os.path.basename(conflict_file),
+            lineterm="",
         )
         formatted_diff = "<br>".join(
-            [f"<span style='color: green;'>+{line[1:]}</span>" \
-                if line.startswith('+') and not line.startswith('+++') else
-             f"<span style='color: red;'>-{line[1:]}</span>" \
-                 if line.startswith('-') and not line.startswith('---') else
-             f"<span>{line}</span>" for line in diff]
+            [
+                (
+                    f"<span style='color: green;'>+{line[1:]}</span>"
+                    if line.startswith("+") and not line.startswith("+++")
+                    else (
+                        f"<span style='color: red;'>-{line[1:]}</span>"
+                        if line.startswith("-") and not line.startswith("---")
+                        else f"<span>{line}</span>"
+                    )
+                )
+                for line in diff
+            ]
         )
         html_diffs.append(
             f"<h3>remind.md has a conflict:</h3>"
@@ -249,6 +276,7 @@ def append_syncthing_conflict_check(email):
 
     # Combine all diffs into a single HTML string
     return email + "<br>".join(html_diffs)
+
 
 def backup_files(paths: dict) -> None:
     """
@@ -263,16 +291,25 @@ def backup_files(paths: dict) -> None:
 
     def build_backup_path(category):
         """Helper function to construct backup file paths."""
-        return os.path.join(paths["path_backend"], paths["device_name"],
-                            category, f"{category} {paths['today']}.md")
+        return os.path.join(
+            paths["path_backend"],
+            paths["device_name"],
+            category,
+            f"{category} {paths['today']}.md",
+        )
 
     # Construct backup file paths
     path_cron_today = build_backup_path("cron")
     path_bash_today = build_backup_path("zsh")
-    path_notes_today = os.path.join(paths["path_backend"],
-                                    paths["device_name"], "notes", f"notes {paths['today']}.zip")
-    path_log_backup = os.path.join(paths["log_backups_location"],
-                                   f"log folder backup {paths['today']}.zip")
+    path_notes_today = os.path.join(
+        paths["path_backend"],
+        paths["device_name"],
+        "notes",
+        f"notes {paths['today']}.zip",
+    )
+    path_log_backup = os.path.join(
+        paths["log_backups_location"], f"log folder backup {paths['today']}.zip"
+    )
 
     # define backup commands
     backup_commands = [
@@ -305,34 +342,59 @@ def prune_old_backups(paths, max_backups=14):
 
 def analyze_logs(paths, email):
     """append daily log analysis"""
-    daily_log_file = cab.get_file_as_array(f"LOG_DAILY_{paths['today']}.log",
-                                           file_path=paths["log_path_today"]) or []
+    daily_log_file = (
+        cab.get_file_as_array(
+            f"LOG_DAILY_{paths['today']}.log", file_path=paths["log_path_today"]
+        )
+        or []
+    )
 
-    daily_log_issues = [line for line in daily_log_file if \
-        "ERROR" in line or "WARN" in line or "CRITICAL" in line]
+    daily_log_issues = [
+        line
+        for line in daily_log_file
+        if "ERROR" in line or "WARN" in line or "CRITICAL" in line
+    ]
     is_warnings = any("WARN" in issue for issue in daily_log_issues)
-    is_errors = any("ERROR" in issue or "CRITICAL" in issue for issue in daily_log_issues)
+    is_errors = any(
+        "ERROR" in issue or "CRITICAL" in issue for issue in daily_log_issues
+    )
+
+    # Check if the only error is the food log error
+    error_lines = [
+        line for line in daily_log_issues if "ERROR" in line or "CRITICAL" in line
+    ]
+    is_only_food_log_error = len(error_lines) == 1 and any(
+        "No food logged for today." in line for line in error_lines
+    )
 
     if daily_log_issues:
         daily_log_filtered = "<br>".join(daily_log_issues)
-        email += textwrap.dedent(f"""
+        email += textwrap.dedent(
+            f"""
             <h3>Warning/Error/Critical Log:</h3>
             <pre style="font-family: monospace; white-space: pre-wrap;">{daily_log_filtered}</pre>
             <br>
-            """)
+            """
+        )
 
-    return email, is_warnings, is_errors
+    return email, is_warnings, is_errors, is_only_food_log_error
 
 
 def append_spotify_info(paths, email):
     """append spotify issues and stats"""
-    spotify_log = cab.get_file_as_array("LOG_SPOTIFY.log", file_path=paths["log_path_today"]) or []
+    spotify_log = (
+        cab.get_file_as_array("LOG_SPOTIFY.log", file_path=paths["log_path_today"])
+        or []
+    )
     spotify_stats = cab.get("spotipy") or {}
 
     spotify_issues = "No Data"
     if spotify_log:
-        issues = [log for log in spotify_log if \
-            "WARNING" in log or "ERROR" in log or "CRITICAL" in log]
+        issues = [
+            log
+            for log in spotify_log
+            if "WARNING" in log or "ERROR" in log or "CRITICAL" in log
+        ]
         if issues:
             spotify_issues = "<br>".join(issues)
             email += f"<h3>Spotify Issues:</h3>{spotify_issues}<br><br>"
@@ -361,13 +423,16 @@ def append_weather_info(email):
     return email
 
 
-def send_status_email(email, is_warnings, is_errors, today):
+def send_status_email(email, is_warnings, is_errors, is_only_food_log_error, today):
     """determine and send status email"""
     email_subject = f"Daily Status - {today}"
     if is_errors and is_warnings:
         email_subject += " - Check Errors/Warnings"
     elif is_errors:
-        email_subject += " - Check Errors"
+        if is_only_food_log_error:
+            email_subject += " - Check Food Log"
+        else:
+            email_subject += " - Check Errors"
     elif is_warnings:
         email_subject += " - Check Warnings"
 
@@ -394,7 +459,9 @@ if __name__ == "__main__":
     prune_old_backups(config_data)
 
     # analyze logs
-    status_email, has_warnings, has_errors = analyze_logs(config_data, status_email)
+    status_email, has_warnings, has_errors, is_only_food_log_error = analyze_logs(
+        config_data, status_email
+    )
 
     # add syncthing conflict check
     status_email = append_syncthing_conflict_check(status_email)
@@ -412,4 +479,10 @@ if __name__ == "__main__":
     status_email = append_service_check_summary(status_email)
 
     # send the email
-    send_status_email(status_email, has_warnings, has_errors, config_data["today"])
+    send_status_email(
+        status_email,
+        has_warnings,
+        has_errors,
+        is_only_food_log_error,
+        config_data["today"],
+    )
