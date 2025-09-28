@@ -21,7 +21,6 @@ import cabinet
 cab = cabinet.Cabinet()
 mail = cabinet.Mail()
 
-
 def run_service_check():
     """Run the service check script and log any issues"""
     service_check_script = os.path.join(
@@ -458,16 +457,16 @@ if __name__ == "__main__":
     # prune old backups
     prune_old_backups(config_data)
 
-    # analyze logs
-    status_email, has_warnings, has_errors, is_only_food_log_error = analyze_logs(
-        config_data, status_email
-    )
-
     # add syncthing conflict check
     status_email = append_syncthing_conflict_check(status_email)
 
     # add spotify info
     status_email = append_spotify_info(config_data, status_email)
+
+    # analyze logs
+    status_email, has_warnings, has_errors, is_only_food_log_error = analyze_logs(
+        config_data, status_email
+    )
 
     # append weather info
     status_email = append_weather_info(status_email)
