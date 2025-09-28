@@ -156,16 +156,18 @@ class SpotifyAnalyzer:
 
         return track_urls
 
-    def spotify_log(self, message, level="info"):
+    def spotify_log(self, message, level="info", log_folder_path=None, log_name=None):
         """
         Wrapper function for cab.log that uses cabinet path structure for Spotify logs.
         """
         today = datetime.date.today()
-        log_base_path = self.cab.get("self", "path", "log")
-        log_path = os.path.join(log_base_path, str(today))
-        log_filename = f"LOG_SPOTIFY_{today}.log"
+        if log_folder_path is None:
+            log_base_path = self.cab.get("path", "log") or "~/.cabinet/log"
+            log_folder_path = os.path.join(log_base_path, str(today))
+        if log_name is None:
+            log_name = f"LOG_SPOTIFY_{today}"
         self.cab.log(
-            message, level=level, log_folder_path=log_path, log_name=log_filename
+            message, level=level, log_folder_path=log_folder_path, log_name=log_name
         )
 
     def analyze_playlists(self):
