@@ -382,7 +382,7 @@ def analyze_logs(paths, email):
 def append_spotify_info(paths, email):
     """append spotify issues and stats"""
     spotify_log = (
-        cab.get_file_as_array("LOG_SPOTIFY.log", file_path=paths["log_path_today"])
+        cab.get_file_as_array(f"LOG_SPOTIFY_{paths['today']}.log", file_path=paths["log_path_today"])
         or []
     )
     spotify_stats = cab.get("spotipy") or {}
