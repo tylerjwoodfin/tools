@@ -81,16 +81,39 @@ def update_food_lookup(food_name: str, calories: int) -> None:
         if lookup_data[food_name_lower]["calories"] != calories:
             print_formatted_text(
                 HTML(
-                    f'<yellow>{food_name}</yellow> has <yellow>{\
+                    f'<yellow>Warning:</yellow> <yellow>{food_name}</yellow> has <yellow>{\
                     lookup_data[food_name_lower]["calories"]} cal</yellow>.'
                 )
             )
-            choice = input("Overwrite? (y/n): ").strip().lower()
-            if choice != "y":
-                return
-        lookup_data[food_name_lower]["calories"] = calories
+            print_formatted_text(
+                HTML(
+                    f"<yellow>Undo with 'foodlog undo'\nUpdate with 'foodlog update {food_name} {calories}'</yellow>\n"
+                )
+            )
     else:
         lookup_data[food_name_lower] = {"calories": calories, "type": "unknown"}
+
+    save_json(FOOD_LOOKUP_FILE, lookup_data)
+
+
+def force_update_food_lookup(food_name: str, calories: int) -> None:
+    """force update food lookup file with new calorie information."""
+    lookup_data = load_json(FOOD_LOOKUP_FILE)
+
+    if isinstance(calories, str) and calories.isnumeric():
+        calories = int(calories)
+
+    # Store food name in lowercase for case-insensitive lookups
+    food_name_lower = food_name.lower()
+
+    old_calories = lookup_data.get(food_name_lower, {}).get("calories", "unknown")
+    lookup_data[food_name_lower] = {"calories": calories, "type": "unknown"}
+
+    print_formatted_text(
+        HTML(
+            f"<green>Updated:</green> {food_name} from <yellow>{old_calories}</yellow> to <yellow>{calories}</yellow> cal"
+        )
+    )
 
     save_json(FOOD_LOOKUP_FILE, lookup_data)
 
@@ -389,6 +412,21 @@ def main() -> None:
         show_summary()
         sys.exit(0)
 
+    if sys.argv[1] == "undo":
+        undo_latest_entry()
+        sys.exit(0)
+
+    if sys.argv[1] == "update":
+        if len(sys.argv) < 4:
+            print_formatted_text(
+                HTML("<red>Error: Usage: foodlog update <food_name> <calories></red>")
+            )
+            sys.exit(1)
+        food_name = " ".join(sys.argv[2:-1])
+        calories = int(sys.argv[-1])
+        force_update_food_lookup(food_name, calories)
+        sys.exit(0)
+
     try:
         # Join all arguments and split by //
         full_command = " ".join(sys.argv[1:])
@@ -425,6 +463,32 @@ def main() -> None:
     except ValueError as e:
         print_formatted_text(HTML(f"<red>Error: {e}</red>"))
         sys.exit(1)
+
+
+def undo_latest_entry() -> None:
+    """Remove the latest food entry from today's log."""
+    ensure_log_directory()
+    log_data = load_json(FOOD_LOG_FILE)
+    today = datetime.date.today().isoformat()
+
+    if today not in log_data or not log_data[today]:
+        print_formatted_text(HTML("<yellow>No entries to undo for today.</yellow>"))
+        return
+
+    # Remove the last entry
+    removed_entry = log_data[today].pop()
+    food_name = removed_entry["food"]
+    calories = removed_entry["calories"]
+
+    # If no entries left for today, remove the day entirely
+    if not log_data[today]:
+        del log_data[today]
+
+    save_json(FOOD_LOG_FILE, log_data)
+    print_formatted_text(
+        HTML(f"<green>Removed:</green> {food_name} <yellow>({calories} cal)</yellow>")
+    )
+    display_daily_calories()
 
 
 def edit_food_json() -> None:
