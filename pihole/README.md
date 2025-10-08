@@ -19,14 +19,14 @@ In my Cabinet file, I have something like:
 {
     "path": {
         "blocklist": {
-            "afternoon": "/path/to/syncthing/md/docs/network/pihole_blocklist_afternoon.md",
-            "overnight": "/path/to/syncthing/md/docs/network/pihole_blocklist_overnight.md"
+            "afternoon": "$HOME/git/backend/pihole/blocklist_afternoon.md",
+            "overnight": "$HOME/git/backend/pihole/blocklist_overnight.md"
         }
         ...
     }
     ...
 }
 ```
-- `cabinet -g path blocklist overnight` returns "/path/to/syncthing/md/docs/network/pihole_blocklist_overnight.md"
+- `cabinet -g path blocklist overnight` returns "$HOME/git/backend/pihole/blocklist_overnight.md"
 - Each domain is looped through and allowed/disallowed, depending on $1.
 - I can expand my blocklist schedule without modifying the code by simply adding new items to Cabinet and changing the Crontab.
