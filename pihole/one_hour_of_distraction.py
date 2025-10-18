@@ -29,7 +29,7 @@ cabinet = Cabinet()
 def get_usage_limit():
     """
     Get the usage limit from cabinet, defaulting to 6 if not set.
-    
+
     Returns:
         int: The maximum number of uses allowed in a 24-hour period
     """
@@ -39,30 +39,30 @@ def get_usage_limit():
 def get_timestamps():
     """
     Get the list of timestamps from cabinet.
-    
+
     Returns:
         list: List of datetime objects representing usage timestamps
     """
     timestamps_data = cabinet.get("pihole", "timestamps") or []
     timestamps = []
-    
+
     for timestamp_str in timestamps_data:
         try:
             timestamps.append(datetime.fromisoformat(timestamp_str))
         except ValueError:
             # Skip invalid timestamps
             continue
-    
+
     return timestamps
 
 
 def clean_old_timestamps(timestamps):
     """
     Remove timestamps older than 24 hours from the list.
-    
+
     Args:
         timestamps (list): List of datetime objects
-        
+
     Returns:
         list: Filtered list with only timestamps from the last 24 hours
     """
@@ -73,7 +73,7 @@ def clean_old_timestamps(timestamps):
 def save_timestamps(timestamps):
     """
     Save timestamps to cabinet.
-    
+
     Args:
         timestamps (list): List of datetime objects to save
     """
@@ -85,7 +85,7 @@ def save_timestamps(timestamps):
 def get_current_usage():
     """
     Get current usage count within the rolling 24-hour window.
-    
+
     Returns:
         int: Number of times used in the last 24 hours
     """
@@ -130,7 +130,7 @@ def is_weekend_or_holiday() -> bool:
                 date_str = now.strftime("%Y-%m-%d")
                 if date_str not in holidays:
                     return False  # Non-holiday Saturday 12AM-4AM is allowed
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 pass  # If error getting holidays, treat as holiday
 
     return True  # Weekend or holiday

@@ -12,12 +12,12 @@ def run_command(command, timeout=10):
     """Run a shell command and return the result"""
     try:
         result = subprocess.run(
-            command, shell=True, capture_output=True, text=True, timeout=timeout
+            command, shell=True, capture_output=True, text=True, timeout=timeout, check=False
         )
         return result.returncode == 0, result.stdout.strip(), result.stderr.strip()
     except subprocess.TimeoutExpired:
         return False, "", f"Command timed out after {timeout} seconds"
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         return False, "", str(e)
 
 
@@ -27,7 +27,7 @@ def get_directory_snapshot(directory):
     if not os.path.exists(directory):
         return None
 
-    for root, dirs, files in os.walk(directory):
+    for root, _, files in os.walk(directory):
         for file in files:
             filepath = os.path.join(root, file)
             try:
@@ -75,18 +75,18 @@ def apply_stow():
         changes = compare_snapshots(snapshot_before, snapshot_after)
         if changes:
             cab.log(
-                f"⚠ Files changed in ~/dotfiles-backup during apply_stow execution:",
+                "⚠ Files changed in ~/dotfiles-backup during apply_stow execution:",
                 level="warning",
             )
             for change in changes:
                 cab.log(f"  {change}", level="warning")
 
     if success:
-        cab.log(f"✓ apply_stow.py completed successfully")
+        cab.log("✓ apply_stow.py completed successfully")
         if stdout:
             cab.log(f"Output: {stdout}")
     else:
-        cab.log(f"✗ apply_stow.py failed", level="error")
+        cab.log("✗ apply_stow.py failed", level="error")
         if stderr:
             cab.log(f"Error: {stderr}", level="error")
         if stdout:

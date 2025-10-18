@@ -17,6 +17,6 @@ try:
 except ImportError as e:
     print(f"Import error: {e}")
     sys.exit(1)
-except Exception as e:
+except Exception as e:  # pylint: disable=broad-exception-caught
     print(f"Error running service check: {e}")
-    sys.exit(1) 
+    sys.exit(1)

@@ -147,7 +147,6 @@ class SpotifyAnalyzer:
                         self.spotify_log(
                             f"Invalid release date format for track: {track['name']}",
                             level="debug",
-                            is_quiet=True,
                         )
 
                 print(
@@ -279,7 +278,6 @@ class SpotifyAnalyzer:
                                                     f"Invalid release date format for track in \
                                                         {json_file}: {release_date}",
                                                     level="debug",
-                                                    is_quiet=True,
                                                 )
                                     if years:
                                         avg_years.append(mean(years))
