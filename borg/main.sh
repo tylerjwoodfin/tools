@@ -26,6 +26,10 @@ echo "Borg repository: $BORG_REPO"
 # Logging functions
 info() { "$CABINET" --log "$*"; }
 error() { "$CABINET" --log "$*" --level 'error'; }
+RAINBOW_PATH=$("$CABINET" -g "path" "rainbow-borg") || {
+    echo "Error: Failed to retrieve rainbow path." >&2
+    exit 1
+}
 
 # Graceful exit on SIGINT/SIGTERM
 trap 'echo "$(date) Backup interrupted" >&2; exit 2' INT TERM
@@ -58,9 +62,9 @@ borg prune                          \
     --list                          \
     --glob-archives '{hostname}-*'  \
     --show-rc                       \
-    --keep-daily    1               \
-    --keep-weekly   2               \
-    --keep-monthly  1
+    --keep-daily    7               \
+    --keep-weekly   4               \
+    --keep-monthly  6
 
 prune_exit=$?
 
@@ -120,6 +124,23 @@ check_exit=$?
 global_exit=$(( backup_exit > prune_exit ? backup_exit : prune_exit ))
 global_exit=$(( compact_exit > global_exit ? compact_exit : global_exit ))
 global_exit=$(( check_exit > global_exit ? check_exit : global_exit ))
+
+if [ "$(date +%u)" -eq 7 ]; then  # Sunday
+    info "Running borg check (weekly integrity verification)"
+    borg check --verify-data --verbose || error "Integrity check failed"
+fi
+
+if [ ${global_exit} -eq 0 ]; then
+    info "Replicating Borg repo to rainbow"
+
+    borg replicate \
+        --remote-path borg \
+        "$RAINBOW_PATH"
+
+    replicate_exit=$?
+    global_exit=$(( replicate_exit > global_exit ? replicate_exit : global_exit ))
+fi
+
 
 if [ ${global_exit} -eq 0 ]; then
     info "Backup, Prune, Compact, and Check finished successfully"
