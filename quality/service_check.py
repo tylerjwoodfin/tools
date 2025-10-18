@@ -56,7 +56,7 @@ def main():
     
     cabinet.log("Starting comprehensive service check")
     
-    # Check Docker containers only on cloud device
+    # Check Docker containers only on `cloud` (home server)
     if device_name == "cloud":
         docker_services = {
             'immich': 'immich',
@@ -74,7 +74,7 @@ def main():
     # Check system services
     system_services = ['rustdesk']
     
-    if device_name == "cloud":
+    if device_name == "cloud": # home server
         for service_name in system_services:
             if check_system_service(service_name):
                 cabinet.log(f"✓ {service_name} system service is running")
@@ -99,7 +99,7 @@ def main():
     
     # Check syncthing directory structure
     syncthing_base = os.path.expanduser("~/syncthing")
-    required_subfolders = ['documents', 'log', 'md', 'music', 'network']
+    required_subfolders = ['documents', 'log', 'md', 'music', 'network', 'photos']
     
     if check_directory_exists(syncthing_base):
         cabinet.log(f"✓ Syncthing base directory exists: {syncthing_base}")
