@@ -21,6 +21,7 @@ import cabinet
 cab = cabinet.Cabinet()
 mail = cabinet.Mail()
 
+
 def run_service_check():
     """Run the service check script and log any issues"""
     service_check_script = os.path.join(
@@ -35,7 +36,7 @@ def run_service_check():
 
     try:
         # Run the service check script
-        result = subprocess.run(
+        subprocess.run(
             [sys.executable, service_check_script],
             capture_output=True,
             text=True,
@@ -46,7 +47,7 @@ def run_service_check():
     except subprocess.CalledProcessError as e:
         cab.log(f"Service check failed: {e.stderr}", level="error")
         return False
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         cab.log(f"Error running service check: {str(e)}", level="error")
         return False
 
@@ -362,7 +363,7 @@ def analyze_logs(paths, email):
     error_lines = [
         line for line in daily_log_issues if "ERROR" in line or "CRITICAL" in line
     ]
-    is_only_food_log_error = len(error_lines) == 1 and any(
+    only_food_log_error = len(error_lines) == 1 and any(
         "No food logged for today." in line for line in error_lines
     )
 
@@ -376,15 +377,14 @@ def analyze_logs(paths, email):
             """
         )
 
-    return email, is_warnings, is_errors, is_only_food_log_error
+    return email, is_warnings, is_errors, only_food_log_error
 
 
 def append_spotify_info(paths, email):
     """append spotify issues and stats"""
-    spotify_log = (
-        cab.get_file_as_array(f"LOG_SPOTIFY_{paths['today']}.log", file_path=paths["log_path_today"])
-        or []
-    )
+    spotify_log = cab.get_file_as_array(
+        f"LOG_SPOTIFY_{paths['today']}.log", file_path=paths["log_path_today"]
+    ) or []
     spotify_stats = cab.get("spotipy") or {}
 
     spotify_issues = "No Data"
@@ -422,13 +422,13 @@ def append_weather_info(email):
     return email
 
 
-def send_status_email(email, is_warnings, is_errors, is_only_food_log_error, today):
+def send_status_email(email, is_warnings, is_errors, only_food_log_error, today):
     """determine and send status email"""
     email_subject = f"Daily Status - {today}"
     if is_errors and is_warnings:
         email_subject += " - Check Errors/Warnings"
     elif is_errors:
-        if is_only_food_log_error:
+        if only_food_log_error:
             email_subject += " - Check Food Log"
         else:
             email_subject += " - Check Errors"

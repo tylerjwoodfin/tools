@@ -12,6 +12,7 @@ Usage:
 """
 
 import argparse
+import os
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -36,8 +37,6 @@ class PiHoleDowntime:
             bool: True if parent process is allowed, False otherwise
         """
         try:
-            import os
-
             # Get parent process ID
             parent_pid = os.getppid()
 
@@ -65,8 +64,6 @@ class PiHoleDowntime:
             bool: True if running directly from terminal, False otherwise
         """
         try:
-            import os
-
             # Check if we have a controlling terminal
             if not os.isatty(sys.stdin.fileno()):
                 return False
@@ -150,7 +147,7 @@ class PiHoleDowntime:
             if holidays is None:
                 return []
             return holidays if isinstance(holidays, list) else []
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.cabinet.log(f"Error getting holidays: {e}", level="error")
             return []
 
@@ -219,7 +216,7 @@ class PiHoleDowntime:
 
             return Path(blocklist_path)
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.cabinet.log(
                 f"Error getting blocklist file for mode '{mode}': {e}", level="error"
             )
@@ -246,7 +243,7 @@ class PiHoleDowntime:
                 domains = [line.strip() for line in f if line.strip()]
             return domains
 
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             self.cabinet.log(f"Error reading blocklist file: {e}", level="error")
             return []
 
@@ -262,7 +259,7 @@ class PiHoleDowntime:
         """
         try:
             docker_cmd = ["docker", "exec", "pihole"] + command
-            result = subprocess.run(
+            subprocess.run(
                 docker_cmd, capture_output=True, text=True, check=True
             )
             return True

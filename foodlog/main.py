@@ -87,7 +87,8 @@ def update_food_lookup(food_name: str, calories: int) -> None:
             )
             print_formatted_text(
                 HTML(
-                    f"<yellow>Undo with 'foodlog undo'\nUpdate with 'foodlog update {food_name} {calories}'</yellow>\n"
+                    f"<yellow>Undo with 'foodlog undo'\n"
+                    f"Update with 'foodlog update {food_name} {calories}'</yellow>\n"
                 )
             )
     else:
@@ -111,7 +112,8 @@ def force_update_food_lookup(food_name: str, calories: int) -> None:
 
     print_formatted_text(
         HTML(
-            f"<green>Updated:</green> {food_name} from <yellow>{old_calories}</yellow> to <yellow>{calories}</yellow> cal"
+            f"<green>Updated:</green> {food_name} from "
+            f"<yellow>{old_calories}</yellow> to <yellow>{calories}</yellow> cal"
         )
     )
 
@@ -338,7 +340,8 @@ def show_summary() -> None:
     if total_calories > 0:
         print_formatted_text(
             HTML(
-                f"  Healthy: <green>{healthy_calories}</green> ({healthy_calories/total_calories*100:.1f}%)"
+                f"  Healthy: <green>{healthy_calories}</green> "
+                f"({healthy_calories/total_calories*100:.1f}%)"
             )
         )
         print_formatted_text(

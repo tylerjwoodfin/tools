@@ -544,7 +544,9 @@ def main() -> None:
         # Process Amazon transactions
         amazon_parser = None
         if amazon_file_path:
-            amazon_parser = AmazonParser(file_path=amazon_file_path, category_file=categories_file_path)
+            amazon_parser = AmazonParser(
+                file_path=amazon_file_path, category_file=categories_file_path
+            )
 
         if amazon_parser:
             amazon_parser.load_categories()
@@ -562,8 +564,12 @@ def main() -> None:
             if 'Balance' in schwab_summary_df.columns else 0.0
 
         # Combine and sort transactions
-        dataframes = [venmo_summary_df, citi_summary_df, amazon_summary_df, schwab_summary_df]
-        combined_df = pd.concat([df for df in dataframes if df is not None]).sort_values(by=['Source', 'Category', 'Datetime'])
+        dataframes = [
+            venmo_summary_df, citi_summary_df, amazon_summary_df, schwab_summary_df
+        ]
+        combined_df = pd.concat(
+            [df for df in dataframes if df is not None]
+        ).sort_values(by=['Source', 'Category', 'Datetime'])
         print("\nCombined Transactions:")
         print(combined_df.to_string(index=False))
 
