@@ -422,13 +422,13 @@ def append_weather_info(email):
     return email
 
 
-def send_status_email(email, is_warnings, is_errors, is_only_food_log_error, today):
+def send_status_email(email, is_warnings, is_errors, only_food_log_error, today):
     """determine and send status email"""
     email_subject = f"Daily Status - {today}"
     if is_errors and is_warnings:
         email_subject += " - Check Errors/Warnings"
     elif is_errors:
-        if is_only_food_log_error:
+        if only_food_log_error:
             email_subject += " - Check Food Log"
         else:
             email_subject += " - Check Errors"

@@ -116,7 +116,7 @@ class VersionDetector:
                 match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
                 if match:
                     return match.group(1)
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             pass
         return None
 
@@ -148,7 +148,7 @@ class VersionDetector:
                 match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
                 if match:
                     return match.group(1)
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             pass
         return None
 
