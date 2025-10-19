@@ -177,7 +177,7 @@ class SpotifyAnalyzer:
         """Main method to analyze all configured playlists."""
         playlists = self.cab.get("spotipy", "playlists")
         if not playlists or len(playlists) < 2:
-            self.cab.log(f"SPOTIFY - Insufficient playlist configuration", level="error")
+            self.cab.log("SPOTIFY - Insufficient playlist configuration", level="error")
             raise ValueError("At least two playlists must be configured")
 
         for index, item in enumerate(playlists):
@@ -200,7 +200,7 @@ class SpotifyAnalyzer:
             playlist_tracks = []
             while True:
                 if not tracks:
-                    self.cab.log(f"SPOTIFY - No tracks found in playlist", level="warning")
+                    self.cab.log("SPOTIFY - No tracks found in playlist", level="warning")
                     break
                 playlist_tracks.extend(
                     self._process_tracks(tracks, playlist_name, index, total_tracks)
@@ -227,7 +227,7 @@ class SpotifyAnalyzer:
                 Path.home()
             )
             self.log_backup_path = Path(log_backup_path) / "songs"
-        
+
         output_path = self.log_backup_path
         output_path.mkdir(parents=True, exist_ok=True)
 
@@ -323,7 +323,7 @@ class SpotifyAnalyzer:
                 check=False,
             )
             return result.returncode == 0
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             self.cab.log(f"SPOTIFY - Error checking Git repo: {str(e)}", level="debug")
             return False
 
@@ -337,7 +337,7 @@ class SpotifyAnalyzer:
                 check=True,
             )
             return result.stdout.strip()
-        except Exception as e:
+        except subprocess.CalledProcessError as e:
             self.cab.log(f"SPOTIFY - Error getting Git branch: {str(e)}", level="error")
             return None
 
@@ -351,7 +351,7 @@ class SpotifyAnalyzer:
                 check=True,
             )
             return bool(result.stdout.strip())
-        except Exception as e:
+        except subprocess.CalledProcessError as e:
             self.cab.log(f"SPOTIFY - Error checking Git changes: {str(e)}", level="error")
             return False
 
@@ -383,7 +383,7 @@ class SpotifyAnalyzer:
             Path.home()
         )
         self.log_backup_path = Path(log_backup_path) / "songs"
-        
+
         # Check if it's a Git repo
         if not self._is_git_repo(self.log_backup_path):
             self.cab.log(
@@ -460,7 +460,7 @@ class SpotifyAnalyzer:
                 text=True,
                 check=True,
             )
-            self.cab.log(f"SPOTIFY - Checked out main branch and pulled latest changes")
+            self.cab.log("SPOTIFY - Checked out main branch and pulled latest changes")
         except subprocess.CalledProcessError as e:
             self.cab.log(
                 f"SPOTIFY - Failed to checkout/pull main branch: {e.stderr}",
@@ -476,13 +476,13 @@ class SpotifyAnalyzer:
                 self.is_git_repo = True
             else:
                 self.cab.log(
-                    f"SPOTIFY - Not a Git repository, skipping commit",
+                    "SPOTIFY - Not a Git repository, skipping commit",
                     level="info",
                 )
                 return
 
         if not self._git_has_changes(self.log_backup_path):
-            self.cab.log(f"SPOTIFY - No changes to commit", level="info")
+            self.cab.log("SPOTIFY - No changes to commit", level="info")
             return
 
         today = datetime.date.today().strftime("%Y-%m-%d")
@@ -490,8 +490,8 @@ class SpotifyAnalyzer:
 
         try:
             self._git_commit(self.log_backup_path, commit_message)
-            self.cab.log(f"SPOTIFY - Successfully committed updated spotify songs.json")
-        except Exception as e:
+            self.cab.log("SPOTIFY - Successfully committed updated spotify songs.json")
+        except subprocess.CalledProcessError as e:
             self.cab.log(
                 f"SPOTIFY - Failed to commit changes: {str(e)}",
                 level="error",
@@ -507,11 +507,11 @@ def main():
     try:
         # Prepare Git repository before starting
         analyzer.prepare_git_repo()
-        
+
         # Run analysis and validation
         analyzer.analyze_playlists()
         analyzer.validate_playlists()
-        
+
         # Commit updated data after validation
         analyzer.commit_updated_data()
     except Exception as e:
