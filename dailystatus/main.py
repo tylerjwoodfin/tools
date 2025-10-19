@@ -277,61 +277,6 @@ def append_syncthing_conflict_check(email):
     return email + "<br>".join(html_diffs)
 
 
-def backup_files(paths: dict) -> None:
-    """
-    Back up essential files.
-
-    Args:
-        paths (dict): A dictionary containing paths and other related configuration values.
-
-    Returns:
-        None
-    """
-
-    def build_backup_path(category, extension):
-        """Helper function to construct backup file paths."""
-        return os.path.join(
-            paths["log_path_git_backend_backups"],
-            paths["device_name"],
-            f"{category}.{extension}",
-        )
-
-    # Construct backup file paths
-    path_cron = build_backup_path("cron", "md")
-    path_zsh = build_backup_path("zsh", "md")
-    path_notes = build_backup_path("notes", "zip")
-    path_log = build_backup_path("log", "zip")
-
-    # create directories if they don't exist
-    backup_dirs = [
-        os.path.dirname(path_cron),
-        os.path.dirname(path_zsh),
-        os.path.dirname(path_notes),
-        os.path.dirname(path_log),
-    ]
-    
-    for backup_dir in backup_dirs:
-        os.makedirs(backup_dir, exist_ok=True)
-
-    # define backup commands
-    backup_commands = [
-        f"/usr/bin/crontab -l > '{path_cron}'",
-        f"cp -r {paths['path_zshrc']} '{path_zsh}'",
-        f"zip -r '{path_notes}' {paths['path_notes']}",
-        f"zip -r '{path_log}' {paths['log_path_git_backend_backups']} "
-        f"--exclude='{os.path.join(paths['log_path_git_backend_backups'], 'songs', '*')}'",
-    ]
-
-    # execute each backup command
-    try:
-        for command in backup_commands:
-            subprocess.run(command, shell=True, check=True)
-    except subprocess.CalledProcessError as error:
-        cab.log(f"Command failed: {command} with error: {str(error)}", level="error")
-    except OSError as error:
-        cab.log(f"OS error for: {command} with error: {str(error)}", level="error")
-
-
 def analyze_logs(paths, email):
     """append daily log analysis"""
     daily_log_file = (
@@ -442,9 +387,6 @@ if __name__ == "__main__":
 
     # check if food has been logged today
     status_email = append_food_log(status_email)
-
-    # back up files
-    backup_files(config_data)
 
     # add syncthing conflict check
     status_email = append_syncthing_conflict_check(status_email)
