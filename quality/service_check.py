@@ -57,6 +57,17 @@ def check_directory_exists(path):
     """Check if a directory exists"""
     return os.path.exists(path) and os.path.isdir(path)
 
+def ping_host(hostname):
+    """Ping a host and return success status"""
+    success, output, error = run_command(f"ping -c 1 -W 3 {hostname}")
+    return success
+
+def test_ssh_connectivity(command):
+    """Test SSH connectivity using a shell command/alias"""
+    # Source the user's zsh configuration to access functions
+    success, output, error = run_command(f"zsh -c 'source ~/.zshrc && {command} \"echo SSH connection successful\"'")
+    return success, output, error
+
 def main():
     """Main function to perform comprehensive service check"""
     cabinet = Cabinet()
@@ -126,6 +137,39 @@ def main():
                 cabinet.log(f"✗ Syncthing subfolder missing: {subfolder}", level="error")
     else:
         cabinet.log(f"✗ Syncthing base directory missing: {syncthing_base}", level="error")
+
+    # Ping external hosts
+    external_hosts = ['git.tyler.cloud', 'photos.tyler.cloud']
+    
+    for host in external_hosts:
+        if ping_host(host):
+            cabinet.log(f"✓ Ping to {host} successful")
+        else:
+            cabinet.log(f"✗ Ping to {host} failed", level="error")
+    
+    # Test SSH connectivity between cloud and rainbow
+    if device_name == "cloud":
+        # Test SSH to rainbow from cloud using the rainbow command
+        success, output, error = test_ssh_connectivity("rainbow")
+        if success:
+            cabinet.log("✓ SSH connection to rainbow successful")
+        else:
+            cabinet.log(f"✗ SSH connection to rainbow failed", level="error")
+            cabinet.log(f"  Error details: {error}", level="error")
+            if output:
+                cabinet.log(f"  Output: {output}", level="error")
+    elif device_name == "rainbow":
+        # Test SSH to cloud from rainbow using the cloud command
+        success, output, error = test_ssh_connectivity("cloud")
+        if success:
+            cabinet.log("✓ SSH connection to cloud successful")
+        else:
+            cabinet.log(f"✗ SSH connection to cloud failed", level="error")
+            cabinet.log(f"  Error details: {error}", level="error")
+            if output:
+                cabinet.log(f"  Output: {output}", level="error")
+    else:
+        cabinet.log(f"Skipping SSH connectivity tests on device: {device_name}")
 
     cabinet.log("Service check completed")
 
