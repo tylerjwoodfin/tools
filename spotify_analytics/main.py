@@ -260,7 +260,7 @@ class SpotifyAnalyzer:
                 total_tracks = []
 
                 for date in dates:
-                    json_file = songs_path / f"{date}.json"
+                    json_file = Path(log_backup_path) / f"spotify songs.json"
                     if json_file.exists():
                         try:
                             with open(json_file, "r", encoding="utf-8") as f:
