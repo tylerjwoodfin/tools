@@ -226,7 +226,7 @@ class SpotifyAnalyzer:
             log_backup_path: str = self.cab.get("path", "cabinet", "log-backup") or str(
                 Path.home()
             )
-            self.log_backup_path = Path(log_backup_path) / "songs"
+            self.log_backup_path = Path(log_backup_path)
 
         output_path = self.log_backup_path
         output_path.mkdir(parents=True, exist_ok=True)
@@ -395,7 +395,7 @@ class SpotifyAnalyzer:
         log_backup_path: str = self.cab.get("path", "cabinet", "log-backup") or str(
             Path.home()
         )
-        self.log_backup_path = Path(log_backup_path) / "songs"
+        self.log_backup_path = Path(log_backup_path)
 
         # Check if it's a Git repo
         if not self._is_git_repo(self.log_backup_path):
@@ -503,7 +503,7 @@ class SpotifyAnalyzer:
 
         try:
             self._git_commit(self.log_backup_path, commit_message)
-            self.cab.log("SPOTIFY - Successfully committed updated spotify songs.json")
+            self.cab.log("SPOTIFY - Successfully committed and pushed! 🎉")
         except subprocess.CalledProcessError as e:
             self.cab.log(
                 f"SPOTIFY - Failed to commit changes: {str(e)}",
