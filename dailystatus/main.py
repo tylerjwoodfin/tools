@@ -151,24 +151,23 @@ def get_paths_and_config():
     device_name = socket.gethostname()
     user_home = pwd.getpwuid(os.getuid())[0]
     path_dot_cabinet = os.path.join(f"/home/{user_home}/.cabinet")
-    path_backend = (
-        cab.get("path", "cabinet", "log-backup") or f"{path_dot_cabinet}/log-backup"
-    )
     path_zshrc = os.path.join(f"/home/{user_home}/.zshrc")
     path_notes = cab.get("path", "notes") or f"{path_dot_cabinet}/notes"
     log_path_today = os.path.join(cab.path_dir_log, str(today))
-    log_path_backups = cab.get("path", "backups") or f"{path_dot_cabinet}/backups"
-    log_backups_location = os.path.join(log_path_backups, "log")
+    log_path_syncthing_backups = cab.get("path", "backups") or f"{path_dot_cabinet}/backups"
+    log_path_git_backend_backups = (
+        cab.get("path", "cabinet", "log-backup") or f"{path_dot_cabinet}/log-backup"
+    )
 
     return {
         "today": today,
         "device_name": device_name,
         "user_home": user_home,
-        "path_backend": path_backend,
+        "log_path_git_backend_backups": log_path_git_backend_backups,
         "path_zshrc": path_zshrc,
         "path_notes": path_notes,
         "log_path_today": log_path_today,
-        "log_backups_location": log_backups_location,
+        "log_path_backups": log_path_syncthing_backups,
     }
 
 
@@ -289,35 +288,38 @@ def backup_files(paths: dict) -> None:
         None
     """
 
-    def build_backup_path(category):
+    def build_backup_path(category, extension):
         """Helper function to construct backup file paths."""
         return os.path.join(
-            paths["path_backend"],
+            paths["log_path_git_backend_backups"],
             paths["device_name"],
-            category,
-            f"{category} {paths['today']}.md",
+            f"{category}.{extension}",
         )
 
     # Construct backup file paths
-    path_cron_today = build_backup_path("cron")
-    path_bash_today = build_backup_path("zsh")
-    path_notes_today = os.path.join(
-        paths["path_backend"],
-        paths["device_name"],
-        "notes",
-        f"notes {paths['today']}.zip",
-    )
-    path_log_backup = os.path.join(
-        paths["log_backups_location"], f"log folder backup {paths['today']}.zip"
-    )
+    path_cron = build_backup_path("cron", "md")
+    path_zsh = build_backup_path("zsh", "md")
+    path_notes = build_backup_path("notes", "zip")
+    path_log = build_backup_path("log", "zip")
+
+    # create directories if they don't exist
+    backup_dirs = [
+        os.path.dirname(path_cron),
+        os.path.dirname(path_zsh),
+        os.path.dirname(path_notes),
+        os.path.dirname(path_log),
+    ]
+    
+    for backup_dir in backup_dirs:
+        os.makedirs(backup_dir, exist_ok=True)
 
     # define backup commands
     backup_commands = [
-        f"/usr/bin/crontab -l > '{path_cron_today}'",
-        f"cp -r {paths['path_zshrc']} '{path_bash_today}'",
-        f"zip -r '{path_notes_today}' {paths['path_notes']}",
-        f"zip -r '{path_log_backup}' {paths['path_backend']} "
-        f"--exclude='{os.path.join(paths['path_backend'], 'songs', '*')}'",
+        f"/usr/bin/crontab -l > '{path_cron}'",
+        f"cp -r {paths['path_zshrc']} '{path_zsh}'",
+        f"zip -r '{path_notes}' {paths['path_notes']}",
+        f"zip -r '{path_log}' {paths['log_path_git_backend_backups']} "
+        f"--exclude='{os.path.join(paths['log_path_git_backend_backups'], 'songs', '*')}'",
     ]
 
     # execute each backup command
@@ -328,16 +330,6 @@ def backup_files(paths: dict) -> None:
         cab.log(f"Command failed: {command} with error: {str(error)}", level="error")
     except OSError as error:
         cab.log(f"OS error for: {command} with error: {str(error)}", level="error")
-
-
-def prune_old_backups(paths, max_backups=14):
-    """prune log folder backups exceeding the limit"""
-    cab.log(f"pruning {paths['log_backups_location']}...")
-    zip_files = glob.glob(f"{paths['log_backups_location']}/*.zip")
-    zip_files.sort(key=os.path.getmtime)
-    excess_count = len(zip_files) - max_backups
-    for i in range(excess_count):
-        os.remove(zip_files[i])
 
 
 def analyze_logs(paths, email):
@@ -453,9 +445,6 @@ if __name__ == "__main__":
 
     # back up files
     backup_files(config_data)
-
-    # prune old backups
-    prune_old_backups(config_data)
 
     # add syncthing conflict check
     status_email = append_syncthing_conflict_check(status_email)

@@ -7,6 +7,8 @@ Requires spotipy library and appropriate Spotify API credentials.
 import os
 import datetime
 import json
+import subprocess
+import socket
 from dataclasses import dataclass, asdict
 from typing import List, Dict, Optional
 from statistics import mean
@@ -61,6 +63,8 @@ class SpotifyAnalyzer:
         self.main_tracks: List[Track] = []
         self.playlist_data: List[PlaylistData] = []
         self.song_years: List[int] = []
+        self.log_backup_path = None
+        self.is_git_repo = False
 
     def _setup_logging(self) -> logging.Logger:
         """Configure logging for the application."""
@@ -85,8 +89,8 @@ class SpotifyAnalyzer:
             return spotipy.Spotify(client_credentials_manager=credentials_manager)
 
         except Exception as e:
-            self.spotify_log(
-                f"Failed to initialize Spotify client: {str(e)}", level="error"
+            self.cab.log(
+                f"SPOTIFY - Failed to initialize Spotify client: {str(e)}", level="error"
             )
             raise
 
@@ -97,12 +101,12 @@ class SpotifyAnalyzer:
             try:
                 return self.spotify_client.playlist(playlist_id)
             except Exception as e:  # pylint: disable=broad-except
-                self.spotify_log(
-                    f"Attempt {attempt + 1} failed: {str(e)}", level="warning"
+                self.cab.log(
+                    f"SPOTIFY - Attempt {attempt + 1} failed: {str(e)}", level="warning"
                 )
                 if attempt == max_retries - 1:
-                    self.spotify_log(
-                        f"Failed to fetch playlist {playlist_id} after 3 attempts",
+                    self.cab.log(
+                        f"SPOTIFY - Failed to fetch playlist {playlist_id} after 3 attempts",
                         level="error",
                     )
                     raise
@@ -116,8 +120,8 @@ class SpotifyAnalyzer:
 
         if duplicates:
             for track, count in duplicates.items():
-                self.spotify_log(
-                    f"Duplicate found in {playlist_name}: {track} appears {count} times",
+                self.cab.log(
+                    f"SPOTIFY - Duplicate found in {playlist_name}: {track} appears {count} times",
                     level="warning",
                 )
 
@@ -144,8 +148,8 @@ class SpotifyAnalyzer:
                         year = int(track["album"]["release_date"].split("-")[0])
                         self.song_years.append(year)
                     except ValueError:
-                        self.spotify_log(
-                            f"Invalid release date format for track: {track['name']}",
+                        self.cab.log(
+                            f"SPOTIFY - Invalid release date format for track: {track['name']}",
                             level="debug",
                         )
 
@@ -173,7 +177,7 @@ class SpotifyAnalyzer:
         """Main method to analyze all configured playlists."""
         playlists = self.cab.get("spotipy", "playlists")
         if not playlists or len(playlists) < 2:
-            self.spotify_log("Insufficient playlist configuration", level="error")
+            self.cab.log("SPOTIFY - Insufficient playlist configuration", level="error")
             raise ValueError("At least two playlists must be configured")
 
         for index, item in enumerate(playlists):
@@ -181,7 +185,7 @@ class SpotifyAnalyzer:
                 continue
 
             playlist_id, playlist_name = item.split(",")
-            self.spotify_log(f"Processing playlist: {playlist_name}")
+            self.cab.log(f"SPOTIFY - Processing playlist: {playlist_name}")
 
             playlist_data = self._get_playlist(playlist_id)
             if not playlist_data:
@@ -196,7 +200,7 @@ class SpotifyAnalyzer:
             playlist_tracks = []
             while True:
                 if not tracks:
-                    self.spotify_log("No tracks found in playlist", level="warning")
+                    self.cab.log("SPOTIFY - No tracks found in playlist", level="warning")
                     break
                 playlist_tracks.extend(
                     self._process_tracks(tracks, playlist_name, index, total_tracks)
@@ -217,19 +221,24 @@ class SpotifyAnalyzer:
 
     def _save_data(self):
         """Save processed track data to JSON file."""
-        log_backup_path: str = self.cab.get("path", "cabinet", "log-backup") or str(
-            Path.home()
-        )
-        output_path = Path(log_backup_path) / "songs"
+        # Use existing path if already set by prepare_git_repo
+        if self.log_backup_path is None:
+            log_backup_path: str = self.cab.get("path", "cabinet", "log-backup") or str(
+                Path.home()
+            )
+            self.log_backup_path = Path(log_backup_path)
+
+        output_path = self.log_backup_path
         output_path.mkdir(parents=True, exist_ok=True)
 
-        output_file = output_path / f"{datetime.date.today()}.json"
+        output_file = output_path / "spotify songs.json"
         track_data = [asdict(track) for track in self.main_tracks]
 
+        # Gracefully update existing file or create new one
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(track_data, f, indent=2, ensure_ascii=False)
 
-        self.spotify_log(f"Saved track data to {output_file}")
+        self.cab.log(f"SPOTIFY - Saved track data to {output_file}")
 
     def _update_statistics(self):
         """Update and log statistics about the analyzed tracks."""
@@ -245,59 +254,6 @@ class SpotifyAnalyzer:
                 log_name="SPOTIPY_AVERAGE_YEAR_LOG",
                 log_folder_path=str(log_path),
             )
-
-            # Get the last 3 days of data
-            log_backup_path: str = self.cab.get("path", "cabinet", "log-backup") or str(
-                Path.home()
-            )
-            songs_path = Path(log_backup_path) / "songs"
-
-            if songs_path.exists():
-                # Get today and previous 2 days
-                today = datetime.date.today()
-                dates = [today - datetime.timedelta(days=i) for i in range(3)]
-                avg_years = []
-                total_tracks = []
-
-                for date in dates:
-                    json_file = songs_path / f"{date}.json"
-                    if json_file.exists():
-                        try:
-                            with open(json_file, "r", encoding="utf-8") as f:
-                                data = json.load(f)
-                                if data:
-                                    years = []
-                                    for track in data:
-                                        release_date = track.get("release_date")
-                                        if release_date and release_date != "None":
-                                            try:
-                                                year = int(release_date.split("-")[0])
-                                                years.append(year)
-                                            except (ValueError, AttributeError):
-                                                self.spotify_log(
-                                                    f"Invalid release date format for track in \
-                                                        {json_file}: {release_date}",
-                                                    level="debug",
-                                                )
-                                    if years:
-                                        avg_years.append(mean(years))
-                                        total_tracks.append(len(data))
-                        except (json.JSONDecodeError, KeyError, ValueError) as e:
-                            self.spotify_log(
-                                f"Error reading {json_file}: {str(e)}", level="error"
-                            )
-                            continue
-
-                # If we have all 3 days of data and the average years are equal
-                if len(avg_years) == 3 and len(set(avg_years)) == 1:
-                    # Check if track counts have changed
-                    if len(set(total_tracks)) > 1:
-                        self.spotify_log(
-                            f"Average year ({avg_years[0]:.1f}) has remained the same for 3 days "
-                            f"while track count changed from {total_tracks[2]} to \
-                                {total_tracks[0]}",
-                            level="warning",
-                        )
 
     def validate_playlists(self):
         """Validate playlist contents according to business rules."""
@@ -325,24 +281,24 @@ class SpotifyAnalyzer:
             for track in playlist.tracks:
                 if track in genre_assignments:
                     genres = f"{playlist.name} and {genre_assignments[track]}"
-                    self.spotify_log(
-                        f"Track {track} found in multiple genres: {genres}",
+                    self.cab.log(
+                        f"SPOTIFY - Track {track} found in multiple genres: {genres}",
                         level="warning",
                     )
                 genre_assignments[track] = playlist.name
 
         for track in main_tracks:
             if track not in genre_assignments:
-                self.spotify_log(
-                    f"Track {track} missing genre assignment", level="warning"
+                self.cab.log(
+                    f"SPOTIFY - Track {track} missing genre assignment", level="warning"
                 )
 
     def _check_playlist_subset(self, subset: PlaylistData, superset: PlaylistData):
         """Verify that all tracks in subset appear in superset."""
         missing = set(subset.tracks) - set(superset.tracks)
         if missing:
-            self.spotify_log(
-                f"Tracks from {subset.name} missing from {superset.name}: {missing}",
+            self.cab.log(
+                f"SPOTIFY - Tracks from {subset.name} missing from {superset.name}: {missing}",
                 level="warning",
             )
 
@@ -352,10 +308,208 @@ class SpotifyAnalyzer:
         """Verify that no tracks from excluded appear in main."""
         present = set(excluded.tracks) & set(main_playlist.tracks)
         if present:
-            self.spotify_log(
-                f"Removed tracks still present in {main_playlist.name}: {present}",
+            self.cab.log(
+                f"SPOTIFY - Removed tracks still present in {main_playlist.name}: {present}",
                 level="warning",
             )
+
+    def _is_git_repo(self, path: Path) -> bool:
+        """Check if a path is a Git repository."""
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(path), "rev-parse", "--git-dir"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            return result.returncode == 0
+        except (subprocess.SubprocessError, OSError) as e:
+            self.cab.log(f"SPOTIFY - Error checking Git repo: {str(e)}", level="debug")
+            return False
+
+    def _get_git_branch(self, path: Path) -> Optional[str]:
+        """Get the current Git branch name."""
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(path), "rev-parse", "--abbrev-ref", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return result.stdout.strip()
+        except subprocess.CalledProcessError as e:
+            self.cab.log(f"SPOTIFY - Error getting Git branch: {str(e)}", level="error")
+            return None
+
+    def _git_has_changes(self, path: Path) -> bool:
+        """Check if Git repository has uncommitted changes."""
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(path), "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return bool(result.stdout.strip())
+        except subprocess.CalledProcessError as e:
+            self.cab.log(f"SPOTIFY - Error checking Git changes: {str(e)}", level="error")
+            return False
+
+    def _git_commit(self, path: Path, message: str):
+        """Commit changes in Git repository."""
+        try:
+            subprocess.run(
+                ["git", "-C", str(path), "add", "-A"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(path), "commit", "-m", message],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            # Pull latest changes before pushing to avoid conflicts
+            subprocess.run(
+                ["git", "-C", str(path), "pull"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(path), "push"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.cab.log(f"SPOTIFY - Git commit successful: {message}")
+        except subprocess.CalledProcessError as e:
+            self.cab.log(
+                f"SPOTIFY - Git commit failed: {e.stderr}", level="error"
+            )
+            raise
+
+    def prepare_git_repo(self):
+        """Prepare Git repository before script execution."""
+        log_backup_path: str = self.cab.get("path", "cabinet", "log-backup") or str(
+            Path.home()
+        )
+        self.log_backup_path = Path(log_backup_path)
+
+        # Check if it's a Git repo
+        if not self._is_git_repo(self.log_backup_path):
+            self.cab.log(
+                f"SPOTIFY - {self.log_backup_path} is not a Git repository",
+                level="info",
+            )
+            return
+
+        self.is_git_repo = True
+        self.cab.log(f"SPOTIFY - Git repository detected at {self.log_backup_path}")
+
+        # Check current branch
+        current_branch = self._get_git_branch(self.log_backup_path)
+        if current_branch is None:
+            return
+
+        # If on main branch and there are unsaved changes
+        if current_branch == "main" and self._git_has_changes(self.log_backup_path):
+            today = datetime.date.today().strftime("%Y-%m-%d")
+            hostname = socket.gethostname()
+            new_branch = f"{hostname}-unsaved-changes-{today}"
+
+            self.cab.log(
+                f"SPOTIFY - Unsaved changes detected on main branch. Creating branch: {new_branch}",
+                level="warn",
+            )
+
+            try:
+                # Create and checkout new branch
+                subprocess.run(
+                    ["git", "-C", str(self.log_backup_path), "checkout", "-b", new_branch],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+
+                # Commit changes
+                self._git_commit(
+                    self.log_backup_path,
+                    f"Save unsaved changes from {hostname} on {today}",
+                )
+
+                # Push branch
+                subprocess.run(
+                    ["git", "-C", str(self.log_backup_path), "push", "-u", "origin", new_branch],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+
+                self.cab.log(
+                    f"SPOTIFY - Pushed unsaved changes to branch: {new_branch}",
+                    level="warn",
+                )
+
+            except subprocess.CalledProcessError as e:
+                self.cab.log(
+                    f"SPOTIFY - Failed to save unsaved changes: {e.stderr}",
+                    level="error",
+                )
+                raise
+
+        # Checkout main and pull latest
+        try:
+            subprocess.run(
+                ["git", "-C", str(self.log_backup_path), "checkout", "main"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(self.log_backup_path), "pull"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.cab.log("SPOTIFY - Checked out main branch and pulled latest changes")
+        except subprocess.CalledProcessError as e:
+            self.cab.log(
+                f"SPOTIFY - Failed to checkout/pull main branch: {e.stderr}",
+                level="error",
+            )
+            raise
+
+    def commit_updated_data(self):
+        """Commit the updated spotify songs.json file."""
+        if not self.is_git_repo:
+            # Double-check if it's a Git repo (in case prepare_git_repo wasn't called)
+            if self.log_backup_path and self._is_git_repo(self.log_backup_path):
+                self.is_git_repo = True
+            else:
+                self.cab.log(
+                    "SPOTIFY - Not a Git repository, skipping commit",
+                    level="info",
+                )
+                return
+
+        if not self._git_has_changes(self.log_backup_path):
+            self.cab.log("SPOTIFY - No changes to commit", level="info")
+            return
+
+        today = datetime.date.today().strftime("%Y-%m-%d")
+        commit_message = f"Update spotify songs.json for {today}"
+
+        try:
+            self._git_commit(self.log_backup_path, commit_message)
+            self.cab.log("SPOTIFY - Successfully committed and pushed! 🎉")
+        except subprocess.CalledProcessError as e:
+            self.cab.log(
+                f"SPOTIFY - Failed to commit changes: {str(e)}",
+                level="error",
+            )
+            raise
 
 
 def main():
@@ -364,8 +518,15 @@ def main():
     analyzer = SpotifyAnalyzer(cab)
 
     try:
+        # Prepare Git repository before starting
+        analyzer.prepare_git_repo()
+
+        # Run analysis and validation
         analyzer.analyze_playlists()
         analyzer.validate_playlists()
+
+        # Commit updated data after validation
+        analyzer.commit_updated_data()
     except Exception as e:
         logging.error("Analysis failed: %s", str(e))
         raise
