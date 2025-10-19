@@ -293,7 +293,6 @@ def backup_files(paths: dict) -> None:
         return os.path.join(
             paths["log_path_git_backend_backups"],
             paths["device_name"],
-            category,
             f"{category}.{extension}",
         )
 
@@ -302,6 +301,17 @@ def backup_files(paths: dict) -> None:
     path_zsh = build_backup_path("zsh", "md")
     path_notes = build_backup_path("notes", "zip")
     path_log = build_backup_path("log", "zip")
+
+    # create directories if they don't exist
+    backup_dirs = [
+        os.path.dirname(path_cron),
+        os.path.dirname(path_zsh),
+        os.path.dirname(path_notes),
+        os.path.dirname(path_log),
+    ]
+    
+    for backup_dir in backup_dirs:
+        os.makedirs(backup_dir, exist_ok=True)
 
     # define backup commands
     backup_commands = [

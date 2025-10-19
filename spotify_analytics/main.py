@@ -370,6 +370,19 @@ class SpotifyAnalyzer:
                 text=True,
                 check=True,
             )
+            # Pull latest changes before pushing to avoid conflicts
+            subprocess.run(
+                ["git", "-C", str(path), "pull"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(path), "push"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
             self.cab.log(f"SPOTIFY - Git commit successful: {message}")
         except subprocess.CalledProcessError as e:
             self.cab.log(
