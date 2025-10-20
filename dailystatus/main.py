@@ -154,7 +154,9 @@ def get_paths_and_config():
     path_zshrc = os.path.join(f"/home/{user_home}/.zshrc")
     path_notes = cab.get("path", "notes") or f"{path_dot_cabinet}/notes"
     log_path_today = os.path.join(cab.path_dir_log, str(today))
-    log_path_syncthing_backups = cab.get("path", "backups") or f"{path_dot_cabinet}/backups"
+    log_path_syncthing_backups = (
+        cab.get("path", "backups") or f"{path_dot_cabinet}/backups"
+    )
     log_path_git_backend_backups = (
         cab.get("path", "cabinet", "log-backup") or f"{path_dot_cabinet}/log-backup"
     )
@@ -319,9 +321,14 @@ def analyze_logs(paths, email):
 
 def append_spotify_info(paths, email):
     """append spotify issues and stats"""
-    spotify_log = cab.get_file_as_array(
-        f"LOG_SPOTIFY_{paths['today']}.log", file_path=paths["log_path_today"]
-    ) or []
+    # Read from daily log and filter for SPOTIFY entries
+    daily_log = (
+        cab.get_file_as_array(
+            f"LOG_DAILY_{paths['today']}.log", file_path=paths["log_path_today"]
+        )
+        or []
+    )
+    spotify_log = [line for line in daily_log if "SPOTIFY" in line]
     spotify_stats = cab.get("spotipy") or {}
 
     spotify_issues = "No Data"
