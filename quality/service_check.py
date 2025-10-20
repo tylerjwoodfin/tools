@@ -62,10 +62,11 @@ def ping_host(hostname):
     success, output, error = run_command(f"ping -c 1 -W 3 {hostname}")
     return success
 
-def test_ssh_connectivity(command):
-    """Test SSH connectivity using a shell command/alias"""
-    # Source the user's zsh configuration to access functions
-    success, output, error = run_command(f"zsh -c 'source ~/.zshrc && {command} \"echo SSH connection successful\"'")
+def test_ssh_connectivity(hostname):
+    """Test SSH connectivity to a hostname"""
+    # Use direct SSH with -T flag to disable pseudo-terminal allocation
+    # This prevents the "stdin is not a terminal" error when running non-interactively
+    success, output, error = run_command(f"ssh -T -o ConnectTimeout=5 -o BatchMode=yes {hostname} 'echo SSH connection successful' 2>&1")
     return success, output, error
 
 def main():
@@ -149,23 +150,25 @@ def main():
     
     # Test SSH connectivity between cloud and rainbow
     if device_name == "cloud":
-        # Test SSH to rainbow from cloud using the rainbow command
+        # Test SSH to rainbow from cloud
         success, output, error = test_ssh_connectivity("rainbow")
-        if success:
+        if success and "SSH connection successful" in output:
             cabinet.log("✓ SSH connection to rainbow successful")
         else:
             cabinet.log(f"✗ SSH connection to rainbow failed", level="error")
-            cabinet.log(f"  Error details: {error}", level="error")
+            if error:
+                cabinet.log(f"  Error details: {error}", level="error")
             if output:
                 cabinet.log(f"  Output: {output}", level="error")
     elif device_name == "rainbow":
-        # Test SSH to cloud from rainbow using the cloud command
+        # Test SSH to cloud from rainbow
         success, output, error = test_ssh_connectivity("cloud")
-        if success:
+        if success and "SSH connection successful" in output:
             cabinet.log("✓ SSH connection to cloud successful")
         else:
             cabinet.log(f"✗ SSH connection to cloud failed", level="error")
-            cabinet.log(f"  Error details: {error}", level="error")
+            if error:
+                cabinet.log(f"  Error details: {error}", level="error")
             if output:
                 cabinet.log(f"  Output: {output}", level="error")
     else:
