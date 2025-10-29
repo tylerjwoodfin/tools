@@ -64,7 +64,8 @@ def log_food(food_name: str, calories: int, is_yesterday: bool = False) -> None:
         HTML(f"<green>Logged:</green> {food_name} <yellow>({calories} cal)</yellow>")
     )
 
-    display_daily_calories()
+    if globals().get("_is_last_main_call", False):
+        display_daily_calories()
 
 
 def update_food_lookup(food_name: str, calories: int) -> None:
@@ -436,7 +437,10 @@ def main() -> None:
         if "//" in full_command:
             # Split into separate commands and process each one
             commands = [cmd.strip() for cmd in full_command.split("//")]
-            for cmd in commands:
+            for i, cmd in enumerate(commands):
+                # Set a global flag to indicate that this is the last main call
+                globals()["_is_last_main_call"] = i == len(commands) - 1
+
                 # Create new sys.argv for each command
                 cmd_args = cmd.split()
                 # Save original sys.argv and restore it after each command
