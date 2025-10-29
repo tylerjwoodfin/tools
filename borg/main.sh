@@ -30,6 +30,7 @@ export BORG_PASSPHRASE
 echo "Borg repository: $BORG_REPO"
 
 # Logging functions
+debug() { "$CABINET" --log "$*" --level 'debug'; }
 info() { "$CABINET" --log "$*"; }
 error() { "$CABINET" --log "$*" --level 'error'; }
 RAINBOW_PATH=$("$CABINET" -g "path" "rainbow-borg") || {
@@ -138,18 +139,26 @@ else
     info "Checking backups"
     check_backups
     check_exit=$?
+    info "check_exit=$check_exit"
 
     # Use highest exit code as global exit code
     global_exit=$(( backup_exit > prune_exit ? backup_exit : prune_exit ))
     global_exit=$(( compact_exit > global_exit ? compact_exit : global_exit ))
     global_exit=$(( check_exit > global_exit ? check_exit : global_exit ))
+    debug "global_exit=$global_exit (backup=$backup_exit, prune=$prune_exit, compact=$compact_exit, check=$check_exit)"
 
     if [ "$(date +%u)" -eq 7 ]; then  # Sunday
         info "Running borg check (weekly integrity verification)"
-        borg check --verify-data --verbose || error "Integrity check failed"
+        borg check --verify-data --verbose
+        integrity_check_exit=$?
+        if [ ${integrity_check_exit} -ne 0 ]; then
+            error "Integrity check failed"
+            global_exit=$(( integrity_check_exit > global_exit ? integrity_check_exit : global_exit ))
+        fi
     fi
 fi
 
+debug "About to check if should replicate: global_exit=${global_exit}"
 if [ ${global_exit} -eq 0 ]; then
     info "Replicating Borg repo to rainbow"
 
