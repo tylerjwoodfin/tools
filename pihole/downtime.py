@@ -146,7 +146,13 @@ class PiHoleDowntime:
             holidays = self.cabinet.get("holidays")
             if holidays is None:
                 return []
-            return holidays if isinstance(holidays, list) else []
+
+            # remove past holidays
+            _holidays = [holiday for holiday in holidays if holiday > datetime.now()]
+            # save updated holidays to cabinet if lengths differ
+            if len(_holidays) != len(holidays):
+                self.cabinet.put("holidays", _holidays)
+            return _holidays
         except Exception as e:  # pylint: disable=broad-exception-caught
             self.cabinet.log(f"Error getting holidays: {e}", level="error")
             return []
@@ -259,9 +265,7 @@ class PiHoleDowntime:
         """
         try:
             docker_cmd = ["docker", "exec", "pihole"] + command
-            subprocess.run(
-                docker_cmd, capture_output=True, text=True, check=True
-            )
+            subprocess.run(docker_cmd, capture_output=True, text=True, check=True)
             return True
         except subprocess.CalledProcessError as e:
             self.cabinet.log(f"Pi-hole command failed: {e}", level="error")
