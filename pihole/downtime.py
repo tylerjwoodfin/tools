@@ -148,9 +148,11 @@ class PiHoleDowntime:
                 return []
 
             # remove past holidays
-            _holidays = [holiday for holiday in holidays if holiday > datetime.now()]
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            _holidays = [holiday for holiday in holidays if holiday >= today_str]
             # save updated holidays to cabinet if lengths differ
             if len(_holidays) != len(holidays):
+                self.cabinet.log(f"Updating holidays: {holidays} -> {_holidays}")
                 self.cabinet.put("holidays", _holidays)
             return _holidays
         except Exception as e:  # pylint: disable=broad-exception-caught
