@@ -13,7 +13,8 @@
 
 # upload new media to immich
 WATCH_DIR="$HOME/syncthing/photos/upload-queue"
-LOG_DIR="$HOME/git/log"
+HOSTNAME=$(hostname)
+LOG_DIR="$HOME/git/backend/log-backup/$HOSTNAME"
 LOG_FILE="$LOG_DIR/immich.log"
 IMMICH_PATH="$HOME/git/tools/immich/immich-wrapper.sh"
 
