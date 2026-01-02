@@ -30,9 +30,10 @@ class Track:
     name: str
     release_date: str
     spotify_url: str
+    added_at: Optional[str] = None
 
     @classmethod
-    def from_spotify_track(cls, index: int, track: Dict) -> "Track":
+    def from_spotify_track(cls, index: int, track: Dict, added_at: Optional[str] = None) -> "Track":
         """Create a Track instance from Spotify API track data."""
         return cls(
             index=index,
@@ -42,6 +43,7 @@ class Track:
             spotify_url=(
                 track["external_urls"]["spotify"] if not track["is_local"] else ""
             ),
+            added_at=added_at,
         )
 
 
@@ -140,7 +142,8 @@ class SpotifyAnalyzer:
                 track_urls.append(track["external_urls"]["spotify"])
 
             if playlist_index == 0:  # Main playlist
-                track_obj = Track.from_spotify_track(len(self.main_tracks) + 1, track)
+                added_at = item.get("added_at")
+                track_obj = Track.from_spotify_track(len(self.main_tracks) + 1, track, added_at)
                 self.main_tracks.append(track_obj)
 
                 if track["album"]["release_date"]:

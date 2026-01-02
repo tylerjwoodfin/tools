@@ -7,3 +7,14 @@ cache.json
 *.log
 .cache
 .DS_Store
+venv/
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.coverage
+.env
+.env.local
+*.swp
+*.swo
+*~
