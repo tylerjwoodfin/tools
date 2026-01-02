@@ -6,6 +6,7 @@ cache.json
 *.out
 *.log
 .cache
+.cache-*
 .DS_Store
 venv/
 .venv/

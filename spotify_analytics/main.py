@@ -9,16 +9,18 @@ import datetime
 import json
 import subprocess
 import socket
+import argparse
 from dataclasses import dataclass, asdict
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from statistics import mean
 import logging
 from pathlib import Path
 from collections import Counter
 
 import spotipy
-from spotipy.oauth2 import SpotifyClientCredentials
+from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth
 from cabinet import Cabinet
+import re
 
 
 @dataclass
@@ -67,6 +69,7 @@ class SpotifyAnalyzer:
         self.song_years: List[int] = []
         self.log_backup_path = None
         self.is_git_repo = False
+        self._playlists_cache: Optional[List[str]] = None
 
     def _setup_logging(self) -> logging.Logger:
         """Configure logging for the application."""
@@ -85,7 +88,7 @@ class SpotifyAnalyzer:
                 raise ValueError("Spotify client secret is not set in cabinet")
             os.environ["SPOTIPY_CLIENT_ID"] = client_id
             os.environ["SPOTIPY_CLIENT_SECRET"] = client_secret
-            os.environ["SPOTIPY_REDIRECT_URI"] = "http://localhost:8888"
+            os.environ["SPOTIPY_REDIRECT_URI"] = "http://127.0.0.1:8888"
 
             credentials_manager = SpotifyClientCredentials()
             return spotipy.Spotify(client_credentials_manager=credentials_manager)
@@ -95,6 +98,23 @@ class SpotifyAnalyzer:
                 f"SPOTIFY - Failed to initialize Spotify client: {str(e)}", level="error"
             )
             raise
+
+    def _get_playlists(self) -> List[str]:
+        """Get playlist configuration from cabinet, caching the result."""
+        if self._playlists_cache is None:
+            self._playlists_cache = self.cab.get("spotipy", "playlists") or []
+        return self._playlists_cache
+
+    def _parse_playlist_config(self, playlist_config: str) -> Optional[Tuple[str, str]]:
+        """Parse playlist configuration string into (playlist_id, playlist_name).
+        
+        Returns:
+            Tuple of (playlist_id, playlist_name) if valid, None otherwise.
+        """
+        if not playlist_config or "," not in playlist_config:
+            return None
+        playlist_id, playlist_name = playlist_config.split(",", 1)
+        return (playlist_id.strip(), playlist_name.strip())
 
     def _get_playlist(self, playlist_id: str) -> Optional[Dict]:
         """Fetch playlist data from Spotify."""
@@ -178,16 +198,17 @@ class SpotifyAnalyzer:
 
     def analyze_playlists(self):
         """Main method to analyze all configured playlists."""
-        playlists = self.cab.get("spotipy", "playlists")
+        playlists = self._get_playlists()
         if not playlists or len(playlists) < 2:
             self.cab.log("SPOTIFY - Insufficient playlist configuration", level="error")
             raise ValueError("At least two playlists must be configured")
 
         for index, item in enumerate(playlists):
-            if "," not in item:
+            parsed = self._parse_playlist_config(item)
+            if not parsed:
                 continue
 
-            playlist_id, playlist_name = item.split(",")
+            playlist_id, playlist_name = parsed
             self.cab.log(f"SPOTIFY - Processing playlist: {playlist_name}")
 
             playlist_data = self._get_playlist(playlist_id)
@@ -242,6 +263,55 @@ class SpotifyAnalyzer:
             json.dump(track_data, f, indent=2, ensure_ascii=False)
 
         self.cab.log(f"SPOTIFY - Saved track data to {output_file}")
+
+    def _load_tracks_from_json(self, json_file: Optional[str] = None) -> None:
+        """Load tracks from existing JSON file into main_tracks.
+        
+        Args:
+            json_file: Path to JSON file. If None, uses default location.
+        """
+        if json_file is None:
+            # Use same path logic as _save_data
+            if self.log_backup_path is None:
+                log_backup_path: str = self.cab.get("path", "cabinet", "log-backup") or str(
+                    Path.home()
+                )
+                self.log_backup_path = Path(log_backup_path)
+            json_file = self.log_backup_path / "spotify songs.json"
+        else:
+            json_file = Path(json_file)
+        
+        if not json_file.exists():
+            self.cab.log(f"SPOTIFY - JSON file not found: {json_file}", level="error")
+            raise FileNotFoundError(f"JSON file not found: {json_file}")
+        
+        self.cab.log(f"SPOTIFY - Loading tracks from {json_file}")
+        
+        try:
+            with open(json_file, "r", encoding="utf-8") as f:
+                track_data = json.load(f)
+            
+            # Convert dicts back to Track objects
+            self.main_tracks = []
+            for track_dict in track_data:
+                track = Track(
+                    index=track_dict.get("index", 0),
+                    artist=track_dict.get("artist", ""),
+                    name=track_dict.get("name", ""),
+                    release_date=track_dict.get("release_date", ""),
+                    spotify_url=track_dict.get("spotify_url", ""),
+                    added_at=track_dict.get("added_at")
+                )
+                self.main_tracks.append(track)
+            
+            self.cab.log(f"SPOTIFY - Loaded {len(self.main_tracks)} tracks from JSON")
+            
+        except json.JSONDecodeError as e:
+            self.cab.log(f"SPOTIFY - Invalid JSON in {json_file}: {e}", level="error")
+            raise
+        except Exception as e:
+            self.cab.log(f"SPOTIFY - Error loading JSON: {e}", level="error")
+            raise
 
     def _update_statistics(self):
         """Update and log statistics about the analyzed tracks."""
@@ -484,6 +554,147 @@ class SpotifyAnalyzer:
             )
             raise
 
+    def _initialize_oauth_client(self) -> spotipy.Spotify:
+        """Initialize Spotify client with OAuth authentication for playlist modifications."""
+        try:
+            client_id = self.cab.get("spotipy", "client_id")
+            client_secret = self.cab.get("spotipy", "client_secret")
+            username = self.cab.get("spotipy", "username")
+            
+            if not client_id:
+                raise ValueError("Spotify client_id is not set in cabinet")
+            if not client_secret:
+                raise ValueError("Spotify client_secret is not set in cabinet")
+            if not username:
+                raise ValueError("Spotify username is not set in cabinet")
+            
+            # Set environment variables for spotipy
+            # Try common redirect URI formats - user should match one in their dashboard
+            # Most common: http://127.0.0.1:8888 or http://127.0.0.1:8888/callback
+            redirect_uri = os.environ.get("SPOTIPY_REDIRECT_URI", "http://127.0.0.1:8888")
+            
+            os.environ["SPOTIPY_CLIENT_ID"] = client_id
+            os.environ["SPOTIPY_CLIENT_SECRET"] = client_secret
+            os.environ["SPOTIPY_REDIRECT_URI"] = redirect_uri
+            
+            # OAuth scope required for playlist modification
+            scope = "playlist-modify-public playlist-modify-private"
+            
+            # Use cache file based on username (spotipy convention)
+            # This matches create_playlist_by_year.py so they share the same OAuth token
+            cache_path = f".cache-{username}"
+            
+            auth_manager = SpotifyOAuth(
+                scope=scope,
+                redirect_uri=redirect_uri,
+                client_id=client_id,
+                client_secret=client_secret,
+                cache_path=cache_path,
+                open_browser=True,  # Will open browser for authorization if needed
+                show_dialog=True  # Show dialog to ensure fresh auth if needed
+            )
+            
+            return spotipy.Spotify(auth_manager=auth_manager)
+            
+        except Exception as e:
+            self.cab.log(
+                f"SPOTIFY - Failed to initialize OAuth client: {str(e)}", level="error"
+            )
+            raise
+
+    def _extract_track_id(self, url: str) -> Optional[str]:
+        """Extract track ID from Spotify URL."""
+        if not url:
+            return None
+        # Match pattern: https://open.spotify.com/track/TRACK_ID
+        match = re.search(r'track/([a-zA-Z0-9]+)', url)
+        return match.group(1) if match else None
+
+    def update_last_25_added_playlist(self):
+        """Update the 'Last 25 Added' playlist with the 25 most recently added tracks."""
+        if not self.main_tracks:
+            self.cab.log("SPOTIFY - No tracks available to update Last 25 Added playlist", level="warning")
+            return
+        
+        # Get playlist configuration (uses cached value if available)
+        playlists = self._get_playlists()
+        if not playlists or len(playlists) < 2:
+            self.cab.log("SPOTIFY - Last 25 Added playlist not configured", level="warning")
+            return
+        
+        # Get playlist[1] which should be the "Last 25 Added" playlist
+        parsed = self._parse_playlist_config(playlists[1])
+        if not parsed:
+            self.cab.log("SPOTIFY - Invalid playlist configuration for Last 25 Added", level="warning")
+            return
+        
+        playlist_id, playlist_name = parsed
+        self.cab.log(f"SPOTIFY - Updating '{playlist_name}' with 25 most recently added tracks")
+        
+        # Filter tracks that have added_at timestamps and sort by most recent
+        tracks_with_added_at = [
+            track for track in self.main_tracks 
+            if track.added_at and track.spotify_url
+        ]
+        
+        if not tracks_with_added_at:
+            self.cab.log("SPOTIFY - No tracks with added_at timestamps found", level="warning")
+            return
+        
+        # Sort by added_at (most recent first) - parse ISO 8601 timestamps
+        def parse_timestamp(timestamp_str: str) -> datetime.datetime:
+            try:
+                # Handle ISO 8601 format with Z timezone
+                return datetime.datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            except ValueError:
+                # Fallback for different formats
+                return datetime.datetime.min
+        
+        tracks_with_added_at.sort(
+            key=lambda t: parse_timestamp(t.added_at) if t.added_at else datetime.datetime.min,
+            reverse=True
+        )
+        
+        # Get the 25 most recent tracks
+        top_25_tracks = tracks_with_added_at[:25]
+        
+        # Extract track IDs from URLs
+        track_ids = []
+        for track in top_25_tracks:
+            track_id = self._extract_track_id(track.spotify_url)
+            if track_id:
+                track_ids.append(track_id)
+            else:
+                self.cab.log(
+                    f"SPOTIFY - Could not extract track ID from URL: {track.spotify_url}",
+                    level="warning"
+                )
+        
+        if not track_ids:
+            self.cab.log("SPOTIFY - No valid track IDs found for Last 25 Added playlist", level="error")
+            return
+        
+        self.cab.log(f"SPOTIFY - Found {len(track_ids)} tracks to add to '{playlist_name}'")
+        
+        # Initialize OAuth client for playlist modification
+        try:
+            oauth_client = self._initialize_oauth_client()
+            
+            # Replace all items in the playlist with the new tracks
+            oauth_client.playlist_replace_items(playlist_id, track_ids)
+            
+            self.cab.log(
+                f"SPOTIFY - Successfully updated '{playlist_name}' with {len(track_ids)} tracks"
+            )
+            
+        except Exception as e:
+            self.cab.log(
+                f"SPOTIFY - Failed to update Last 25 Added playlist: {str(e)}",
+                level="error"
+            )
+            # Don't raise - allow script to continue even if playlist update fails
+            self.cab.log("SPOTIFY - Continuing with remaining operations", level="info")
+
     def commit_updated_data(self):
         """Commit the updated spotify songs.json file."""
         if not self.is_git_repo:
@@ -517,19 +728,49 @@ class SpotifyAnalyzer:
 
 def main():
     """Main entry point for the script."""
+    parser = argparse.ArgumentParser(
+        description="Spotify playlist analysis and backup tool"
+    )
+    parser.add_argument(
+        "--update-last-25-only",
+        action="store_true",
+        help="Only update the 'Last 25 Added' playlist (loads tracks from existing JSON)"
+    )
+    parser.add_argument(
+        "--json-file",
+        type=str,
+        help="Path to JSON file (only used with --update-last-25-only)"
+    )
+    
+    args = parser.parse_args()
+    
     cab = Cabinet()
     analyzer = SpotifyAnalyzer(cab)
 
     try:
-        # Prepare Git repository before starting
-        analyzer.prepare_git_repo()
+        if args.update_last_25_only:
+            # Only update the playlist, skip all processing
+            cab.log("SPOTIFY - Running in update-last-25-only mode")
+            
+            # Load tracks from existing JSON file
+            analyzer._load_tracks_from_json(args.json_file)
+            
+            # Update the playlist
+            analyzer.update_last_25_added_playlist()
+        else:
+            # Full processing mode
+            # Prepare Git repository before starting
+            analyzer.prepare_git_repo()
 
-        # Run analysis and validation
-        analyzer.analyze_playlists()
-        analyzer.validate_playlists()
+            # Run analysis and validation
+            analyzer.analyze_playlists()
+            analyzer.validate_playlists()
+            
+            # Update the "Last 25 Added" playlist with most recently added tracks
+            analyzer.update_last_25_added_playlist()
 
-        # Commit updated data after validation
-        analyzer.commit_updated_data()
+            # Commit updated data after validation
+            analyzer.commit_updated_data()
     except Exception as e:
         logging.error("Analysis failed: %s", str(e))
         raise
