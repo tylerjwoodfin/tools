@@ -443,15 +443,31 @@ class SpotifyAnalyzer:
                 text=True,
                 check=True,
             )
+            # Get current branch name
+            current_branch = self._get_git_branch(path)
+            if current_branch is None:
+                raise subprocess.CalledProcessError(
+                    1, "git", "Failed to get current branch name"
+                )
+            
             # Pull latest changes before pushing to avoid conflicts
-            subprocess.run(
-                ["git", "-C", str(path), "pull"],
+            # Use explicit remote and branch to avoid tracking information requirement
+            # If branch doesn't exist on remote yet, pull will fail - that's okay
+            pull_result = subprocess.run(
+                ["git", "-C", str(path), "pull", "origin", current_branch],
                 capture_output=True,
                 text=True,
-                check=True,
+                check=False,
             )
+            if pull_result.returncode != 0:
+                # Branch might not exist on remote yet, which is fine
+                self.cab.log(
+                    f"SPOTIFY - Pull skipped (branch may not exist on remote yet): {pull_result.stderr}",
+                    level="debug",
+                )
+            
             subprocess.run(
-                ["git", "-C", str(path), "push"],
+                ["git", "-C", str(path), "push", "origin", current_branch],
                 capture_output=True,
                 text=True,
                 check=True,
@@ -631,7 +647,15 @@ class SpotifyAnalyzer:
         playlist_id, playlist_name = parsed
         self.cab.log(f"SPOTIFY - Updating '{playlist_name}' with 25 most recently added tracks")
         
-        # Filter tracks that have added_at timestamps and sort by most recent
+        # Filter tracks that have added_at timestamps and valid Spotify URLs
+        # Note: Local files (empty spotify_url) cannot be added via API and are excluded
+        local_file_count = sum(1 for track in self.main_tracks if track.added_at and not track.spotify_url)
+        if local_file_count > 0:
+            self.cab.log(
+                f"SPOTIFY - Skipping {local_file_count} local file(s) (cannot be added via API)",
+                level="info"
+            )
+        
         tracks_with_added_at = [
             track for track in self.main_tracks 
             if track.added_at and track.spotify_url
