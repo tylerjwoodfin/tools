@@ -153,22 +153,36 @@ def update_git_repo():
             cab.log(f"Created backup branch: {backup_branch}")
         
         # Fetch latest changes from remote
+        # Set GIT_TERMINAL_PROMPT=0 to prevent interactive credential prompts in non-interactive environments
+        env = os.environ.copy()
+        env["GIT_TERMINAL_PROMPT"] = "0"
         cab.log("Fetching latest changes from remote")
-        subprocess.run(["git", "fetch", "origin"], check=True)
+        fetch_result = subprocess.run(["git", "fetch", "origin"], 
+                                     capture_output=True, text=True, check=False, env=env)
+        if fetch_result.returncode != 0:
+            cab.log(f"✗ Failed to fetch from origin: {fetch_result.stderr}", level="error")
+            return False
         
         # Switch to main branch
         subprocess.run(["git", "checkout", "main"], check=True)
         
         # Pull latest main
         result = subprocess.run(["git", "pull", "origin", "main"], 
-                              capture_output=True, text=True, check=False)
+                              capture_output=True, text=True, check=False, env=env)
         
         if result.returncode == 0:
             cab.log("✓ Successfully updated to latest main branch")
             if result.stdout.strip():
                 cab.log(f"Git output: {result.stdout.strip()}")
         else:
-            cab.log(f"✗ Failed to pull latest main: {result.stderr}", level="error")
+            error_msg = result.stderr.strip()
+            cab.log(f"✗ Failed to pull latest main: {error_msg}", level="error")
+            # Provide helpful error message for credential issues
+            if "could not read Username" in error_msg or "No such device or address" in error_msg:
+                cab.log("Hint: Git credentials may not be configured. Consider:", level="warning")
+                cab.log("  1. Setting up SSH keys and using SSH URL instead of HTTPS", level="warning")
+                cab.log("  2. Configuring git credential helper: git config credential.helper store", level="warning")
+                cab.log("  3. Using a personal access token in the remote URL", level="warning")
             return False
         
         return True
@@ -320,15 +334,25 @@ def commit_and_push_backups():
             return False
         
         # Push to main branch
+        # Set GIT_TERMINAL_PROMPT=0 to prevent interactive credential prompts in non-interactive environments
+        env = os.environ.copy()
+        env["GIT_TERMINAL_PROMPT"] = "0"
         result = subprocess.run(["git", "push", "origin", "main"], 
-                              capture_output=True, text=True, check=False)
+                              capture_output=True, text=True, check=False, env=env)
         
         if result.returncode == 0:
             cab.log("✓ Successfully pushed to main branch")
             if result.stdout.strip():
                 cab.log(f"Push output: {result.stdout.strip()}")
         else:
-            cab.log(f"✗ Failed to push to main: {result.stderr}", level="error")
+            error_msg = result.stderr.strip()
+            cab.log(f"✗ Failed to push to main: {error_msg}", level="error")
+            # Provide helpful error message for credential issues
+            if "could not read Username" in error_msg or "No such device or address" in error_msg:
+                cab.log("Hint: Git credentials may not be configured. Consider:", level="warning")
+                cab.log("  1. Setting up SSH keys and using SSH URL instead of HTTPS", level="warning")
+                cab.log("  2. Configuring git credential helper: git config credential.helper store", level="warning")
+                cab.log("  3. Using a personal access token in the remote URL", level="warning")
             return False
         
         return True
