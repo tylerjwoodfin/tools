@@ -443,31 +443,15 @@ class SpotifyAnalyzer:
                 text=True,
                 check=True,
             )
-            # Get current branch name
-            current_branch = self._get_git_branch(path)
-            if current_branch is None:
-                raise subprocess.CalledProcessError(
-                    1, "git", "Failed to get current branch name"
-                )
-            
             # Pull latest changes before pushing to avoid conflicts
-            # Use explicit remote and branch to avoid tracking information requirement
-            # If branch doesn't exist on remote yet, pull will fail - that's okay
-            pull_result = subprocess.run(
-                ["git", "-C", str(path), "pull", "origin", current_branch],
+            subprocess.run(
+                ["git", "-C", str(path), "pull"],
                 capture_output=True,
                 text=True,
-                check=False,
+                check=True,
             )
-            if pull_result.returncode != 0:
-                # Branch might not exist on remote yet, which is fine
-                self.cab.log(
-                    f"SPOTIFY - Pull skipped (branch may not exist on remote yet): {pull_result.stderr}",
-                    level="debug",
-                )
-            
             subprocess.run(
-                ["git", "-C", str(path), "push", "origin", current_branch],
+                ["git", "-C", str(path), "push"],
                 capture_output=True,
                 text=True,
                 check=True,
