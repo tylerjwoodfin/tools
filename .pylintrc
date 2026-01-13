@@ -2,4 +2,4 @@
 ignore=node_modules,venv,__pycache__,build,dist,.pytest_cache,.mypy_cache,LICENSE.md
 
 [MESSAGES CONTROL]
-disable=import-error
+disable=import-error,broad-exception-caught

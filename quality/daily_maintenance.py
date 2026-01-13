@@ -229,7 +229,7 @@ def update_git_repo():
     except subprocess.CalledProcessError as e:
         cab.log(f"Git operation failed: {e.stderr}", level="error")
         return False
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         cab.log(f"Unexpected error during Git operations: {str(e)}", level="error")
         return False
     finally:
@@ -463,7 +463,7 @@ def commit_and_push_backups():
     except subprocess.CalledProcessError as e:
         cab.log(f"Git operation failed: {e.stderr}", level="error")
         return False
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         cab.log(f"Unexpected error during Git operations: {str(e)}", level="error")
         return False
     finally:
