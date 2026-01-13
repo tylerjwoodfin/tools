@@ -17,6 +17,7 @@ from tyler_python_helpers import ChatGPT  # type: ignore # pylint: disable=impor
 
 chatgpt = ChatGPT()
 
+
 def find_latest_file_in_downloads(pattern: str) -> Optional[str]:
     """Finds the latest file in Downloads matching the given pattern."""
     downloads_path = Path.home() / "Downloads"
@@ -25,6 +26,7 @@ def find_latest_file_in_downloads(pattern: str) -> Optional[str]:
         return None
     return str(max(matching_files, key=lambda x: x.stat().st_mtime))
 
+
 def find_all_files_in_downloads(pattern: str) -> list[str]:
     """Finds all files in Downloads matching the given pattern."""
     downloads_path = Path.home() / "Downloads"
@@ -32,6 +34,7 @@ def find_all_files_in_downloads(pattern: str) -> list[str]:
     if not matching_files:
         return []
     return [str(f) for f in matching_files]
+
 
 def find_citi_files() -> list[str]:
     """Finds all Citi CSV files in Downloads."""
@@ -46,8 +49,10 @@ def find_citi_files() -> list[str]:
 
     return citi_files
 
+
 class BaseParser:
     """Base class for all parsers."""
+
     def __init__(self, file_path: str, category_file: Path):
         self.file_path = file_path
         self.category_file = category_file
@@ -58,10 +63,10 @@ class BaseParser:
     def load_categories(self) -> None:
         """Loads categories and filtered rows from the specified JSON file."""
         try:
-            with open(self.category_file, 'r', encoding='utf-8') as file:
+            with open(self.category_file, "r", encoding="utf-8") as file:
                 config = json.load(file)
-                self.category_mapping = config['categories']
-                self.filtered_rows = config.get('filteredRows', [])
+                self.category_mapping = config["categories"]
+                self.filtered_rows = config.get("filteredRows", [])
         except FileNotFoundError:
             print("Categories JSON file not found.")
             exit()
@@ -72,29 +77,31 @@ class BaseParser:
         """
         if pd.isnull(description) or not isinstance(description, str):
             return True  # Include non-string values by default
-        return not any(filtered_text.lower() in description.lower()
-                      for filtered_text in self.filtered_rows)
+        return not any(
+            filtered_text.lower() in description.lower()
+            for filtered_text in self.filtered_rows
+        )
 
     def categorize_transaction(self, note: str) -> str:
         """Categorizes transactions based on keywords from the JSON file.
         Keywords starting with ! are exclusions - if matched, the category is skipped.
         """
         if pd.isnull(note) or not isinstance(note, str):
-            return 'Other'
+            return "Other"
         note_lower = note.lower()
         for category, keywords in self.category_mapping.items():
             # Separate include and exclude patterns
-            include_keywords = [k for k in keywords if not k.startswith('!')]
-            exclude_keywords = [k[1:] for k in keywords if k.startswith('!')]
-            
+            include_keywords = [k for k in keywords if not k.startswith("!")]
+            exclude_keywords = [k[1:] for k in keywords if k.startswith("!")]
+
             # Check if any exclusion patterns match
             if any(keyword.lower() in note_lower for keyword in exclude_keywords):
                 continue  # Skip this category
-            
+
             # Check if any inclusion patterns match
             if any(keyword.lower() in note_lower for keyword in include_keywords):
                 return category
-        return 'Other'
+        return "Other"
 
     def clean_amount(self, value: str) -> float:
         """Cleans and converts the amount to a float."""
@@ -102,12 +109,14 @@ class BaseParser:
             return 0.0  # Handle NaN as 0
 
         # Skip rows with formulas
-        if isinstance(value, str) and value.startswith('='):
+        if isinstance(value, str) and value.startswith("="):
             return 0.0
 
         try:
             if isinstance(value, str):
-                cleaned_value = value.replace('$', '').replace(',', '').replace(' ', '').strip()
+                cleaned_value = (
+                    value.replace("$", "").replace(",", "").replace(" ", "").strip()
+                )
                 return float(cleaned_value)
             return float(value)
         except (ValueError, AttributeError):
@@ -122,8 +131,8 @@ class BaseParser:
         first_day_of_previous_month = last_day_of_previous_month.replace(day=1)
 
         self.transactions_df = self.transactions_df[
-            (self.transactions_df[date_column] >= first_day_of_previous_month) &
-            (self.transactions_df[date_column] <= last_day_of_previous_month)
+            (self.transactions_df[date_column] >= first_day_of_previous_month)
+            & (self.transactions_df[date_column] <= last_day_of_previous_month)
         ]
 
     def process_transactions(self, source: str) -> pd.DataFrame:
@@ -136,28 +145,33 @@ class BaseParser:
         print(summary_df.to_string(index=False))
 
         # Calculate totals for each category
-        totals_df = summary_df.groupby('Category',
-                                       observed=True)['Adjusted Amount'].sum().reset_index()
+        totals_df = (
+            summary_df.groupby("Category", observed=True)["Adjusted Amount"]
+            .sum()
+            .reset_index()
+        )
 
         # Move 'Other' category to the end
-        totals_df['Category'] = pd.Categorical(
-            totals_df['Category'],
-            categories=sorted(self.category_mapping.keys()) + ['Other'],
-            ordered=True
+        totals_df["Category"] = pd.Categorical(
+            totals_df["Category"],
+            categories=sorted(self.category_mapping.keys()) + ["Other"],
+            ordered=True,
         )
-        totals_df = totals_df.sort_values(by='Category')
+        totals_df = totals_df.sort_values(by="Category")
 
         print("\nCategory Totals:")
         print(totals_df.to_string(index=False))
+
 
 class VenmoParser(BaseParser):
     """
     Parses Venmo transactions from a CSV file.
     """
+
     def load_transactions(self) -> None:
         """Loads Venmo transactions from the CSV file."""
         # Automatically find the header row
-        with open(self.file_path, 'r', encoding='utf-8') as file:
+        with open(self.file_path, "r", encoding="utf-8") as file:
             for i, line in enumerate(file):
                 if "Datetime" in line and "Note" in line:
                     header_row = i
@@ -167,34 +181,38 @@ class VenmoParser(BaseParser):
                 exit()
 
         # Load the CSV starting from the header row
-        self.transactions_df = pd.read_csv(self.file_path, skiprows=header_row, dtype=str)
+        self.transactions_df = pd.read_csv(
+            self.file_path, skiprows=header_row, dtype=str
+        )
         print("Venmo CSV file successfully loaded!")
 
     def process_transactions(self, source: str = "Venmo") -> pd.DataFrame:
         """Processes Venmo transactions to categorize and clean amounts."""
         # Filter out unwanted transactions
         self.transactions_df = self.transactions_df[
-            self.transactions_df['Note'].apply(self.should_include_transaction)
+            self.transactions_df["Note"].apply(self.should_include_transaction)
         ]
 
-        self.transactions_df['Note'] = self.transactions_df['Note'].fillna('')
-        self.transactions_df['Category'] = \
-            self.transactions_df['Note'].apply(self.categorize_transaction)
-
-        self.transactions_df['Adjusted Amount'] = self.transactions_df.apply(
-            lambda row: -self.clean_amount(row['Amount (total)']),
-            axis=1
+        self.transactions_df["Note"] = self.transactions_df["Note"].fillna("")
+        self.transactions_df["Category"] = self.transactions_df["Note"].apply(
+            self.categorize_transaction
         )
 
-        self.transactions_df['Datetime'] = pd.to_datetime(
-            self.transactions_df['Datetime'], errors='coerce')
+        self.transactions_df["Adjusted Amount"] = self.transactions_df.apply(
+            lambda row: -self.clean_amount(row["Amount (total)"]), axis=1
+        )
+
+        self.transactions_df["Datetime"] = pd.to_datetime(
+            self.transactions_df["Datetime"], errors="coerce"
+        )
 
         # Filter for previous month
-        self.filter_previous_month('Datetime')
+        self.filter_previous_month("Datetime")
 
-        self.transactions_df['Source'] = source
-        return self.transactions_df.loc[:, ['Datetime',
-                                            'Category', 'Adjusted Amount', 'Note', 'Source']]
+        self.transactions_df["Source"] = source
+        return self.transactions_df.loc[
+            :, ["Datetime", "Category", "Adjusted Amount", "Note", "Source"]
+        ]
 
 
 class CitiParser(BaseParser):
@@ -203,8 +221,11 @@ class CitiParser(BaseParser):
     Status,Date,Description,Debit,Credit
     For budget tracking: debits (spending) are positive, credits (money received) are negative
     """
+
     def __init__(self, file_paths: list[str], category_file: Path):
-        super().__init__(file_paths[0], category_file)  # Use first file path for initialization
+        super().__init__(
+            file_paths[0], category_file
+        )  # Use first file path for initialization
         self.file_paths = file_paths
         self.transactions_df = pd.DataFrame()
 
@@ -216,7 +237,7 @@ class CitiParser(BaseParser):
                 df = pd.read_csv(file_path, dtype=str)
                 all_transactions.append(df)
                 print(f"Citi CSV file successfully loaded: {file_path}")
-            except Exception as e: # pylint: disable=broad-except
+            except Exception as e:  # pylint: disable=broad-except
                 print(f"Error loading Citi CSV file {file_path}: {e}")
                 continue
 
@@ -232,97 +253,107 @@ class CitiParser(BaseParser):
         """Processes Citi transactions to categorize and clean amounts."""
         # Filter out unwanted transactions
         self.transactions_df = self.transactions_df[
-            self.transactions_df['Description'].apply(self.should_include_transaction)
+            self.transactions_df["Description"].apply(self.should_include_transaction)
         ]
 
         # Convert date string to datetime
-        self.transactions_df['Datetime'] = pd.to_datetime(
-            self.transactions_df['Date'], format='%m/%d/%Y', errors='coerce')
+        self.transactions_df["Datetime"] = pd.to_datetime(
+            self.transactions_df["Date"], format="%m/%d/%Y", errors="coerce"
+        )
 
         # Filter for previous month
-        self.filter_previous_month('Datetime')
+        self.filter_previous_month("Datetime")
 
         # Categorize based on Description
-        self.transactions_df['Category'] = \
-            self.transactions_df['Description'].apply(self.categorize_transaction)
+        self.transactions_df["Category"] = self.transactions_df["Description"].apply(
+            self.categorize_transaction
+        )
 
         # Handle amount calculation from Debit and Credit columns
         def calculate_amount(row):
-            debit = self.clean_amount(row['Debit']) if pd.notna(row['Debit']) else 0
-            credit = self.clean_amount(row['Credit']) if pd.notna(row['Credit']) else 0
+            debit = self.clean_amount(row["Debit"]) if pd.notna(row["Debit"]) else 0
+            credit = self.clean_amount(row["Credit"]) if pd.notna(row["Credit"]) else 0
             # Debits should be positive (money spent)
             # Credits remain negative (money received)
             return debit + credit
 
-        self.transactions_df['Adjusted Amount'] = \
-            self.transactions_df.apply(calculate_amount, axis=1)
+        self.transactions_df["Adjusted Amount"] = self.transactions_df.apply(
+            calculate_amount, axis=1
+        )
 
         # Add source column
-        self.transactions_df['Source'] = source
+        self.transactions_df["Source"] = source
 
         # Return only the columns we need
-        return self.transactions_df.loc[:, ['Datetime',
-                                           'Category', 'Adjusted Amount', 'Description', 'Source']]
+        return self.transactions_df.loc[
+            :, ["Datetime", "Category", "Adjusted Amount", "Description", "Source"]
+        ]
 
 
 class AmazonParser(BaseParser):
     """
     Parses Amazon transactions from a CSV file.
     """
+
     def load_transactions(self) -> None:
         """Loads Amazon transactions from the CSV file."""
         try:
             # Read all columns as strings to avoid type conversion issues
             self.transactions_df = pd.read_csv(self.file_path, dtype=str)
             print("Amazon CSV file successfully loaded!")
-        except Exception as e: # pylint: disable=broad-except
+        except Exception as e:  # pylint: disable=broad-except
             print(f"Error loading Amazon CSV file: {e}")
             exit()
 
     def process_transactions(self, source: str = "Amazon") -> pd.DataFrame:
         """Processes Amazon transactions to categorize and clean amounts."""
         # Convert date string to datetime
-        self.transactions_df['Datetime'] = pd.to_datetime(
-            self.transactions_df['date'], format='%Y-%m-%d', errors='coerce')
+        self.transactions_df["Datetime"] = pd.to_datetime(
+            self.transactions_df["date"], format="%Y-%m-%d", errors="coerce"
+        )
 
         # Filter for previous month
-        self.filter_previous_month('Datetime')
+        self.filter_previous_month("Datetime")
 
         # Calculate total amount from all relevant columns
         def calculate_total(row):
             # Get values from the row, defaulting to 0 if not present
-            total = str(row['total']) if pd.notna(row['total']) else '0'
-            shipping = str(row['shipping']) if pd.notna(row['shipping']) else '0'
-            gift = str(row['gift']) if pd.notna(row['gift']) else '0'
-            tax = str(row['tax']) if pd.notna(row['tax']) else '0'
-            refund = str(row['refund']) if pd.notna(row['refund']) else '0'
+            total = str(row["total"]) if pd.notna(row["total"]) else "0"
+            shipping = str(row["shipping"]) if pd.notna(row["shipping"]) else "0"
+            gift = str(row["gift"]) if pd.notna(row["gift"]) else "0"
+            tax = str(row["tax"]) if pd.notna(row["tax"]) else "0"
+            refund = str(row["refund"]) if pd.notna(row["refund"]) else "0"
 
             # Clean and sum all amounts
-            return (self.clean_amount(total) +
-                   self.clean_amount(shipping) +
-                   self.clean_amount(gift) +
-                   self.clean_amount(tax) -
-                   self.clean_amount(refund))
+            return (
+                self.clean_amount(total)
+                + self.clean_amount(shipping)
+                + self.clean_amount(gift)
+                + self.clean_amount(tax)
+                - self.clean_amount(refund)
+            )
 
-        self.transactions_df['Adjusted Amount'] = \
-            self.transactions_df.apply(calculate_total, axis=1)
+        self.transactions_df["Adjusted Amount"] = self.transactions_df.apply(
+            calculate_total, axis=1
+        )
 
         # Fill NaN values in items column with empty string
-        self.transactions_df['items'] = self.transactions_df['items'].fillna('')
+        self.transactions_df["items"] = self.transactions_df["items"].fillna("")
 
         # Filter out unwanted transactions
         self.transactions_df = self.transactions_df[
-            self.transactions_df['items'].apply(self.should_include_transaction)
+            self.transactions_df["items"].apply(self.should_include_transaction)
         ]
 
         # First, categorize all items using local categorization
-        self.transactions_df['Category'] = \
-            self.transactions_df['items'].apply(self.categorize_transaction)
+        self.transactions_df["Category"] = self.transactions_df["items"].apply(
+            self.categorize_transaction
+        )
 
         # Only use ChatGPT for items categorized as "Other"
-        other_items_mask = self.transactions_df['Category'] == 'Other'
+        other_items_mask = self.transactions_df["Category"] == "Other"
         if other_items_mask.any():
-            other_items = self.transactions_df.loc[other_items_mask, 'items'].tolist()
+            other_items = self.transactions_df.loc[other_items_mask, "items"].tolist()
 
             # Prepare prompt for ChatGPT
             prompt = f"""I have a list of Amazon purchase items and a set of categories.
@@ -351,35 +382,37 @@ Only use the exact category names from the provided categories.
 
                 # Strip any markdown formatting from the response
                 response = response.strip()
-                if response.startswith('```json'):
+                if response.startswith("```json"):
                     response = response[7:]
-                if response.startswith('```'):
+                if response.startswith("```"):
                     response = response[3:]
-                if response.endswith('```'):
+                if response.endswith("```"):
                     response = response[:-3]
                 response = response.strip()
 
                 categories = json.loads(response)
 
                 # Update only the "Other" items with ChatGPT's categorizations
-                self.transactions_df.loc[other_items_mask, 'Category'] = categories
+                self.transactions_df.loc[other_items_mask, "Category"] = categories
 
-            except Exception as e: # pylint: disable=broad-except
+            except Exception as e:  # pylint: disable=broad-except
                 print(f"Error getting categorizations from ChatGPT: {e}")
                 print("Keeping original 'Other' categorization.")
 
         # Add source column
-        self.transactions_df['Source'] = source
+        self.transactions_df["Source"] = source
 
         # Return only the columns we need
-        return self.transactions_df.loc[:, ['Datetime',
-                                           'Category', 'Adjusted Amount', 'items', 'Source']]
+        return self.transactions_df.loc[
+            :, ["Datetime", "Category", "Adjusted Amount", "items", "Source"]
+        ]
 
 
 class RobinhoodParser(BaseParser):
     """
     Parses Robinhood Credit Card transactions from a CSV file.
     """
+
     def __init__(self, file_path: str, category_file: Path):
         super().__init__(file_path, category_file)
         self.transactions_df = pd.DataFrame()
@@ -397,41 +430,46 @@ class RobinhoodParser(BaseParser):
         """Processes Robinhood transactions to categorize and clean amounts."""
         # Filter out declined transactions
         self.transactions_df = self.transactions_df[
-            self.transactions_df['Status'] == 'Posted'
+            self.transactions_df["Status"] == "Posted"
         ]
 
         # Convert date string to datetime
-        self.transactions_df['Datetime'] = pd.to_datetime(
-            self.transactions_df['Date'], format='%Y-%m-%d', errors='coerce')
+        self.transactions_df["Datetime"] = pd.to_datetime(
+            self.transactions_df["Date"], format="%Y-%m-%d", errors="coerce"
+        )
 
         # Filter for previous month
-        self.filter_previous_month('Datetime')
+        self.filter_previous_month("Datetime")
 
         # Clean amounts (all purchases are positive spending)
-        self.transactions_df['Adjusted Amount'] = \
-            self.transactions_df['Amount'].apply(self.clean_amount)
+        self.transactions_df["Adjusted Amount"] = self.transactions_df["Amount"].apply(
+            self.clean_amount
+        )
 
         # Filter out unwanted transactions
         self.transactions_df = self.transactions_df[
-            self.transactions_df['Description'].apply(self.should_include_transaction)
+            self.transactions_df["Description"].apply(self.should_include_transaction)
         ]
 
         # Categorize based on Description
-        self.transactions_df['Category'] = \
-            self.transactions_df['Description'].apply(self.categorize_transaction)
+        self.transactions_df["Category"] = self.transactions_df["Description"].apply(
+            self.categorize_transaction
+        )
 
         # Add source column
-        self.transactions_df['Source'] = source
+        self.transactions_df["Source"] = source
 
         # Return only the columns we need
-        return self.transactions_df.loc[:, ['Datetime',
-                                           'Category', 'Adjusted Amount', 'Description', 'Source']]
+        return self.transactions_df.loc[
+            :, ["Datetime", "Category", "Adjusted Amount", "Description", "Source"]
+        ]
 
 
 class SchwabParser(BaseParser):
     """
     Parses Schwab transactions from a CSV file.
     """
+
     def __init__(self, file_path: str, category_file: Path):
         super().__init__(file_path, category_file)
         self.transactions_df = pd.DataFrame()
@@ -442,66 +480,82 @@ class SchwabParser(BaseParser):
             # Read the CSV file directly with pandas
             self.transactions_df = pd.read_csv(self.file_path, dtype=str)
             print("Schwab CSV file successfully loaded!")
-        except Exception as e: # pylint: disable=broad-except
+        except Exception as e:  # pylint: disable=broad-except
             print(f"Error loading Schwab CSV file: {e}")
             exit()
 
     def process_transactions(self, source: str = "Schwab") -> pd.DataFrame:
         """Processes Schwab transactions to categorize and clean amounts."""
         # Convert date string to datetime
-        self.transactions_df['Datetime'] = pd.to_datetime(
-            self.transactions_df['Date'], format='%m/%d/%Y', errors='coerce')
+        self.transactions_df["Datetime"] = pd.to_datetime(
+            self.transactions_df["Date"], format="%m/%d/%Y", errors="coerce"
+        )
 
         # Filter for previous month
-        self.filter_previous_month('Datetime')
+        self.filter_previous_month("Datetime")
 
         # Clean and convert amounts, making deposits negative (money received)
         def calculate_amount(row):
-            withdrawal = self.clean_amount(row['Withdrawal']) if pd.notna(row['Withdrawal']) else 0
-            deposit = self.clean_amount(row['Deposit']) if pd.notna(row['Deposit']) else 0
+            withdrawal = (
+                self.clean_amount(row["Withdrawal"])
+                if pd.notna(row["Withdrawal"])
+                else 0
+            )
+            deposit = (
+                self.clean_amount(row["Deposit"]) if pd.notna(row["Deposit"]) else 0
+            )
             # Withdrawals are positive (money spent)
             # Deposits are negative (money received)
             return withdrawal - deposit
 
-        self.transactions_df['Adjusted Amount'] = \
-            self.transactions_df.apply(calculate_amount, axis=1)
+        self.transactions_df["Adjusted Amount"] = self.transactions_df.apply(
+            calculate_amount, axis=1
+        )
 
         # Filter out unwanted transactions
         self.transactions_df = self.transactions_df[
-            self.transactions_df['Description'].apply(self.should_include_transaction)
+            self.transactions_df["Description"].apply(self.should_include_transaction)
         ]
 
         # Categorize based on Description
-        self.transactions_df['Category'] = \
-            self.transactions_df['Description'].apply(self.categorize_transaction)
+        self.transactions_df["Category"] = self.transactions_df["Description"].apply(
+            self.categorize_transaction
+        )
 
         # Income categories should be positive (flip the sign for deposits)
-        income_categories = ['Apiture']
+        income_categories = ["Apiture"]
         self.transactions_df.loc[
-            self.transactions_df['Category'].isin(income_categories),
-            'Adjusted Amount'
+            self.transactions_df["Category"].isin(income_categories), "Adjusted Amount"
         ] *= -1
 
         # Add source column
-        self.transactions_df['Source'] = source
+        self.transactions_df["Source"] = source
 
         # Return only the columns we need
-        return self.transactions_df.loc[:, ['Datetime',
-                                           'Category', 'Adjusted Amount', 'Description', 'Source']]
+        return self.transactions_df.loc[
+            :, ["Datetime", "Category", "Adjusted Amount", "Description", "Source"]
+        ]
 
 
 def ask_for_file(file_description: str) -> str:
     """Prompts the user to select a file via a file dialog."""
     print(f"Please select the {file_description}.")
     Tk().withdraw()
-    file_path = askopenfilename(filetypes=[("CSV files", "*.csv"), ("ODS files", "*.ods")])
+    file_path = askopenfilename(
+        filetypes=[("CSV files", "*.csv"), ("ODS files", "*.ods")]
+    )
     if not file_path:
         print("No file selected.")
         return None
     return file_path
 
-def update_spreadsheet_with_totals(spreadsheet_path: str, totals_df: pd.DataFrame,
-                                 schwab_balance: float, venmo_balance: float) -> None:
+
+def update_spreadsheet_with_totals(
+    spreadsheet_path: str,
+    totals_df: pd.DataFrame,
+    schwab_balance: float,
+    venmo_balance: float,
+) -> None:
     """Reads an ODS spreadsheet, allows the user to select a sheet, and updates only Column C."""
     # Open the spreadsheet
     doc = ezodf.opendoc(spreadsheet_path)
@@ -523,8 +577,8 @@ def update_spreadsheet_with_totals(spreadsheet_path: str, totals_df: pd.DataFram
     # Map totals to their respective categories
     unmatched_categories = []
     for _, row in totals_df.iterrows():
-        category = row['Category']
-        total = row['Adjusted Amount']
+        category = row["Category"]
+        total = row["Adjusted Amount"]
         matched = False
 
         # Iterate over rows in the selected sheet
@@ -559,30 +613,42 @@ def update_spreadsheet_with_totals(spreadsheet_path: str, totals_df: pd.DataFram
     else:
         print("\nAll categories matched successfully.")
 
+
 def get_default_spreadsheet_path() -> str:
     """Returns the default spreadsheet path with the current year."""
     current_year = datetime.now().year
-    return str(Path.home() / f"syncthing/documents/spreadsheets/budget/Budget {current_year}.ods")
+    return str(
+        Path.home()
+        / f"syncthing/documents/spreadsheets/budget/Budget {current_year}.ods"
+    )
+
 
 def main() -> None:
     """Main function to handle argument parsing and execution."""
     try:
         parser = argparse.ArgumentParser(
-            description="Parse and categorize transactions from relevant CSV files.")
-        parser.add_argument("-spreadsheet",
-                            type=str, help="Path to the spreadsheet file", required=False)
+            description="Parse and categorize transactions from relevant CSV files."
+        )
+        parser.add_argument(
+            "-spreadsheet",
+            type=str,
+            help="Path to the spreadsheet file",
+            required=False,
+        )
         args = parser.parse_args()
 
         # Enable autocompletion
         argcomplete.autocomplete(parser)
 
         # Set the path for the category JSON file
-        categories_file_path = Path.home() \
-            / "syncthing/md/docs/selfhosted/transaction_categories.json"
+        categories_file_path = (
+            Path.home() / "syncthing/md/docs/selfhosted/transaction_categories.json"
+        )
 
         # Find files in Downloads or fall back to file browser
-        venmo_file_path = find_latest_file_in_downloads("VenmoStatement*.csv") \
-            or ask_for_file("Venmo transactions CSV")
+        venmo_file_path = find_latest_file_in_downloads(
+            "VenmoStatement*.csv"
+        ) or ask_for_file("Venmo transactions CSV")
 
         # Find Citi files using the new function
         citi_files = find_citi_files()
@@ -591,40 +657,56 @@ def main() -> None:
         else:
             print(f"Found Citi files: {citi_files}")
 
-        amazon_file_path = find_latest_file_in_downloads("amazon_order_history.csv") \
-            or ask_for_file("Amazon transactions CSV") or None
-        schwab_file_path = find_latest_file_in_downloads("schwab.csv") \
-            or find_latest_file_in_downloads("Checking_*.csv") \
+        amazon_file_path = (
+            find_latest_file_in_downloads("amazon_order_history.csv")
+            or ask_for_file("Amazon transactions CSV")
+            or None
+        )
+        schwab_file_path = (
+            find_latest_file_in_downloads("schwab.csv")
+            or find_latest_file_in_downloads("Checking_*.csv")
             or ask_for_file("Schwab transactions CSV")
-        
+        )
+
         # Try to find Robinhood CSV by checking for the characteristic column structure
         robinhood_file_path = None
         downloads_path = Path.home() / "Downloads"
         for csv_file in downloads_path.glob("*.csv"):
             try:
                 df = pd.read_csv(csv_file, nrows=1)
-                if 'Cardholder' in df.columns and 'Points' in df.columns and 'Merchant' in df.columns:
+                if (
+                    "Cardholder" in df.columns
+                    and "Points" in df.columns
+                    and "Merchant" in df.columns
+                ):
                     robinhood_file_path = str(csv_file)
                     print(f"Found Robinhood CSV: {csv_file.name}")
                     break
             except Exception:  # pylint: disable=broad-except
                 continue
-        
+
         if not robinhood_file_path:
             robinhood_file_path = ask_for_file("Robinhood Credit Card CSV") or None
-        
+
         spreadsheet_path = args.spreadsheet or get_default_spreadsheet_path()
 
         # Process Venmo transactions
-        venmo_parser = VenmoParser(file_path=venmo_file_path, category_file=categories_file_path)
+        venmo_parser = VenmoParser(
+            file_path=venmo_file_path, category_file=categories_file_path
+        )
         venmo_parser.load_categories()
         venmo_parser.load_transactions()
         venmo_summary_df = venmo_parser.process_transactions()
-        venmo_balance = float(venmo_summary_df['Balance'].iloc[-1]) \
-            if 'Balance' in venmo_summary_df.columns else 0.0
+        venmo_balance = (
+            float(venmo_summary_df["Balance"].iloc[-1])
+            if "Balance" in venmo_summary_df.columns
+            else 0.0
+        )
 
         # Process Citi transactions
-        citi_parser = CitiParser(file_paths=citi_files, category_file=categories_file_path)
+        citi_parser = CitiParser(
+            file_paths=citi_files, category_file=categories_file_path
+        )
         citi_parser.load_categories()
         citi_parser.load_transactions()
         citi_summary_df = citi_parser.process_transactions()
@@ -644,12 +726,17 @@ def main() -> None:
             amazon_summary_df = None
 
         # Process Schwab transactions
-        schwab_parser = SchwabParser(file_path=schwab_file_path, category_file=categories_file_path)
+        schwab_parser = SchwabParser(
+            file_path=schwab_file_path, category_file=categories_file_path
+        )
         schwab_parser.load_categories()
         schwab_parser.load_transactions()
         schwab_summary_df = schwab_parser.process_transactions()
-        schwab_balance = float(schwab_summary_df['Balance'].iloc[-1]) \
-            if 'Balance' in schwab_summary_df.columns else 0.0
+        schwab_balance = (
+            float(schwab_summary_df["Balance"].iloc[-1])
+            if "Balance" in schwab_summary_df.columns
+            else 0.0
+        )
 
         # Process Robinhood Credit Card transactions
         robinhood_summary_df = None
@@ -663,18 +750,23 @@ def main() -> None:
 
         # Combine and sort transactions
         dataframes = [
-            venmo_summary_df, citi_summary_df, amazon_summary_df, 
-            schwab_summary_df, robinhood_summary_df
+            venmo_summary_df,
+            citi_summary_df,
+            amazon_summary_df,
+            schwab_summary_df,
+            robinhood_summary_df,
         ]
         combined_df = pd.concat(
             [df for df in dataframes if df is not None]
-        ).sort_values(by=['Source', 'Category', 'Datetime'])
+        ).sort_values(by=["Source", "Category", "Datetime"])
         print("\nCombined Transactions:")
         print(combined_df.to_string(index=False))
 
         # Calculate totals for all transactions
         print("\nTotal Amounts by Category:")
-        totals_df = combined_df.groupby('Category')['Adjusted Amount'].sum().reset_index()
+        totals_df = (
+            combined_df.groupby("Category")["Adjusted Amount"].sum().reset_index()
+        )
         print(totals_df.to_string(index=False))
 
         # Convert totals DataFrame to CSV format (no index)
@@ -685,12 +777,14 @@ def main() -> None:
         print("\nThe CSV output has been copied to your clipboard!")
 
         # Update spreadsheet with totals and balances
-        update_spreadsheet_with_totals(spreadsheet_path, totals_df, schwab_balance, venmo_balance)
+        update_spreadsheet_with_totals(
+            spreadsheet_path, totals_df, schwab_balance, venmo_balance
+        )
 
     except KeyboardInterrupt:
         print("\nProgram interrupted by user. Exiting gracefully...")
         exit(0)
-    except Exception as e: # pylint: disable=broad-except
+    except Exception as e:  # pylint: disable=broad-except
         print(f"\nAn error occurred: {e}")
         exit(1)
 
