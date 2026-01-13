@@ -68,11 +68,20 @@ def apply_stow():
     cab = Cabinet()
     cab.log("Running apply_stow.py script")
 
+    # Check if script exists before running
+    script_path = os.path.expanduser("~/git/dotfiles/scripts/apply_stow.py")
+    if not os.path.exists(script_path):
+        cab.log(
+            f"✗ apply_stow.py script not found at {script_path}",
+            level="error",
+        )
+        return False
+
     # Get snapshot of dotfiles-backup before running the script
     backup_dir = os.path.expanduser("~/dotfiles-backup")
     snapshot_before = get_directory_snapshot(backup_dir)
 
-    command = "python3 ~/git/dotfiles/scripts/apply_stow.py"
+    command = f"python3 {script_path}"
     success, stdout, stderr = run_command(command, timeout=300)
 
     # Get snapshot of dotfiles-backup after running the script
@@ -97,8 +106,12 @@ def apply_stow():
         cab.log("✗ apply_stow.py failed", level="error")
         if stderr:
             cab.log(f"Error: {stderr}", level="error")
+        else:
+            cab.log("No error output captured - script may have failed silently", level="warning")
         if stdout:
             cab.log(f"Output: {stdout}")
+        # Log the command that was run for debugging
+        cab.log(f"Command executed: {command}", level="debug")
 
     return success
 
