@@ -13,7 +13,12 @@ def run_command(command, timeout=10):
     """Run a shell command and return the result"""
     try:
         result = subprocess.run(
-            command, shell=True, capture_output=True, text=True, timeout=timeout, check=False
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
         )
         return result.returncode == 0, result.stdout.strip(), result.stderr.strip()
     except subprocess.TimeoutExpired:
@@ -103,76 +108,115 @@ def update_git_repo():
     """
     cab = Cabinet()
     log_path_git_backend_backups = cab.get("path", "cabinet", "log-backup")
-    
+
     if not log_path_git_backend_backups:
         cab.log("Missing log-backup path for Git operations", level="error")
         return False
-    
+
     if not os.path.exists(log_path_git_backend_backups):
-        cab.log(f"Git repository path does not exist: {log_path_git_backend_backups}", level="error")
+        cab.log(
+            f"Git repository path does not exist: {log_path_git_backend_backups}",
+            level="error",
+        )
         return False
-    
+
     cab.log("Updating Git repository to latest main branch")
-    
+
     # Change to the repository directory
     original_cwd = os.getcwd()
     try:
         os.chdir(log_path_git_backend_backups)
-        
+
         # Check if we're in a Git repository
-        result = subprocess.run(["git", "rev-parse", "--git-dir"], 
-                              capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
         if result.returncode != 0:
             cab.log("Not a Git repository, skipping Git operations", level="warning")
             return True
-        
+
         # Check for uncommitted changes
-        result = subprocess.run(["git", "status", "--porcelain"], 
-                              capture_output=True, text=True, check=True)
-        
+        result = subprocess.run(
+            ["git", "status", "--porcelain"], capture_output=True, text=True, check=True
+        )
+
         if result.stdout.strip():
-            cab.log("Uncommitted changes detected, creating backup branch", level="warning")
-            
+            cab.log(
+                "Uncommitted changes detected, creating backup branch", level="warning"
+            )
+
             # Get current branch name
-            result = subprocess.run(["git", "branch", "--show-current"], 
-                                  capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                ["git", "branch", "--show-current"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
             current_branch = result.stdout.strip()
-            
+
             # Create a backup branch with timestamp
             from datetime import datetime
+
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_branch = f"backup_{timestamp}"
-            
+
             # Stash current changes
-            stash_result = subprocess.run(["git", "stash", "push", "-m", f"Auto-stash before pulling main - {timestamp}"], 
-                          capture_output=True, text=True, check=False)
+            stash_result = subprocess.run(
+                [
+                    "git",
+                    "stash",
+                    "push",
+                    "-m",
+                    f"Auto-stash before pulling main - {timestamp}",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
             if stash_result.returncode != 0:
-                cab.log(f"Warning: Failed to stash changes: {stash_result.stderr}", level="warning")
+                cab.log(
+                    f"Warning: Failed to stash changes: {stash_result.stderr}",
+                    level="warning",
+                )
             else:
                 cab.log(f"Stashed changes")
-            
+
             # Create backup branch from stash (only if stash was successful)
             if stash_result.returncode == 0:
-                stash_branch_result = subprocess.run(["git", "stash", "branch", backup_branch], 
-                                                   capture_output=True, text=True, check=False)
+                stash_branch_result = subprocess.run(
+                    ["git", "stash", "branch", backup_branch],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
                 if stash_branch_result.returncode == 0:
                     cab.log(f"Created backup branch: {backup_branch}")
                     # git stash branch checks out the new branch, so switch back to original branch
                     subprocess.run(["git", "checkout", current_branch], check=False)
                 else:
-                    cab.log(f"Warning: Failed to create backup branch: {stash_branch_result.stderr}", level="warning")
-        
+                    cab.log(
+                        f"Warning: Failed to create backup branch: {stash_branch_result.stderr}",
+                        level="warning",
+                    )
+
         # Fetch latest changes from remote
         cab.log("Fetching latest changes from remote")
         subprocess.run(["git", "fetch", "origin"], check=True)
-        
+
         # Switch to main branch
         subprocess.run(["git", "checkout", "main"], check=True)
-        
+
         # Pull latest main
-        result = subprocess.run(["git", "pull", "origin", "main"], 
-                              capture_output=True, text=True, check=False)
-        
+        result = subprocess.run(
+            ["git", "pull", "origin", "main"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
         if result.returncode == 0:
             cab.log("✓ Successfully updated to latest main branch")
             if result.stdout.strip():
@@ -180,9 +224,9 @@ def update_git_repo():
         else:
             cab.log(f"✗ Failed to pull latest main: {result.stderr}", level="error")
             return False
-        
+
         return True
-        
+
     except subprocess.CalledProcessError as e:
         cab.log(f"Git operation failed: {e.stderr}", level="error")
         return False
@@ -200,17 +244,17 @@ def backup_files():
     """
     cab = Cabinet()
     device_name = socket.gethostname()
-    
+
     cab.log("Starting backup tasks")
-    
+
     # Get paths from cabinet
     log_path_git_backend_backups = cab.get("path", "cabinet", "log-backup")
     path_zshrc = os.path.expanduser("~/.zshrc")
-    
+
     if not log_path_git_backend_backups:
         cab.log("Missing required paths for backup", level="error")
         return
-    
+
     def build_backup_path(category, extension):
         """Helper function to construct backup file paths."""
         return os.path.join(
@@ -218,57 +262,65 @@ def backup_files():
             device_name,
             f"{category}.{extension}",
         )
-    
+
     # Always backup cron and zsh
     path_cron = build_backup_path("cron", "md")
     path_zsh = build_backup_path("zsh", "md")
-    
+
     # Create directories if they don't exist
     backup_dirs = [os.path.dirname(path_cron), os.path.dirname(path_zsh)]
-    
+
     # Define backup commands for cron and zsh (always run)
     backup_commands = [
         f"/usr/bin/crontab -l > '{path_cron}'",
         f"cp -r {path_zshrc} '{path_zsh}'",
     ]
-    
+
     # Only backup notes and log if hostname is rainbow
     if device_name == "rainbow":
         path_notes = cab.get("path", "notes")
         path_log = cab.get("path", "log")
-        
+
         if path_notes and path_log:
             path_notes_backup = build_backup_path("notes", "zip")
             path_log_backup = build_backup_path("log", "zip")
-            
+
             # Add to backup directories
-            backup_dirs.extend([os.path.dirname(path_notes_backup), os.path.dirname(path_log_backup)])
-            
+            backup_dirs.extend(
+                [os.path.dirname(path_notes_backup), os.path.dirname(path_log_backup)]
+            )
+
             # Add notes and log backup commands
-            backup_commands.extend([
-                f"zip -r '{path_notes_backup}' {path_notes}",
-                f"zip -r '{path_log_backup}' {path_log} "
-                f"--exclude='{os.path.join(path_log, 'songs', '*')}'",
-            ])
+            backup_commands.extend(
+                [
+                    f"zip -r '{path_notes_backup}' {path_notes}",
+                    f"zip -r '{path_log_backup}' {path_log} "
+                    f"--exclude='{os.path.join(path_log, 'songs', '*')}'",
+                ]
+            )
         else:
             cab.log("Missing notes or log paths for rainbow hostname", level="warning")
     else:
         cab.log("Skipping notes and log backup - not running on rainbow hostname")
-    
+
     # Create all backup directories
     for backup_dir in backup_dirs:
         os.makedirs(backup_dir, exist_ok=True)
-    
+
     # Execute each backup command
     for command in backup_commands:
         try:
             subprocess.run(command, shell=True, check=True)
             cab.log(f"✓ Backup completed: {command}")
         except subprocess.CalledProcessError as error:
-            cab.log(f"✗ Command failed: {command} with error: {str(error)}", level="error")
+            cab.log(
+                f"✗ Command failed: {command} with error: {str(error)}", level="error"
+            )
         except OSError as error:
-            cab.log(f"✗ OS error for: {command} with error: {str(error)}", level="error")
-    
+            cab.log(
+                f"✗ OS error for: {command} with error: {str(error)}", level="error"
+            )
+
     cab.log("Backup tasks completed")
 
 
@@ -279,88 +331,127 @@ def commit_and_push_backups():
     cab = Cabinet()
     log_path_git_backend_backups = cab.get("path", "cabinet", "log-backup")
     device_name = socket.gethostname()
-    
+
     if not log_path_git_backend_backups:
         cab.log("Missing log-backup path for Git operations", level="error")
         return False
-    
+
     if not os.path.exists(log_path_git_backend_backups):
-        cab.log(f"Git repository path does not exist: {log_path_git_backend_backups}", level="error")
+        cab.log(
+            f"Git repository path does not exist: {log_path_git_backend_backups}",
+            level="error",
+        )
         return False
-    
+
     # Change to the repository directory
     original_cwd = os.getcwd()
     try:
         os.chdir(log_path_git_backend_backups)
-        
+
         # Check if we're in a Git repository
-        result = subprocess.run(["git", "rev-parse", "--git-dir"], 
-                              capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
         if result.returncode != 0:
-            cab.log("Not a Git repository, skipping commit/push operations", level="warning")
+            cab.log(
+                "Not a Git repository, skipping commit/push operations", level="warning"
+            )
             return True
-        
+
         # Ensure we're on main branch
-        branch_result = subprocess.run(["git", "branch", "--show-current"], 
-                                     capture_output=True, text=True, check=False)
-        current_branch = branch_result.stdout.strip() if branch_result.returncode == 0 else "unknown"
-        
+        branch_result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        current_branch = (
+            branch_result.stdout.strip() if branch_result.returncode == 0 else "unknown"
+        )
+
         if current_branch != "main":
-            cab.log(f"Not on main branch (currently on {current_branch}), switching to main", level="warning")
-            checkout_result = subprocess.run(["git", "checkout", "main"], 
-                                           capture_output=True, text=True, check=False)
+            cab.log(
+                f"Not on main branch (currently on {current_branch}), switching to main",
+                level="warning",
+            )
+            checkout_result = subprocess.run(
+                ["git", "checkout", "main"], capture_output=True, text=True, check=False
+            )
             if checkout_result.returncode != 0:
-                cab.log(f"✗ Failed to checkout main: {checkout_result.stderr}", level="error")
+                cab.log(
+                    f"✗ Failed to checkout main: {checkout_result.stderr}",
+                    level="error",
+                )
                 return False
-        
+
         # Check for changes to commit
-        result = subprocess.run(["git", "status", "--porcelain"], 
-                              capture_output=True, text=True, check=True)
-        
+        result = subprocess.run(
+            ["git", "status", "--porcelain"], capture_output=True, text=True, check=True
+        )
+
         if not result.stdout.strip():
             cab.log("No changes to commit")
             return True
-        
+
         # Add all changes
-        add_result = subprocess.run(["git", "add", "."], 
-                                  capture_output=True, text=True, check=False)
+        add_result = subprocess.run(
+            ["git", "add", "."], capture_output=True, text=True, check=False
+        )
         if add_result.returncode != 0:
             cab.log(f"✗ Failed to add changes: {add_result.stderr}", level="error")
             return False
         cab.log("Added all changes to staging")
-        
+
         # Verify there are actually staged changes to commit
-        diff_result = subprocess.run(["git", "diff", "--cached", "--quiet"], 
-                                   capture_output=True, text=True, check=False)
+        diff_result = subprocess.run(
+            ["git", "diff", "--cached", "--quiet"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
         if diff_result.returncode == 0:
             # No changes staged (exit code 0 means no differences)
             cab.log("No changes staged after git add, skipping commit")
             return True
-        
+
         # Create commit message with current date
         from datetime import datetime
+
         current_date = datetime.now().strftime("%Y-%m-%d")
         commit_message = f"Added backups for {current_date} from {device_name}"
-        
+
         # Commit changes
-        result = subprocess.run(["git", "commit", "-m", commit_message], 
-                              capture_output=True, text=True, check=False)
-        
+        result = subprocess.run(
+            ["git", "commit", "-m", commit_message],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
         if result.returncode == 0:
             cab.log(f"✓ Successfully committed: {commit_message}")
             if result.stdout.strip():
                 cab.log(f"Commit output: {result.stdout.strip()}")
         else:
-            error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
+            error_msg = (
+                result.stderr.strip() or result.stdout.strip() or "Unknown error"
+            )
             cab.log(f"✗ Failed to commit: {error_msg}", level="error")
             if result.stdout.strip() and result.stdout.strip() != error_msg:
                 cab.log(f"Commit stdout: {result.stdout.strip()}", level="error")
             return False
-        
+
         # Push to main branch
-        result = subprocess.run(["git", "push", "origin", "main"], 
-                              capture_output=True, text=True, check=False)
-        
+        result = subprocess.run(
+            ["git", "push", "origin", "main"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
         if result.returncode == 0:
             cab.log("✓ Successfully pushed to main branch")
             if result.stdout.strip():
@@ -368,9 +459,9 @@ def commit_and_push_backups():
         else:
             cab.log(f"✗ Failed to push to main: {result.stderr}", level="error")
             return False
-        
+
         return True
-        
+
     except subprocess.CalledProcessError as e:
         cab.log(f"Git operation failed: {e.stderr}", level="error")
         return False
