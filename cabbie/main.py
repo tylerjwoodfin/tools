@@ -12,11 +12,11 @@ import os
 
 # Try to use pipx environments first (if available)
 pipx_venvs = os.path.expanduser("~/.local/share/pipx/venvs")
-cabinet_venv = f"{pipx_venvs}/cabinet/lib/python3.12/site-packages"
-python_helpers_venv = f"{pipx_venvs}/tyler-python-helpers/lib/python3.12/site-packages"
+CABINET_VENV = f"{pipx_venvs}/cabinet/lib/python3.12/site-packages"
+PYTHON_HELPERS_VENV = f"{pipx_venvs}/tyler-python-helpers/lib/python3.12/site-packages"
 
 # Add pipx venvs if they exist
-for venv_path in [cabinet_venv, python_helpers_venv]:
+for venv_path in [CABINET_VENV, PYTHON_HELPERS_VENV]:
     if os.path.exists(venv_path) and venv_path not in sys.path:
         sys.path.insert(0, venv_path)
 
@@ -28,7 +28,8 @@ for path in [cabinet_path, python_helpers_path]:
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from tyler_python_helpers import ChatGPT  # pylint: disable=import-error # type: ignore
+# Import must be after sys.path modifications
+from tyler_python_helpers import ChatGPT  # pylint: disable=import-error,wrong-import-position # type: ignore
 
 # Debug mode - set to True to enable debug logging
 DEBUG = False

@@ -163,8 +163,13 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
                         text=True,
                         check=True,
                     )
+                    log_url = (
+                        https_url.rsplit("@", maxsplit=1)[-1]
+                        if "@" in https_url
+                        else https_url
+                    )
                     cab.log(
-                        f"Converted SSH to HTTPS for Cloudflare Tunnel host: {https_url.split('@')[-1] if '@' in https_url else https_url}",
+                        f"Converted SSH to HTTPS for Cloudflare Tunnel host: {log_url}",
                         level="info",
                     )
 
@@ -277,8 +282,13 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
                         text=True,
                         check=True,
                     )
+                    log_url = (
+                        https_url.rsplit("@", maxsplit=1)[-1]
+                        if "@" in https_url
+                        else https_url
+                    )
                     cab.log(
-                        f"Converted git@ URL to HTTPS for Cloudflare Tunnel host: {https_url.split('@')[-1] if '@' in https_url else https_url}",
+                        f"Converted git@ URL to HTTPS for Cloudflare Tunnel host: {log_url}",
                         level="info",
                     )
 
@@ -360,7 +370,7 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
             # Check if URL has credentials embedded
             if "@" in url_without_protocol:
                 # Format: oauth2:TOKEN@host/path or user:pass@host/path
-                cred_part, host_and_path = url_without_protocol.split("@", 1)
+                _, host_and_path = url_without_protocol.split("@", 1)
                 url_parts = host_and_path.split("/", 1)
             else:
                 # Format: host/path
@@ -422,7 +432,9 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
                         check=True,
                     )
                     log_url = (
-                        https_url.split("@")[-1] if "@" in https_url else https_url
+                        https_url.rsplit("@", maxsplit=1)[-1]
+                        if "@" in https_url
+                        else https_url
                     )
                     cab.log(
                         f"Set HTTPS URL for Cloudflare Tunnel host: {log_url}",
@@ -622,14 +634,16 @@ def update_git_repo():
                     )
 
         # Fetch latest changes from remote
-        # Set GIT_TERMINAL_PROMPT=0 to prevent interactive credential prompts in non-interactive environments
+        # Set GIT_TERMINAL_PROMPT=0 to prevent interactive credential prompts
         # Set SSH connection timeout to prevent hanging
         env = os.environ.copy()
         env["GIT_TERMINAL_PROMPT"] = "0"
         # Set SSH timeout: ConnectTimeout=10, ServerAliveInterval=5, ServerAliveCountMax=3
-        env["GIT_SSH_COMMAND"] = (
-            "ssh -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=no"
+        ssh_opts = (
+            "ssh -o ConnectTimeout=10 -o ServerAliveInterval=5 "
+            "-o ServerAliveCountMax=3 -o StrictHostKeyChecking=no"
         )
+        env["GIT_SSH_COMMAND"] = ssh_opts
         cab.log("Fetching latest changes from remote")
         try:
             fetch_result = subprocess.run(
@@ -919,14 +933,16 @@ def commit_and_push_backups():
             return False
 
         # Pull latest changes before pushing to avoid conflicts
-        # Set GIT_TERMINAL_PROMPT=0 to prevent interactive credential prompts in non-interactive environments
+        # Set GIT_TERMINAL_PROMPT=0 to prevent interactive credential prompts
         # Set SSH connection timeout to prevent hanging
         env = os.environ.copy()
         env["GIT_TERMINAL_PROMPT"] = "0"
         # Set SSH timeout: ConnectTimeout=10, ServerAliveInterval=5, ServerAliveCountMax=3
-        env["GIT_SSH_COMMAND"] = (
-            "ssh -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=no"
+        ssh_opts = (
+            "ssh -o ConnectTimeout=10 -o ServerAliveInterval=5 "
+            "-o ServerAliveCountMax=3 -o StrictHostKeyChecking=no"
         )
+        env["GIT_SSH_COMMAND"] = ssh_opts
 
         # Get remote URL for diagnostics
         remote_url_result = subprocess.run(
@@ -1003,11 +1019,17 @@ def commit_and_push_backups():
             # Provide helpful error messages for common issues
             if "non-fast-forward" in error_msg or "rejected" in error_msg.lower():
                 cab.log(
-                    "Push rejected - local branch is behind remote. This should be handled by pull before push.",
+                    (
+                        "Push rejected - local branch is behind remote. "
+                        "This should be handled by pull before push."
+                    ),
                     level="warning",
                 )
                 cab.log(
-                    "If this persists, there may be new commits on remote. The script will retry on next run.",
+                    (
+                        "If this persists, there may be new commits on remote. "
+                        "The script will retry on next run."
+                    ),
                     level="info",
                 )
             elif (
@@ -1018,8 +1040,12 @@ def commit_and_push_backups():
                     "Network connectivity issue detected. Troubleshooting:",
                     level="warning",
                 )
+                if "@" in remote_url:
+                    host_part = remote_url.rsplit("@", maxsplit=1)[-1].split("/")[0]
+                else:
+                    host_part = "remote host"
                 cab.log(
-                    f"  1. Check if '{remote_url.split('@')[1].split('/')[0] if '@' in remote_url else 'remote host'}' is reachable from this network",
+                    f"  1. Check if '{host_part}' is reachable from this network",
                     level="warning",
                 )
                 cab.log(

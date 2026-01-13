@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
+"""
+Filter songs from spotify songs.json by release year.
+Outputs filtered songs in a simple format.
+"""
+
 import json
 import sys
 import argparse
 from pathlib import Path
 
+
 def main():
+    """Filter songs by release year and print results."""
     parser = argparse.ArgumentParser(
         description='Filter songs from spotify songs.json by release year'
     )
@@ -19,16 +26,16 @@ def main():
         default='spotify songs.json',
         help='Path to the JSON file (default: spotify songs.json)'
     )
-    
+
     args = parser.parse_args()
     year = str(args.year)
     json_file = args.json_file
-    
+
     # Check if file exists
     if not Path(json_file).exists():
         print(f"Error: File '{json_file}' not found", file=sys.stderr)
         sys.exit(1)
-    
+
     # Load the JSON file
     try:
         with open(json_file, 'r', encoding='utf-8') as f:
@@ -39,7 +46,7 @@ def main():
     except Exception as e:
         print(f"Error reading '{json_file}': {e}", file=sys.stderr)
         sys.exit(1)
-    
+
     # Filter songs with the specified year release_date
     filtered_songs = []
     for song in songs:
@@ -50,7 +57,7 @@ def main():
             artist = song.get('artist', '') or ''
             url = song.get('spotify_url', '') or ''
             filtered_songs.append((name, artist, url))
-    
+
     # Output in format "name // artist // url"
     if filtered_songs:
         for name, artist, url in filtered_songs:
@@ -62,4 +69,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

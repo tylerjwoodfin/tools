@@ -17,10 +17,11 @@ import logging
 from pathlib import Path
 from collections import Counter
 
+import re
+
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth
 from cabinet import Cabinet
-import re
 
 
 @dataclass
@@ -807,7 +808,7 @@ def main():
             cab.log("SPOTIFY - Running in update-last-25-only mode")
 
             # Load tracks from existing JSON file
-            analyzer._load_tracks_from_json(args.json_file)
+            analyzer._load_tracks_from_json(args.json_file)  # pylint: disable=protected-access
 
             # Update the playlist
             analyzer.update_last_25_added_playlist()
