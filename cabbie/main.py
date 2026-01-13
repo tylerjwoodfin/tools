@@ -28,11 +28,12 @@ for path in [cabinet_path, python_helpers_path]:
     if path not in sys.path:
         sys.path.insert(0, path)
 
-from tyler_python_helpers import ChatGPT # pylint: disable=import-error # type: ignore
+from tyler_python_helpers import ChatGPT  # pylint: disable=import-error # type: ignore
 
 # Debug mode - set to True to enable debug logging
 DEBUG = False
 chatgpt = ChatGPT()
+
 
 def debug_print(message: str) -> None:
     """Print debug messages if DEBUG is True."""
@@ -48,10 +49,11 @@ def clean_command(command: str) -> str:
     # Remove any leading/trailing whitespace
     cleaned = command.strip()
     # Remove any remaining 'bash' prefix if it exists
-    if cleaned.startswith('bash'):
+    if cleaned.startswith("bash"):
         cleaned = cleaned[4:].strip()
     debug_print(f"Cleaned command: {cleaned}")
     return cleaned
+
 
 def run_command(command: str, timeout: int = 6) -> tuple[str, str]:
     """Run a command in the background and capture its output."""
@@ -67,7 +69,7 @@ def run_command(command: str, timeout: int = 6) -> tuple[str, str]:
             text=True,
             timeout=timeout,
             check=True,
-            preexec_fn=os.setsid  # Create new process group
+            preexec_fn=os.setsid,  # Create new process group
         )
 
         debug_print("Command completed successfully")
@@ -96,7 +98,7 @@ def main():
         try:
             # Try hostnamectl first (Linux)
             device_type = subprocess.check_output(["hostnamectl"]).decode("utf-8")
-        except Exception: # pylint: disable=broad-exception-caught
+        except Exception:  # pylint: disable=broad-exception-caught
             # Fall back to uname (macOS and other Unix-like systems)
             device_type = subprocess.check_output(["uname", "-a"]).decode("utf-8")
         debug_print(f"Device info: {device_type}")
@@ -172,7 +174,7 @@ def main():
     except KeyboardInterrupt:
         print("\nProgram interrupted by user")
         sys.exit(1)
-    except Exception as e: # pylint: disable=broad-exception-caught
+    except Exception as e:  # pylint: disable=broad-exception-caught
         debug_print(f"Unexpected error in main: {e}")
         print(f"Unexpected error: {e}")
         sys.exit(1)

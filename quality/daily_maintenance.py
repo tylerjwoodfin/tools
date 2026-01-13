@@ -110,54 +110,85 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
     """
     try:
         # Get current remote URL
-        result = subprocess.run(["git", "remote", "get-url", remote_name],
-                              capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            ["git", "remote", "get-url", remote_name],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
         if result.returncode != 0:
             cab.log(f"Remote '{remote_name}' not found", level="warning")
             return False
-        
+
         current_url = result.stdout.strip()
-        
+
         # Get SSH port from config or environment
         ssh_port = cab.get("ports", "gitea") or os.environ.get("GIT_SSH_PORT")
-        
+
         # If already using SSH, check if we need to convert to HTTPS (for Cloudflare Tunnel)
         if current_url.startswith("ssh://"):
             # Extract host from ssh://git@host:port/path or ssh://git@host/path
-            match = re.match(r'ssh://git@([^/:]+)(?::\d+)?/(.+)', current_url)
+            match = re.match(r"ssh://git@([^/:]+)(?::\d+)?/(.+)", current_url)
             if match:
                 host = match.group(1)
                 path = match.group(2)
-                
+
                 # If host is git.tyler.cloud (behind Cloudflare Tunnel), convert to HTTPS
                 if host == "git.tyler.cloud":
                     # Ensure path ends with .git
                     if not path.endswith(".git"):
                         path = f"{path}.git"
-                    
+
                     # Check if we have a personal access token configured
-                    git_token = cab.get("keys", "gitea", "token") or os.environ.get("GIT_TOKEN") or os.environ.get("GITEA_TOKEN")
-                    
+                    git_token = (
+                        cab.get("keys", "gitea", "token")
+                        or os.environ.get("GIT_TOKEN")
+                        or os.environ.get("GITEA_TOKEN")
+                    )
+
                     if git_token:
                         # Use token in URL: https://oauth2:TOKEN@host/path
                         https_url = f"https://oauth2:{git_token}@{host}/{path}"
-                        cab.log("Using personal access token for HTTPS authentication", level="info")
+                        cab.log(
+                            "Using personal access token for HTTPS authentication",
+                            level="info",
+                        )
                     else:
                         # Use plain HTTPS URL (will need credentials from helper)
                         https_url = f"https://{host}/{path}"
-                    
-                    subprocess.run(["git", "remote", "set-url", remote_name, https_url],
-                                 capture_output=True, text=True, check=True)
-                    cab.log(f"Converted SSH to HTTPS for Cloudflare Tunnel host: {https_url.split('@')[-1] if '@' in https_url else https_url}", level="info")
-                    
+
+                    subprocess.run(
+                        ["git", "remote", "set-url", remote_name, https_url],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    cab.log(
+                        f"Converted SSH to HTTPS for Cloudflare Tunnel host: {https_url.split('@')[-1] if '@' in https_url else https_url}",
+                        level="info",
+                    )
+
                     # Configure credential helper for HTTPS if not already configured
-                    cred_helper_result = subprocess.run(["git", "config", "--get", "credential.helper"],
-                                                       capture_output=True, text=True, check=False)
-                    if cred_helper_result.returncode != 0 or not cred_helper_result.stdout.strip():
-                        subprocess.run(["git", "config", "credential.helper", "store"],
-                                     capture_output=True, text=True, check=False)
-                        cab.log("Configured git credential helper for HTTPS", level="info")
-                    
+                    cred_helper_result = subprocess.run(
+                        ["git", "config", "--get", "credential.helper"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if (
+                        cred_helper_result.returncode != 0
+                        or not cred_helper_result.stdout.strip()
+                    ):
+                        subprocess.run(
+                            ["git", "config", "credential.helper", "store"],
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                        )
+                        cab.log(
+                            "Configured git credential helper for HTTPS", level="info"
+                        )
+
                     # If we have a token but no credentials file, create it
                     if git_token:
                         cred_file = os.path.expanduser("~/.git-credentials")
@@ -168,68 +199,110 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
                             if os.path.exists(cred_file):
                                 with open(cred_file, "r", encoding="utf-8") as f:
                                     existing_creds = f.read()
-                            
+
                             # Add entry if not already present
-                            if f"https://oauth2:{git_token}@{host}" not in existing_creds:
+                            if (
+                                f"https://oauth2:{git_token}@{host}"
+                                not in existing_creds
+                            ):
                                 with open(cred_file, "a", encoding="utf-8") as f:
                                     f.write(cred_entry)
                                 os.chmod(cred_file, 0o600)  # Secure permissions
-                                cab.log("Added credentials to ~/.git-credentials", level="info")
+                                cab.log(
+                                    "Added credentials to ~/.git-credentials",
+                                    level="info",
+                                )
                         except (OSError, IOError) as e:
-                            cab.log(f"Could not write credentials file: {e}", level="warning")
-                    
+                            cab.log(
+                                f"Could not write credentials file: {e}",
+                                level="warning",
+                            )
+
                     return True
-                
+
                 # For other hosts, check if port needs to be added
-                port_match = re.search(r':(\d+)/', current_url)
+                port_match = re.search(r":(\d+)/", current_url)
                 if port_match:
                     # Port already specified, keep as is
                     return True
                 # No port specified - add port if configured
                 if ssh_port:
                     updated_url = f"ssh://git@{host}:{ssh_port}/{path}"
-                    subprocess.run(["git", "remote", "set-url", remote_name, updated_url],
-                                 capture_output=True, text=True, check=True)
-                    cab.log(f"Added port {ssh_port} to SSH URL: {updated_url}", level="info")
+                    subprocess.run(
+                        ["git", "remote", "set-url", remote_name, updated_url],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    cab.log(
+                        f"Added port {ssh_port} to SSH URL: {updated_url}", level="info"
+                    )
                     return True
             # No port configured, keep as-is (will use default port 22)
             return True
         elif current_url.startswith("git@"):
             # git@host:path format
-            match = re.match(r'git@([^:]+):(.+)', current_url)
+            match = re.match(r"git@([^:]+):(.+)", current_url)
             if match:
                 host = match.group(1)
                 path = match.group(2)
-                
+
                 # If host is git.tyler.cloud, convert to HTTPS
                 if host == "git.tyler.cloud":
                     # Ensure path ends with .git
                     if not path.endswith(".git"):
                         path = f"{path}.git"
-                    
+
                     # Check if we have a personal access token configured
-                    git_token = cab.get("keys", "gitea", "token") or os.environ.get("GIT_TOKEN") or os.environ.get("GITEA_TOKEN")
-                    
+                    git_token = (
+                        cab.get("keys", "gitea", "token")
+                        or os.environ.get("GIT_TOKEN")
+                        or os.environ.get("GITEA_TOKEN")
+                    )
+
                     if git_token:
                         # Use token in URL: https://oauth2:TOKEN@host/path
                         https_url = f"https://oauth2:{git_token}@{host}/{path}"
-                        cab.log("Using personal access token for HTTPS authentication", level="info")
+                        cab.log(
+                            "Using personal access token for HTTPS authentication",
+                            level="info",
+                        )
                     else:
                         # Use plain HTTPS URL (will need credentials from helper)
                         https_url = f"https://{host}/{path}"
-                    
-                    subprocess.run(["git", "remote", "set-url", remote_name, https_url],
-                                 capture_output=True, text=True, check=True)
-                    cab.log(f"Converted git@ URL to HTTPS for Cloudflare Tunnel host: {https_url.split('@')[-1] if '@' in https_url else https_url}", level="info")
-                    
+
+                    subprocess.run(
+                        ["git", "remote", "set-url", remote_name, https_url],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    cab.log(
+                        f"Converted git@ URL to HTTPS for Cloudflare Tunnel host: {https_url.split('@')[-1] if '@' in https_url else https_url}",
+                        level="info",
+                    )
+
                     # Configure credential helper
-                    cred_helper_result = subprocess.run(["git", "config", "--get", "credential.helper"],
-                                                       capture_output=True, text=True, check=False)
-                    if cred_helper_result.returncode != 0 or not cred_helper_result.stdout.strip():
-                        subprocess.run(["git", "config", "credential.helper", "store"],
-                                     capture_output=True, text=True, check=False)
-                        cab.log("Configured git credential helper for HTTPS", level="info")
-                    
+                    cred_helper_result = subprocess.run(
+                        ["git", "config", "--get", "credential.helper"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if (
+                        cred_helper_result.returncode != 0
+                        or not cred_helper_result.stdout.strip()
+                    ):
+                        subprocess.run(
+                            ["git", "config", "credential.helper", "store"],
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                        )
+                        cab.log(
+                            "Configured git credential helper for HTTPS", level="info"
+                        )
+
                     # If we have a token but no credentials file, create it
                     if git_token:
                         cred_file = os.path.expanduser("~/.git-credentials")
@@ -240,34 +313,50 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
                             if os.path.exists(cred_file):
                                 with open(cred_file, "r", encoding="utf-8") as f:
                                     existing_creds = f.read()
-                            
+
                             # Add entry if not already present
-                            if f"https://oauth2:{git_token}@{host}" not in existing_creds:
+                            if (
+                                f"https://oauth2:{git_token}@{host}"
+                                not in existing_creds
+                            ):
                                 with open(cred_file, "a", encoding="utf-8") as f:
                                     f.write(cred_entry)
                                 os.chmod(cred_file, 0o600)  # Secure permissions
-                                cab.log("Added credentials to ~/.git-credentials", level="info")
+                                cab.log(
+                                    "Added credentials to ~/.git-credentials",
+                                    level="info",
+                                )
                         except (OSError, IOError) as e:
-                            cab.log(f"Could not write credentials file: {e}", level="warning")
-                    
+                            cab.log(
+                                f"Could not write credentials file: {e}",
+                                level="warning",
+                            )
+
                     return True
-                
+
                 # For other hosts, convert to ssh:// format if port is configured
                 if ssh_port:
                     updated_url = f"ssh://git@{host}:{ssh_port}/{path}"
-                    subprocess.run(["git", "remote", "set-url", remote_name, updated_url],
-                                 capture_output=True, text=True, check=True)
-                    cab.log(f"Converted git@ URL to ssh:// format with port {ssh_port}: {updated_url}", level="info")
+                    subprocess.run(
+                        ["git", "remote", "set-url", remote_name, updated_url],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    cab.log(
+                        f"Converted git@ URL to ssh:// format with port {ssh_port}: {updated_url}",
+                        level="info",
+                    )
                     return True
             # No port configured, keep as-is
             return True
-        
+
         # If using HTTPS, check if we should convert to SSH
         if current_url.startswith("https://"):
             # Extract the path from HTTPS URL
             # Handle URLs with or without credentials: https://[user:pass@]host/path
             url_without_protocol = current_url.replace("https://", "")
-            
+
             # Check if URL has credentials embedded
             if "@" in url_without_protocol:
                 # Format: oauth2:TOKEN@host/path or user:pass@host/path
@@ -276,11 +365,11 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
             else:
                 # Format: host/path
                 url_parts = url_without_protocol.split("/", 1)
-            
+
             if len(url_parts) >= 2:
                 host = url_parts[0]
                 path = url_parts[1]
-                
+
                 # Check if host is behind Cloudflare Tunnel (SSH won't work)
                 # git.tyler.cloud uses Cloudflare Tunnel which only supports HTTP/HTTPS
                 if host == "git.tyler.cloud":
@@ -288,42 +377,80 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
                     # Ensure path ends with .git
                     if not path.endswith(".git"):
                         path = f"{path}.git"
-                    
+
                     # Check if we have a personal access token configured
-                    git_token = cab.get("keys", "gitea", "token") or os.environ.get("GIT_TOKEN") or os.environ.get("GITEA_TOKEN")
-                    
+                    git_token = (
+                        cab.get("keys", "gitea", "token")
+                        or os.environ.get("GIT_TOKEN")
+                        or os.environ.get("GITEA_TOKEN")
+                    )
+
                     # Check if token is already in URL
                     if "@" in current_url and "oauth2:" in current_url:
                         # Token already embedded, keep as-is
                         cab.log("Token already embedded in HTTPS URL", level="debug")
                         return True
-                    
+
                     if git_token:
                         # Use token in URL: https://oauth2:TOKEN@host/path
                         https_url = f"https://oauth2:{git_token}@{host}/{path}"
-                        cab.log("Using personal access token for HTTPS authentication", level="info")
+                        cab.log(
+                            "Using personal access token for HTTPS authentication",
+                            level="info",
+                        )
                     else:
                         # Use plain HTTPS URL (will need credentials from helper)
                         https_url = f"https://{host}/{path}"
-                        cab.log("No git token found in config or environment. Using plain HTTPS URL.", level="warning")
-                        cab.log("Set token with: cabinet set git token YOUR_TOKEN", level="warning")
-                        cab.log("Or set environment variable: export GIT_TOKEN=YOUR_TOKEN", level="warning")
-                    
+                        cab.log(
+                            "No git token found in config or environment. Using plain HTTPS URL.",
+                            level="warning",
+                        )
+                        cab.log(
+                            "Set token with: cabinet set git token YOUR_TOKEN",
+                            level="warning",
+                        )
+                        cab.log(
+                            "Or set environment variable: export GIT_TOKEN=YOUR_TOKEN",
+                            level="warning",
+                        )
+
                     # Always update URL to ensure it's correct (even if same, ensures token is embedded)
-                    subprocess.run(["git", "remote", "set-url", remote_name, https_url],
-                                 capture_output=True, text=True, check=True)
-                    log_url = https_url.split('@')[-1] if '@' in https_url else https_url
-                    cab.log(f"Set HTTPS URL for Cloudflare Tunnel host: {log_url}", level="info")
-                    
+                    subprocess.run(
+                        ["git", "remote", "set-url", remote_name, https_url],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    log_url = (
+                        https_url.split("@")[-1] if "@" in https_url else https_url
+                    )
+                    cab.log(
+                        f"Set HTTPS URL for Cloudflare Tunnel host: {log_url}",
+                        level="info",
+                    )
+
                     # Configure credential helper for HTTPS if not already configured
-                    cred_helper_result = subprocess.run(["git", "config", "--get", "credential.helper"],
-                                                       capture_output=True, text=True, check=False)
-                    if cred_helper_result.returncode != 0 or not cred_helper_result.stdout.strip():
+                    cred_helper_result = subprocess.run(
+                        ["git", "config", "--get", "credential.helper"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if (
+                        cred_helper_result.returncode != 0
+                        or not cred_helper_result.stdout.strip()
+                    ):
                         # Try to configure credential helper (store or cache)
-                        subprocess.run(["git", "config", "credential.helper", "store"],
-                                     capture_output=True, text=True, check=False)
-                        cab.log("Configured git credential helper for HTTPS", level="info")
-                    
+                        subprocess.run(
+                            ["git", "config", "credential.helper", "store"],
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                        )
+                        cab.log(
+                            "Configured git credential helper for HTTPS", level="info"
+                        )
+
                     # If we have a token, also write it to credentials file
                     if git_token:
                         cred_file = os.path.expanduser("~/.git-credentials")
@@ -334,30 +461,46 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
                             if os.path.exists(cred_file):
                                 with open(cred_file, "r", encoding="utf-8") as f:
                                     existing_creds = f.read()
-                            
+
                             # Add entry if not already present
-                            if f"https://oauth2:{git_token}@{host}" not in existing_creds:
+                            if (
+                                f"https://oauth2:{git_token}@{host}"
+                                not in existing_creds
+                            ):
                                 with open(cred_file, "a", encoding="utf-8") as f:
                                     f.write(cred_entry)
                                 os.chmod(cred_file, 0o600)  # Secure permissions
-                                cab.log("Added credentials to ~/.git-credentials", level="info")
+                                cab.log(
+                                    "Added credentials to ~/.git-credentials",
+                                    level="info",
+                                )
                         except (OSError, IOError) as e:
-                            cab.log(f"Could not write credentials file: {e}", level="warning")
-                    
+                            cab.log(
+                                f"Could not write credentials file: {e}",
+                                level="warning",
+                            )
+
                     return True
-                
+
                 # For other hosts, convert to SSH if port is configured
                 # Ensure path ends with .git
                 if not path.endswith(".git"):
                     path = f"{path}.git"
-                
+
                 # Use ssh:// format, with port only if configured
                 if ssh_port:
                     ssh_url = f"ssh://git@{host}:{ssh_port}/{path}"
                     # Update remote URL
-                    subprocess.run(["git", "remote", "set-url", remote_name, ssh_url],
-                                 capture_output=True, text=True, check=True)
-                    cab.log(f"Converted remote URL from HTTPS to SSH: {ssh_url}", level="info")
+                    subprocess.run(
+                        ["git", "remote", "set-url", remote_name, ssh_url],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    cab.log(
+                        f"Converted remote URL from HTTPS to SSH: {ssh_url}",
+                        level="info",
+                    )
                     return True
                 else:
                     # No SSH port configured, keep HTTPS
@@ -366,11 +509,11 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
             else:
                 cab.log(f"Could not parse HTTPS URL: {current_url}", level="warning")
                 return False
-        
+
         # Unknown URL format
         cab.log(f"Remote URL format not recognized: {current_url}", level="warning")
         return False
-        
+
     except subprocess.CalledProcessError as e:
         cab.log(f"Error checking/updating remote URL: {e.stderr}", level="error")
         return False
@@ -484,17 +627,27 @@ def update_git_repo():
         env = os.environ.copy()
         env["GIT_TERMINAL_PROMPT"] = "0"
         # Set SSH timeout: ConnectTimeout=10, ServerAliveInterval=5, ServerAliveCountMax=3
-        env["GIT_SSH_COMMAND"] = "ssh -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=no"
+        env["GIT_SSH_COMMAND"] = (
+            "ssh -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=no"
+        )
         cab.log("Fetching latest changes from remote")
         try:
-            fetch_result = subprocess.run(["git", "fetch", "origin"],
-                                         capture_output=True, text=True, check=False, env=env, timeout=60)
+            fetch_result = subprocess.run(
+                ["git", "fetch", "origin"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+                timeout=60,
+            )
         except subprocess.TimeoutExpired:
             cab.log("✗ Git fetch timed out after 60 seconds", level="error")
             return False
 
         if fetch_result.returncode != 0:
-            cab.log(f"✗ Failed to fetch from origin: {fetch_result.stderr}", level="error")
+            cab.log(
+                f"✗ Failed to fetch from origin: {fetch_result.stderr}", level="error"
+            )
             return False
 
         # Switch to main branch
@@ -502,8 +655,14 @@ def update_git_repo():
 
         # Pull latest main
         try:
-            result = subprocess.run(["git", "pull", "origin", "main"],
-                                  capture_output=True, text=True, check=False, env=env, timeout=60)
+            result = subprocess.run(
+                ["git", "pull", "origin", "main"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+                timeout=60,
+            )
         except subprocess.TimeoutExpired:
             cab.log("✗ Git pull timed out after 60 seconds", level="error")
             return False
@@ -516,11 +675,26 @@ def update_git_repo():
             error_msg = result.stderr.strip()
             cab.log(f"✗ Failed to pull latest main: {error_msg}", level="error")
             # Provide helpful error message for credential issues
-            if "could not read Username" in error_msg or "No such device or address" in error_msg:
-                cab.log("Hint: Git credentials may not be configured. Consider:", level="warning")
-                cab.log("  1. Setting up SSH keys and using SSH URL instead of HTTPS", level="warning")
-                cab.log("  2. Configuring git credential helper: git config credential.helper store", level="warning")
-                cab.log("  3. Using a personal access token in the remote URL", level="warning")
+            if (
+                "could not read Username" in error_msg
+                or "No such device or address" in error_msg
+            ):
+                cab.log(
+                    "Hint: Git credentials may not be configured. Consider:",
+                    level="warning",
+                )
+                cab.log(
+                    "  1. Setting up SSH keys and using SSH URL instead of HTTPS",
+                    level="warning",
+                )
+                cab.log(
+                    "  2. Configuring git credential helper: git config credential.helper store",
+                    level="warning",
+                )
+                cab.log(
+                    "  3. Using a personal access token in the remote URL",
+                    level="warning",
+                )
             return False
 
         return True
@@ -750,18 +924,34 @@ def commit_and_push_backups():
         env = os.environ.copy()
         env["GIT_TERMINAL_PROMPT"] = "0"
         # Set SSH timeout: ConnectTimeout=10, ServerAliveInterval=5, ServerAliveCountMax=3
-        env["GIT_SSH_COMMAND"] = "ssh -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=no"
+        env["GIT_SSH_COMMAND"] = (
+            "ssh -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=no"
+        )
 
         # Get remote URL for diagnostics
-        remote_url_result = subprocess.run(["git", "remote", "get-url", "origin"],
-                                          capture_output=True, text=True, check=False)
-        remote_url = remote_url_result.stdout.strip() if remote_url_result.returncode == 0 else "unknown"
+        remote_url_result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        remote_url = (
+            remote_url_result.stdout.strip()
+            if remote_url_result.returncode == 0
+            else "unknown"
+        )
 
         # Pull with rebase to integrate remote changes before pushing
         cab.log("Pulling latest changes from remote...")
         try:
-            pull_result = subprocess.run(["git", "pull", "--rebase", "origin", "main"],
-                                        capture_output=True, text=True, check=False, env=env, timeout=60)
+            pull_result = subprocess.run(
+                ["git", "pull", "--rebase", "origin", "main"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+                timeout=60,
+            )
             if pull_result.returncode == 0:
                 if pull_result.stdout.strip():
                     cab.log(f"Pull output: {pull_result.stdout.strip()}")
@@ -769,19 +959,33 @@ def commit_and_push_backups():
                 # Pull failed - could be conflicts or network issue
                 pull_error = pull_result.stderr.strip()
                 if "CONFLICT" in pull_result.stdout or "conflict" in pull_error.lower():
-                    cab.log("✗ Pull failed due to merge conflicts. Skipping push.", level="warning")
-                    cab.log("Resolve conflicts manually and push later.", level="warning")
+                    cab.log(
+                        "✗ Pull failed due to merge conflicts. Skipping push.",
+                        level="warning",
+                    )
+                    cab.log(
+                        "Resolve conflicts manually and push later.", level="warning"
+                    )
                     return False
                 else:
-                    cab.log(f"⚠ Pull had issues but continuing: {pull_error}", level="warning")
+                    cab.log(
+                        f"⚠ Pull had issues but continuing: {pull_error}",
+                        level="warning",
+                    )
         except subprocess.TimeoutExpired:
             cab.log("✗ Git pull timed out after 60 seconds", level="error")
             return False
 
         # Push to main branch
         try:
-            result = subprocess.run(["git", "push", "origin", "main"],
-                                  capture_output=True, text=True, check=False, env=env, timeout=60)
+            result = subprocess.run(
+                ["git", "push", "origin", "main"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+                timeout=60,
+            )
         except subprocess.TimeoutExpired:
             cab.log("✗ Git push timed out after 60 seconds", level="error")
             cab.log(f"Remote URL: {remote_url}", level="debug")
@@ -795,22 +999,60 @@ def commit_and_push_backups():
             error_msg = result.stderr.strip()
             cab.log(f"✗ Failed to push to main: {error_msg}", level="error")
             cab.log(f"Remote URL: {remote_url}", level="debug")
-            
+
             # Provide helpful error messages for common issues
             if "non-fast-forward" in error_msg or "rejected" in error_msg.lower():
-                cab.log("Push rejected - local branch is behind remote. This should be handled by pull before push.", level="warning")
-                cab.log("If this persists, there may be new commits on remote. The script will retry on next run.", level="info")
-            elif "Network is unreachable" in error_msg or "Name or service not known" in error_msg:
-                cab.log("Network connectivity issue detected. Troubleshooting:", level="warning")
-                cab.log(f"  1. Check if '{remote_url.split('@')[1].split('/')[0] if '@' in remote_url else 'remote host'}' is reachable from this network", level="warning")
-                cab.log("  2. Verify DNS resolution: nslookup git.tyler.cloud", level="warning")
-                cab.log("  3. Check firewall rules and port accessibility", level="warning")
-                cab.log("  4. Consider using a VPN or different network path if needed", level="warning")
-            elif "could not read Username" in error_msg or "No such device or address" in error_msg:
-                cab.log("Hint: Git credentials may not be configured. Consider:", level="warning")
-                cab.log("  1. Setting up SSH keys and using SSH URL instead of HTTPS", level="warning")
-                cab.log("  2. Configuring git credential helper: git config credential.helper store", level="warning")
-                cab.log("  3. Using a personal access token in the remote URL", level="warning")
+                cab.log(
+                    "Push rejected - local branch is behind remote. This should be handled by pull before push.",
+                    level="warning",
+                )
+                cab.log(
+                    "If this persists, there may be new commits on remote. The script will retry on next run.",
+                    level="info",
+                )
+            elif (
+                "Network is unreachable" in error_msg
+                or "Name or service not known" in error_msg
+            ):
+                cab.log(
+                    "Network connectivity issue detected. Troubleshooting:",
+                    level="warning",
+                )
+                cab.log(
+                    f"  1. Check if '{remote_url.split('@')[1].split('/')[0] if '@' in remote_url else 'remote host'}' is reachable from this network",
+                    level="warning",
+                )
+                cab.log(
+                    "  2. Verify DNS resolution: nslookup git.tyler.cloud",
+                    level="warning",
+                )
+                cab.log(
+                    "  3. Check firewall rules and port accessibility", level="warning"
+                )
+                cab.log(
+                    "  4. Consider using a VPN or different network path if needed",
+                    level="warning",
+                )
+            elif (
+                "could not read Username" in error_msg
+                or "No such device or address" in error_msg
+            ):
+                cab.log(
+                    "Hint: Git credentials may not be configured. Consider:",
+                    level="warning",
+                )
+                cab.log(
+                    "  1. Setting up SSH keys and using SSH URL instead of HTTPS",
+                    level="warning",
+                )
+                cab.log(
+                    "  2. Configuring git credential helper: git config credential.helper store",
+                    level="warning",
+                )
+                cab.log(
+                    "  3. Using a personal access token in the remote URL",
+                    level="warning",
+                )
             return False
 
         return True
