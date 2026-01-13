@@ -1,0 +1,13 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "UP"]
+ignore = ["E501"]  # Line too long (handled by formatter)
+
+[tool.ruff.lint.pylint]
+max-line-length = 100
+
+[tool.ruff.format]
+line-length = 100

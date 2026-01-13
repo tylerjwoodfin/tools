@@ -17,10 +17,11 @@ import logging
 from pathlib import Path
 from collections import Counter
 
+import re
+
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth
 from cabinet import Cabinet
-import re
 
 
 @dataclass
@@ -35,7 +36,9 @@ class Track:
     added_at: Optional[str] = None
 
     @classmethod
-    def from_spotify_track(cls, index: int, track: Dict, added_at: Optional[str] = None) -> "Track":
+    def from_spotify_track(
+        cls, index: int, track: Dict, added_at: Optional[str] = None
+    ) -> "Track":
         """Create a Track instance from Spotify API track data."""
         return cls(
             index=index,
@@ -95,7 +98,8 @@ class SpotifyAnalyzer:
 
         except Exception as e:
             self.cab.log(
-                f"SPOTIFY - Failed to initialize Spotify client: {str(e)}", level="error"
+                f"SPOTIFY - Failed to initialize Spotify client: {str(e)}",
+                level="error",
             )
             raise
 
@@ -107,7 +111,7 @@ class SpotifyAnalyzer:
 
     def _parse_playlist_config(self, playlist_config: str) -> Optional[Tuple[str, str]]:
         """Parse playlist configuration string into (playlist_id, playlist_name).
-        
+
         Returns:
             Tuple of (playlist_id, playlist_name) if valid, None otherwise.
         """
@@ -163,7 +167,9 @@ class SpotifyAnalyzer:
 
             if playlist_index == 0:  # Main playlist
                 added_at = item.get("added_at")
-                track_obj = Track.from_spotify_track(len(self.main_tracks) + 1, track, added_at)
+                track_obj = Track.from_spotify_track(
+                    len(self.main_tracks) + 1, track, added_at
+                )
                 self.main_tracks.append(track_obj)
 
                 if track["album"]["release_date"]:
@@ -224,7 +230,9 @@ class SpotifyAnalyzer:
             playlist_tracks = []
             while True:
                 if not tracks:
-                    self.cab.log("SPOTIFY - No tracks found in playlist", level="warning")
+                    self.cab.log(
+                        "SPOTIFY - No tracks found in playlist", level="warning"
+                    )
                     break
                 playlist_tracks.extend(
                     self._process_tracks(tracks, playlist_name, index, total_tracks)
@@ -266,31 +274,31 @@ class SpotifyAnalyzer:
 
     def _load_tracks_from_json(self, json_file: Optional[str] = None) -> None:
         """Load tracks from existing JSON file into main_tracks.
-        
+
         Args:
             json_file: Path to JSON file. If None, uses default location.
         """
         if json_file is None:
             # Use same path logic as _save_data
             if self.log_backup_path is None:
-                log_backup_path: str = self.cab.get("path", "cabinet", "log-backup") or str(
-                    Path.home()
-                )
+                log_backup_path: str = self.cab.get(
+                    "path", "cabinet", "log-backup"
+                ) or str(Path.home())
                 self.log_backup_path = Path(log_backup_path)
             json_file = self.log_backup_path / "spotify songs.json"
         else:
             json_file = Path(json_file)
-        
+
         if not json_file.exists():
             self.cab.log(f"SPOTIFY - JSON file not found: {json_file}", level="error")
             raise FileNotFoundError(f"JSON file not found: {json_file}")
-        
+
         self.cab.log(f"SPOTIFY - Loading tracks from {json_file}")
-        
+
         try:
             with open(json_file, "r", encoding="utf-8") as f:
                 track_data = json.load(f)
-            
+
             # Convert dicts back to Track objects
             self.main_tracks = []
             for track_dict in track_data:
@@ -300,12 +308,12 @@ class SpotifyAnalyzer:
                     name=track_dict.get("name", ""),
                     release_date=track_dict.get("release_date", ""),
                     spotify_url=track_dict.get("spotify_url", ""),
-                    added_at=track_dict.get("added_at")
+                    added_at=track_dict.get("added_at"),
                 )
                 self.main_tracks.append(track)
-            
+
             self.cab.log(f"SPOTIFY - Loaded {len(self.main_tracks)} tracks from JSON")
-            
+
         except json.JSONDecodeError as e:
             self.cab.log(f"SPOTIFY - Invalid JSON in {json_file}: {e}", level="error")
             raise
@@ -425,7 +433,9 @@ class SpotifyAnalyzer:
             )
             return bool(result.stdout.strip())
         except subprocess.CalledProcessError as e:
-            self.cab.log(f"SPOTIFY - Error checking Git changes: {str(e)}", level="error")
+            self.cab.log(
+                f"SPOTIFY - Error checking Git changes: {str(e)}", level="error"
+            )
             return False
 
     def _git_commit(self, path: Path, message: str):
@@ -458,9 +468,7 @@ class SpotifyAnalyzer:
             )
             self.cab.log(f"SPOTIFY - Git commit successful: {message}")
         except subprocess.CalledProcessError as e:
-            self.cab.log(
-                f"SPOTIFY - Git commit failed: {e.stderr}", level="error"
-            )
+            self.cab.log(f"SPOTIFY - Git commit failed: {e.stderr}", level="error")
             raise
 
     def prepare_git_repo(self):
@@ -500,7 +508,14 @@ class SpotifyAnalyzer:
             try:
                 # Create and checkout new branch
                 subprocess.run(
-                    ["git", "-C", str(self.log_backup_path), "checkout", "-b", new_branch],
+                    [
+                        "git",
+                        "-C",
+                        str(self.log_backup_path),
+                        "checkout",
+                        "-b",
+                        new_branch,
+                    ],
                     capture_output=True,
                     text=True,
                     check=True,
@@ -514,7 +529,15 @@ class SpotifyAnalyzer:
 
                 # Push branch
                 subprocess.run(
-                    ["git", "-C", str(self.log_backup_path), "push", "-u", "origin", new_branch],
+                    [
+                        "git",
+                        "-C",
+                        str(self.log_backup_path),
+                        "push",
+                        "-u",
+                        "origin",
+                        new_branch,
+                    ],
                     capture_output=True,
                     text=True,
                     check=True,
@@ -560,30 +583,32 @@ class SpotifyAnalyzer:
             client_id = self.cab.get("spotipy", "client_id")
             client_secret = self.cab.get("spotipy", "client_secret")
             username = self.cab.get("spotipy", "username")
-            
+
             if not client_id:
                 raise ValueError("Spotify client_id is not set in cabinet")
             if not client_secret:
                 raise ValueError("Spotify client_secret is not set in cabinet")
             if not username:
                 raise ValueError("Spotify username is not set in cabinet")
-            
+
             # Set environment variables for spotipy
             # Try common redirect URI formats - user should match one in their dashboard
             # Most common: http://127.0.0.1:8888 or http://127.0.0.1:8888/callback
-            redirect_uri = os.environ.get("SPOTIPY_REDIRECT_URI", "http://127.0.0.1:8888")
-            
+            redirect_uri = os.environ.get(
+                "SPOTIPY_REDIRECT_URI", "http://127.0.0.1:8888"
+            )
+
             os.environ["SPOTIPY_CLIENT_ID"] = client_id
             os.environ["SPOTIPY_CLIENT_SECRET"] = client_secret
             os.environ["SPOTIPY_REDIRECT_URI"] = redirect_uri
-            
+
             # OAuth scope required for playlist modification
             scope = "playlist-modify-public playlist-modify-private"
-            
+
             # Use cache file based on username (spotipy convention)
             # This matches create_playlist_by_year.py so they share the same OAuth token
             cache_path = f".cache-{username}"
-            
+
             auth_manager = SpotifyOAuth(
                 scope=scope,
                 redirect_uri=redirect_uri,
@@ -591,11 +616,11 @@ class SpotifyAnalyzer:
                 client_secret=client_secret,
                 cache_path=cache_path,
                 open_browser=True,  # Will open browser for authorization if needed
-                show_dialog=True  # Show dialog to ensure fresh auth if needed
+                show_dialog=True,  # Show dialog to ensure fresh auth if needed
             )
-            
+
             return spotipy.Spotify(auth_manager=auth_manager)
-            
+
         except Exception as e:
             self.cab.log(
                 f"SPOTIFY - Failed to initialize OAuth client: {str(e)}", level="error"
@@ -607,65 +632,82 @@ class SpotifyAnalyzer:
         if not url:
             return None
         # Match pattern: https://open.spotify.com/track/TRACK_ID
-        match = re.search(r'track/([a-zA-Z0-9]+)', url)
+        match = re.search(r"track/([a-zA-Z0-9]+)", url)
         return match.group(1) if match else None
 
     def update_last_25_added_playlist(self):
         """Update the 'Last 25 Added' playlist with the 25 most recently added tracks."""
         if not self.main_tracks:
-            self.cab.log("SPOTIFY - No tracks available to update Last 25 Added playlist", level="warning")
+            self.cab.log(
+                "SPOTIFY - No tracks available to update Last 25 Added playlist",
+                level="warning",
+            )
             return
-        
+
         # Get playlist configuration (uses cached value if available)
         playlists = self._get_playlists()
         if not playlists or len(playlists) < 2:
-            self.cab.log("SPOTIFY - Last 25 Added playlist not configured", level="warning")
+            self.cab.log(
+                "SPOTIFY - Last 25 Added playlist not configured", level="warning"
+            )
             return
-        
+
         # Get playlist[1] which should be the "Last 25 Added" playlist
         parsed = self._parse_playlist_config(playlists[1])
         if not parsed:
-            self.cab.log("SPOTIFY - Invalid playlist configuration for Last 25 Added", level="warning")
+            self.cab.log(
+                "SPOTIFY - Invalid playlist configuration for Last 25 Added",
+                level="warning",
+            )
             return
-        
+
         playlist_id, playlist_name = parsed
-        self.cab.log(f"SPOTIFY - Updating '{playlist_name}' with 25 most recently added tracks")
-        
+        self.cab.log(
+            f"SPOTIFY - Updating '{playlist_name}' with 25 most recently added tracks"
+        )
+
         # Filter tracks that have added_at timestamps and valid Spotify URLs
         # Note: Local files (empty spotify_url) cannot be added via API and are excluded
-        local_file_count = sum(1 for track in self.main_tracks if track.added_at and not track.spotify_url)
+        local_file_count = sum(
+            1 for track in self.main_tracks if track.added_at and not track.spotify_url
+        )
         if local_file_count > 0:
             self.cab.log(
                 f"SPOTIFY - Skipping {local_file_count} local file(s) (cannot be added via API)",
-                level="info"
+                level="info",
             )
-        
+
         tracks_with_added_at = [
-            track for track in self.main_tracks 
-            if track.added_at and track.spotify_url
+            track for track in self.main_tracks if track.added_at and track.spotify_url
         ]
-        
+
         if not tracks_with_added_at:
-            self.cab.log("SPOTIFY - No tracks with added_at timestamps found", level="warning")
+            self.cab.log(
+                "SPOTIFY - No tracks with added_at timestamps found", level="warning"
+            )
             return
-        
+
         # Sort by added_at (most recent first) - parse ISO 8601 timestamps
         def parse_timestamp(timestamp_str: str) -> datetime.datetime:
             try:
                 # Handle ISO 8601 format with Z timezone
-                return datetime.datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                return datetime.datetime.fromisoformat(
+                    timestamp_str.replace("Z", "+00:00")
+                )
             except ValueError:
                 # Fallback for different formats
                 return datetime.datetime.min
-        
+
         tracks_with_added_at.sort(
-            key=lambda t: parse_timestamp(t.added_at) if t.added_at else datetime.datetime.min,
-            reverse=True
+            key=lambda t: (
+                parse_timestamp(t.added_at) if t.added_at else datetime.datetime.min
+            ),
+            reverse=True,
         )
-        
+
         # Get the 25 most recent tracks
         top_25_tracks = tracks_with_added_at[:25]
-        
+
         # Extract track IDs from URLs
         track_ids = []
         for track in top_25_tracks:
@@ -675,30 +717,35 @@ class SpotifyAnalyzer:
             else:
                 self.cab.log(
                     f"SPOTIFY - Could not extract track ID from URL: {track.spotify_url}",
-                    level="warning"
+                    level="warning",
                 )
-        
+
         if not track_ids:
-            self.cab.log("SPOTIFY - No valid track IDs found for Last 25 Added playlist", level="error")
+            self.cab.log(
+                "SPOTIFY - No valid track IDs found for Last 25 Added playlist",
+                level="error",
+            )
             return
-        
-        self.cab.log(f"SPOTIFY - Found {len(track_ids)} tracks to add to '{playlist_name}'")
-        
+
+        self.cab.log(
+            f"SPOTIFY - Found {len(track_ids)} tracks to add to '{playlist_name}'"
+        )
+
         # Initialize OAuth client for playlist modification
         try:
             oauth_client = self._initialize_oauth_client()
-            
+
             # Replace all items in the playlist with the new tracks
             oauth_client.playlist_replace_items(playlist_id, track_ids)
-            
+
             self.cab.log(
                 f"SPOTIFY - Successfully updated '{playlist_name}' with {len(track_ids)} tracks"
             )
-            
+
         except Exception as e:
             self.cab.log(
                 f"SPOTIFY - Failed to update Last 25 Added playlist: {str(e)}",
-                level="error"
+                level="error",
             )
             # Don't raise - allow script to continue even if playlist update fails
             self.cab.log("SPOTIFY - Continuing with remaining operations", level="info")
@@ -742,16 +789,16 @@ def main():
     parser.add_argument(
         "--update-last-25-only",
         action="store_true",
-        help="Only update the 'Last 25 Added' playlist (loads tracks from existing JSON)"
+        help="Only update the 'Last 25 Added' playlist (loads tracks from existing JSON)",
     )
     parser.add_argument(
         "--json-file",
         type=str,
-        help="Path to JSON file (only used with --update-last-25-only)"
+        help="Path to JSON file (only used with --update-last-25-only)",
     )
-    
+
     args = parser.parse_args()
-    
+
     cab = Cabinet()
     analyzer = SpotifyAnalyzer(cab)
 
@@ -759,10 +806,10 @@ def main():
         if args.update_last_25_only:
             # Only update the playlist, skip all processing
             cab.log("SPOTIFY - Running in update-last-25-only mode")
-            
+
             # Load tracks from existing JSON file
-            analyzer._load_tracks_from_json(args.json_file)
-            
+            analyzer._load_tracks_from_json(args.json_file)  # pylint: disable=protected-access
+
             # Update the playlist
             analyzer.update_last_25_added_playlist()
         else:
@@ -773,7 +820,7 @@ def main():
             # Run analysis and validation
             analyzer.analyze_playlists()
             analyzer.validate_playlists()
-            
+
             # Update the "Last 25 Added" playlist with most recently added tracks
             analyzer.update_last_25_added_playlist()
 
