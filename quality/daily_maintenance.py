@@ -6,6 +6,7 @@ This script performs daily maintenance tasks on the system.
 import subprocess
 import os
 import socket
+from datetime import datetime
 from cabinet import Cabinet
 
 
@@ -158,8 +159,6 @@ def update_git_repo():
             current_branch = result.stdout.strip()
 
             # Create a backup branch with timestamp
-            from datetime import datetime
-
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_branch = f"backup_{timestamp}"
 
@@ -182,7 +181,7 @@ def update_git_repo():
                     level="warning",
                 )
             else:
-                cab.log(f"Stashed changes")
+                cab.log("Stashed changes")
 
             # Create backup branch from stash (only if stash was successful)
             if stash_result.returncode == 0:
@@ -240,7 +239,8 @@ def update_git_repo():
 
 def backup_files():
     """
-    Back up essential files. Always backup cron and zsh, only backup notes and log if hostname is rainbow.
+    Back up essential files. Always backup cron and zsh, only backup notes and
+    log if hostname is rainbow.
     """
     cab = Cabinet()
     device_name = socket.gethostname()
@@ -418,8 +418,6 @@ def commit_and_push_backups():
             return True
 
         # Create commit message with current date
-        from datetime import datetime
-
         current_date = datetime.now().strftime("%Y-%m-%d")
         commit_message = f"Added backups for {current_date} from {device_name}"
 
