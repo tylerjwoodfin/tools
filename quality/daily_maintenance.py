@@ -144,13 +144,23 @@ def update_git_repo():
             backup_branch = f"backup_{timestamp}"
             
             # Stash current changes
-            subprocess.run(["git", "stash", "push", "-m", f"Auto-stash before pulling main - {timestamp}"], 
-                          check=True)
-            cab.log(f"Stashed changes to: {backup_branch}")
+            stash_result = subprocess.run(["git", "stash", "push", "-m", f"Auto-stash before pulling main - {timestamp}"], 
+                          capture_output=True, text=True, check=False)
+            if stash_result.returncode != 0:
+                cab.log(f"Warning: Failed to stash changes: {stash_result.stderr}", level="warning")
+            else:
+                cab.log(f"Stashed changes")
             
-            # Create backup branch from current state
-            subprocess.run(["git", "stash", "branch", backup_branch], check=True)
-            cab.log(f"Created backup branch: {backup_branch}")
+            # Create backup branch from stash (only if stash was successful)
+            if stash_result.returncode == 0:
+                stash_branch_result = subprocess.run(["git", "stash", "branch", backup_branch], 
+                                                   capture_output=True, text=True, check=False)
+                if stash_branch_result.returncode == 0:
+                    cab.log(f"Created backup branch: {backup_branch}")
+                    # git stash branch checks out the new branch, so switch back to original branch
+                    subprocess.run(["git", "checkout", current_branch], check=False)
+                else:
+                    cab.log(f"Warning: Failed to create backup branch: {stash_branch_result.stderr}", level="warning")
         
         # Fetch latest changes from remote
         cab.log("Fetching latest changes from remote")
@@ -290,6 +300,19 @@ def commit_and_push_backups():
             cab.log("Not a Git repository, skipping commit/push operations", level="warning")
             return True
         
+        # Ensure we're on main branch
+        branch_result = subprocess.run(["git", "branch", "--show-current"], 
+                                     capture_output=True, text=True, check=False)
+        current_branch = branch_result.stdout.strip() if branch_result.returncode == 0 else "unknown"
+        
+        if current_branch != "main":
+            cab.log(f"Not on main branch (currently on {current_branch}), switching to main", level="warning")
+            checkout_result = subprocess.run(["git", "checkout", "main"], 
+                                           capture_output=True, text=True, check=False)
+            if checkout_result.returncode != 0:
+                cab.log(f"✗ Failed to checkout main: {checkout_result.stderr}", level="error")
+                return False
+        
         # Check for changes to commit
         result = subprocess.run(["git", "status", "--porcelain"], 
                               capture_output=True, text=True, check=True)
@@ -299,8 +322,20 @@ def commit_and_push_backups():
             return True
         
         # Add all changes
-        subprocess.run(["git", "add", "."], check=True)
+        add_result = subprocess.run(["git", "add", "."], 
+                                  capture_output=True, text=True, check=False)
+        if add_result.returncode != 0:
+            cab.log(f"✗ Failed to add changes: {add_result.stderr}", level="error")
+            return False
         cab.log("Added all changes to staging")
+        
+        # Verify there are actually staged changes to commit
+        diff_result = subprocess.run(["git", "diff", "--cached", "--quiet"], 
+                                   capture_output=True, text=True, check=False)
+        if diff_result.returncode == 0:
+            # No changes staged (exit code 0 means no differences)
+            cab.log("No changes staged after git add, skipping commit")
+            return True
         
         # Create commit message with current date
         from datetime import datetime
@@ -316,7 +351,10 @@ def commit_and_push_backups():
             if result.stdout.strip():
                 cab.log(f"Commit output: {result.stdout.strip()}")
         else:
-            cab.log(f"✗ Failed to commit: {result.stderr}", level="error")
+            error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
+            cab.log(f"✗ Failed to commit: {error_msg}", level="error")
+            if result.stdout.strip() and result.stdout.strip() != error_msg:
+                cab.log(f"Commit stdout: {result.stdout.strip()}", level="error")
             return False
         
         # Push to main branch

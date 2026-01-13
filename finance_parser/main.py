@@ -76,12 +76,23 @@ class BaseParser:
                       for filtered_text in self.filtered_rows)
 
     def categorize_transaction(self, note: str) -> str:
-        """Categorizes transactions based on keywords from the JSON file."""
+        """Categorizes transactions based on keywords from the JSON file.
+        Keywords starting with ! are exclusions - if matched, the category is skipped.
+        """
         if pd.isnull(note) or not isinstance(note, str):
             return 'Other'
         note_lower = note.lower()
         for category, keywords in self.category_mapping.items():
-            if any(keyword.lower() in note_lower for keyword in keywords):
+            # Separate include and exclude patterns
+            include_keywords = [k for k in keywords if not k.startswith('!')]
+            exclude_keywords = [k[1:] for k in keywords if k.startswith('!')]
+            
+            # Check if any exclusion patterns match
+            if any(keyword.lower() in note_lower for keyword in exclude_keywords):
+                continue  # Skip this category
+            
+            # Check if any inclusion patterns match
+            if any(keyword.lower() in note_lower for keyword in include_keywords):
                 return category
         return 'Other'
 
@@ -365,6 +376,58 @@ Only use the exact category names from the provided categories.
                                            'Category', 'Adjusted Amount', 'items', 'Source']]
 
 
+class RobinhoodParser(BaseParser):
+    """
+    Parses Robinhood Credit Card transactions from a CSV file.
+    """
+    def __init__(self, file_path: str, category_file: Path):
+        super().__init__(file_path, category_file)
+        self.transactions_df = pd.DataFrame()
+
+    def load_transactions(self) -> None:
+        """Loads Robinhood transactions from the CSV file."""
+        try:
+            self.transactions_df = pd.read_csv(self.file_path, dtype=str)
+            print("Robinhood CSV file successfully loaded!")
+        except Exception as e:  # pylint: disable=broad-except
+            print(f"Error loading Robinhood CSV file: {e}")
+            exit()
+
+    def process_transactions(self, source: str = "Robinhood CC") -> pd.DataFrame:
+        """Processes Robinhood transactions to categorize and clean amounts."""
+        # Filter out declined transactions
+        self.transactions_df = self.transactions_df[
+            self.transactions_df['Status'] == 'Posted'
+        ]
+
+        # Convert date string to datetime
+        self.transactions_df['Datetime'] = pd.to_datetime(
+            self.transactions_df['Date'], format='%Y-%m-%d', errors='coerce')
+
+        # Filter for previous month
+        self.filter_previous_month('Datetime')
+
+        # Clean amounts (all purchases are positive spending)
+        self.transactions_df['Adjusted Amount'] = \
+            self.transactions_df['Amount'].apply(self.clean_amount)
+
+        # Filter out unwanted transactions
+        self.transactions_df = self.transactions_df[
+            self.transactions_df['Description'].apply(self.should_include_transaction)
+        ]
+
+        # Categorize based on Description
+        self.transactions_df['Category'] = \
+            self.transactions_df['Description'].apply(self.categorize_transaction)
+
+        # Add source column
+        self.transactions_df['Source'] = source
+
+        # Return only the columns we need
+        return self.transactions_df.loc[:, ['Datetime',
+                                           'Category', 'Adjusted Amount', 'Description', 'Source']]
+
+
 class SchwabParser(BaseParser):
     """
     Parses Schwab transactions from a CSV file.
@@ -411,6 +474,13 @@ class SchwabParser(BaseParser):
         # Categorize based on Description
         self.transactions_df['Category'] = \
             self.transactions_df['Description'].apply(self.categorize_transaction)
+
+        # Income categories should be positive (flip the sign for deposits)
+        income_categories = ['Apiture']
+        self.transactions_df.loc[
+            self.transactions_df['Category'].isin(income_categories),
+            'Adjusted Amount'
+        ] *= -1
 
         # Add source column
         self.transactions_df['Source'] = source
@@ -524,7 +594,25 @@ def main() -> None:
         amazon_file_path = find_latest_file_in_downloads("amazon_order_history.csv") \
             or ask_for_file("Amazon transactions CSV") or None
         schwab_file_path = find_latest_file_in_downloads("schwab.csv") \
+            or find_latest_file_in_downloads("Checking_*.csv") \
             or ask_for_file("Schwab transactions CSV")
+        
+        # Try to find Robinhood CSV by checking for the characteristic column structure
+        robinhood_file_path = None
+        downloads_path = Path.home() / "Downloads"
+        for csv_file in downloads_path.glob("*.csv"):
+            try:
+                df = pd.read_csv(csv_file, nrows=1)
+                if 'Cardholder' in df.columns and 'Points' in df.columns and 'Merchant' in df.columns:
+                    robinhood_file_path = str(csv_file)
+                    print(f"Found Robinhood CSV: {csv_file.name}")
+                    break
+            except Exception:  # pylint: disable=broad-except
+                continue
+        
+        if not robinhood_file_path:
+            robinhood_file_path = ask_for_file("Robinhood Credit Card CSV") or None
+        
         spreadsheet_path = args.spreadsheet or get_default_spreadsheet_path()
 
         # Process Venmo transactions
@@ -563,9 +651,20 @@ def main() -> None:
         schwab_balance = float(schwab_summary_df['Balance'].iloc[-1]) \
             if 'Balance' in schwab_summary_df.columns else 0.0
 
+        # Process Robinhood Credit Card transactions
+        robinhood_summary_df = None
+        if robinhood_file_path:
+            robinhood_parser = RobinhoodParser(
+                file_path=robinhood_file_path, category_file=categories_file_path
+            )
+            robinhood_parser.load_categories()
+            robinhood_parser.load_transactions()
+            robinhood_summary_df = robinhood_parser.process_transactions()
+
         # Combine and sort transactions
         dataframes = [
-            venmo_summary_df, citi_summary_df, amazon_summary_df, schwab_summary_df
+            venmo_summary_df, citi_summary_df, amazon_summary_df, 
+            schwab_summary_df, robinhood_summary_df
         ]
         combined_df = pd.concat(
             [df for df in dataframes if df is not None]
