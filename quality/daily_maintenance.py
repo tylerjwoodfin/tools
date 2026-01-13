@@ -424,7 +424,8 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
                             level="warning",
                         )
 
-                    # Always update URL to ensure it's correct (even if same, ensures token is embedded)
+                    # Always update URL to ensure it's correct
+                    # (even if same, ensures token is embedded)
                     subprocess.run(
                         ["git", "remote", "set-url", remote_name, https_url],
                         capture_output=True,

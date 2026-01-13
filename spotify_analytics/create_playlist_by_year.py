@@ -279,7 +279,7 @@ def main():
     # Create playlist
     try:
         playlist_url = create_playlist(sp, username, playlist_name, track_ids, year)
-        print(f"\n✅ Successfully created playlist!")
+        print("\n✅ Successfully created playlist!")
         print(f"Playlist URL: {playlist_url}")
         print(f"Total tracks: {len(track_ids)}")
     except Exception as e:
