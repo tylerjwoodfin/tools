@@ -5,6 +5,9 @@ Requires spotipy library and appropriate Spotify API credentials.
 """
 
 import os
+import errno
+import atexit
+import time
 import datetime
 import json
 import subprocess
@@ -73,6 +76,11 @@ class SpotifyAnalyzer:
         self.log_backup_path = None
         self.is_git_repo = False
         self._playlists_cache: Optional[List[str]] = None
+        self._oauth_client: Optional[spotipy.Spotify] = None
+        self._oauth_port: Optional[int] = None
+
+        # Register cleanup function to run on exit
+        atexit.register(self._cleanup_oauth_port)
 
     def _setup_logging(self) -> logging.Logger:
         """Configure logging for the application."""
@@ -577,6 +585,94 @@ class SpotifyAnalyzer:
             )
             raise
 
+    def _cleanup_oauth_port(self):
+        """Cleanup function registered with atexit to free OAuth port on script exit."""
+        if self._oauth_port:
+            self._kill_processes_on_port(self._oauth_port)
+
+    def _check_port_available(self, port: int) -> bool:
+        """Check if a port is available."""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("127.0.0.1", port))
+                return True
+        except OSError:
+            return False
+
+    def _kill_processes_on_port(self, port: int) -> bool:
+        """Kill any processes using the specified port. Returns True if processes were killed."""
+        try:
+            # Find processes using the port
+            result = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                pids = result.stdout.strip().split("\n")
+                killed_any = False
+                for pid in pids:
+                    pid = pid.strip()
+                    if pid and pid.isdigit():
+                        try:
+                            # Check if it's a spotify_analytics process
+                            ps_result = subprocess.run(
+                                ["ps", "-p", pid, "-o", "args="],
+                                capture_output=True,
+                                text=True,
+                                check=False,
+                            )
+                            if "spotify_analytics" in ps_result.stdout:
+                                self.cab.log(
+                                    f"SPOTIFY - Killing stale process {pid} using port {port}",
+                                    level="warning",
+                                )
+                                subprocess.run(
+                                    ["kill", pid],
+                                    capture_output=True,
+                                    text=True,
+                                    check=False,
+                                )
+                                killed_any = True
+                        except Exception:
+                            pass
+                if killed_any:
+                    # Wait a moment for the port to be released
+                    time.sleep(1)
+                    return True
+            return False
+        except FileNotFoundError:
+            # lsof not available, try alternative method
+            try:
+                result = subprocess.run(
+                    ["fuser", f"{port}/tcp"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    # fuser outputs PIDs, kill them
+                    pids = result.stdout.strip().split()
+                    for pid in pids:
+                        if pid.isdigit():
+                            subprocess.run(
+                                ["kill", pid],
+                                capture_output=True,
+                                text=True,
+                                check=False,
+                            )
+                    return True
+            except FileNotFoundError:
+                pass
+            return False
+        except Exception as e:
+            self.cab.log(
+                f"SPOTIFY - Error checking/killing processes on port {port}: {e}",
+                level="debug",
+            )
+            return False
+
     def _initialize_oauth_client(self) -> spotipy.Spotify:
         """Initialize Spotify client with OAuth authentication for playlist modifications."""
         try:
@@ -598,6 +694,41 @@ class SpotifyAnalyzer:
                 "SPOTIPY_REDIRECT_URI", "http://127.0.0.1:8888"
             )
 
+            # Extract port from redirect URI
+            port_match = re.search(r":(\d+)", redirect_uri)
+            redirect_port = int(port_match.group(1)) if port_match else 8888
+            self._oauth_port = redirect_port
+
+            # Use cache file based on username (spotipy convention)
+            # This matches create_playlist_by_year.py so they share the same OAuth token
+            cache_path = f".cache-{username}"
+            cache_file = Path(cache_path)
+
+            # Check if cache file exists and appears valid
+            # If we have a cached token, spotipy shouldn't need to start a server
+            has_cache = cache_file.exists() and cache_file.stat().st_size > 0
+
+            # Check if port is in use - kill stale processes if needed
+            if not self._check_port_available(redirect_port):
+                self.cab.log(
+                    f"SPOTIFY - Port {redirect_port} is already in use. "
+                    "Attempting to kill stale spotify_analytics processes...",
+                    level="warning",
+                )
+                killed = self._kill_processes_on_port(redirect_port)
+                if killed:
+                    self.cab.log(
+                        f"SPOTIFY - Killed stale processes. Port {redirect_port} should now be available.",
+                        level="info",
+                    )
+                else:
+                    self.cab.log(
+                        f"SPOTIFY - Could not kill processes on port {redirect_port}. "
+                        "If OAuth fails, manually kill processes with: "
+                        f"lsof -ti:{redirect_port} | xargs kill",
+                        level="warning",
+                    )
+
             os.environ["SPOTIPY_CLIENT_ID"] = client_id
             os.environ["SPOTIPY_CLIENT_SECRET"] = client_secret
             os.environ["SPOTIPY_REDIRECT_URI"] = redirect_uri
@@ -605,9 +736,9 @@ class SpotifyAnalyzer:
             # OAuth scope required for playlist modification
             scope = "playlist-modify-public playlist-modify-private"
 
-            # Use cache file based on username (spotipy convention)
-            # This matches create_playlist_by_year.py so they share the same OAuth token
-            cache_path = f".cache-{username}"
+            # Only open browser if we don't have a cached token
+            # If we have a cache, spotipy will use it and won't need to start a server
+            open_browser = not has_cache
 
             auth_manager = SpotifyOAuth(
                 scope=scope,
@@ -615,12 +746,45 @@ class SpotifyAnalyzer:
                 client_id=client_id,
                 client_secret=client_secret,
                 cache_path=cache_path,
-                open_browser=True,  # Will open browser for authorization if needed
-                show_dialog=True,  # Show dialog to ensure fresh auth if needed
+                open_browser=open_browser,  # Only open browser if no cached token exists
+                show_dialog=False,  # Don't force re-auth if token is valid
             )
 
-            return spotipy.Spotify(auth_manager=auth_manager)
+            oauth_client = spotipy.Spotify(auth_manager=auth_manager)
+            self._oauth_client = oauth_client
+            return oauth_client
 
+        except OSError as e:
+            error_str = str(e)
+            error_code = getattr(e, "errno", None)
+            if (
+                "Address already in use" in error_str
+                or "98" in error_str
+                or error_code == errno.EADDRINUSE
+            ):
+                self.cab.log(
+                    f"SPOTIFY - Port conflict detected: {error_str}",
+                    level="error",
+                )
+                self.cab.log(
+                    f"SPOTIFY - Port {redirect_port} is already in use. "
+                    "This typically happens when:",
+                    level="warning",
+                )
+                self.cab.log(
+                    "  1. Another Spotify script instance is running simultaneously",
+                    level="warning",
+                )
+                self.cab.log(
+                    "  2. A previous script instance didn't clean up properly",
+                    level="warning",
+                )
+                self.cab.log(
+                    f"SPOTIFY - Solution: Wait a few seconds and try again, "
+                    f"or run: lsof -ti:{redirect_port} | xargs kill",
+                    level="warning",
+                )
+            raise
         except Exception as e:
             self.cab.log(
                 f"SPOTIFY - Failed to initialize OAuth client: {str(e)}", level="error"
@@ -808,7 +972,9 @@ def main():
             cab.log("SPOTIFY - Running in update-last-25-only mode")
 
             # Load tracks from existing JSON file
-            analyzer._load_tracks_from_json(args.json_file)  # pylint: disable=protected-access
+            analyzer._load_tracks_from_json(
+                args.json_file
+            )  # pylint: disable=protected-access
 
             # Update the playlist
             analyzer.update_last_25_added_playlist()
