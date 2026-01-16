@@ -446,8 +446,15 @@ class SpotifyAnalyzer:
             )
             return False
 
-    def _git_commit(self, path: Path, message: str):
-        """Commit changes in Git repository."""
+    def _git_commit(self, path: Path, message: str, skip_pull: bool = False, skip_push: bool = False):
+        """Commit changes in Git repository.
+        
+        Args:
+            path: Path to Git repository
+            message: Commit message
+            skip_pull: If True, skip pulling before pushing (useful for new branches without upstream)
+            skip_push: If True, skip pushing (useful when push will be done separately with -u flag)
+        """
         try:
             subprocess.run(
                 ["git", "-C", str(path), "add", "-A"],
@@ -461,19 +468,31 @@ class SpotifyAnalyzer:
                 text=True,
                 check=True,
             )
-            # Pull latest changes before pushing to avoid conflicts
-            subprocess.run(
-                ["git", "-C", str(path), "pull"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            subprocess.run(
-                ["git", "-C", str(path), "push"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+            # Pull latest changes before pushing to avoid conflicts (skip for new branches)
+            if not skip_pull:
+                # Check if current branch has upstream tracking
+                branch_result = subprocess.run(
+                    ["git", "-C", str(path), "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if branch_result.returncode == 0:
+                    # Branch has upstream, safe to pull
+                    subprocess.run(
+                        ["git", "-C", str(path), "pull"],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                # If no upstream, skip pull (will be set on push with -u)
+            if not skip_push:
+                subprocess.run(
+                    ["git", "-C", str(path), "push"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
             self.cab.log(f"SPOTIFY - Git commit successful: {message}")
         except subprocess.CalledProcessError as e:
             self.cab.log(f"SPOTIFY - Git commit failed: {e.stderr}", level="error")
@@ -529,10 +548,13 @@ class SpotifyAnalyzer:
                     check=True,
                 )
 
-                # Commit changes
+                # Commit changes (skip pull and push since this is a new branch without upstream)
+                # Push will be done separately with -u flag to set upstream
                 self._git_commit(
                     self.log_backup_path,
                     f"Save unsaved changes from {hostname} on {today}",
+                    skip_pull=True,
+                    skip_push=True,
                 )
 
                 # Push branch
