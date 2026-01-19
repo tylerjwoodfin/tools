@@ -529,7 +529,7 @@ class SpotifyAnalyzer:
 
             self.cab.log(
                 f"SPOTIFY - Unsaved changes detected on main branch. Creating branch: {new_branch}",
-                level="warn",
+                level="info",
             )
 
             try:
@@ -648,7 +648,7 @@ class SpotifyAnalyzer:
                             if "spotify_analytics" in ps_result.stdout:
                                 self.cab.log(
                                     f"SPOTIFY - Killing stale process {pid} using port {port}",
-                                    level="warning",
+                                    level="info",
                                 )
                                 subprocess.run(
                                     ["kill", pid],
@@ -735,7 +735,7 @@ class SpotifyAnalyzer:
                 self.cab.log(
                     f"SPOTIFY - Port {redirect_port} is already in use. "
                     "Attempting to kill stale spotify_analytics processes...",
-                    level="warning",
+                    level="info",
                 )
                 killed = self._kill_processes_on_port(redirect_port)
                 if killed:
