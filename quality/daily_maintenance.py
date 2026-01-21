@@ -589,7 +589,7 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                 cab.log(f"Warning: Could not find merge base for {backup_branch}, skipping", level="warning")
                 continue
             
-            # Check if branch is already merged
+            # Check if branch has commits not in main OR has different file contents
             log_result = subprocess.run(
                 ["git", "log", "--oneline", f"{merge_base_result.stdout.strip()}..{backup_branch}"],
                 capture_output=True,
@@ -597,9 +597,23 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                 check=False,
             )
             
-            if not log_result.stdout.strip():
-                cab.log(f"Backup branch {backup_branch} has no new commits, skipping")
+            # Also check if there are file differences between main and backup branch
+            diff_result = subprocess.run(
+                ["git", "diff", "--quiet", "main", backup_branch],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            
+            # Skip only if there are no new commits AND no file differences
+            if not log_result.stdout.strip() and diff_result.returncode == 0:
+                cab.log(f"Backup branch {backup_branch} is already fully merged, skipping")
                 continue
+            
+            if not log_result.stdout.strip() and diff_result.returncode != 0:
+                cab.log(
+                    f"Backup branch {backup_branch} has no new commits but has file differences, merging..."
+                )
             
             # Try to merge with strategy that prefers backup branch content (theirs)
             # This ensures all content from backup branches is included in main
