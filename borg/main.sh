@@ -1,5 +1,15 @@
 #!/bin/sh
 
+# Set up HOME if not already set (cron may not set it)
+# This is needed for $HOME/syncthing and $HOME/.local/bin paths
+if [ -z "$HOME" ]; then
+    export HOME=$(getent passwd $(whoami) 2>/dev/null | cut -d: -f6)
+    # Fallback if getent fails
+    if [ -z "$HOME" ]; then
+        export HOME="/home/$(whoami)"
+    fi
+fi
+
 # Set up PATH to include common binary locations
 # Cron jobs run with minimal PATH, so we need to set it explicitly
 export PATH="/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin:$HOME/bin:$PATH"
