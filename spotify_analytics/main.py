@@ -447,6 +447,53 @@ class SpotifyAnalyzer:
             )
             return False
 
+    def _sync_with_remote(self, path: Path, context: str = "sync") -> None:
+        """Sync local repository with remote, handling divergence by resetting main to origin/main.
+        
+        Args:
+            path: Path to Git repository
+            context: Context string for log messages (e.g., "commit", "prepare")
+        
+        Raises:
+            subprocess.CalledProcessError: If sync fails and we're not on main branch
+        """
+        # Fetch latest changes first
+        subprocess.run(
+            ["git", "-C", str(path), "fetch", "origin"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        
+        # Try fast-forward pull first
+        pull_result = subprocess.run(
+            ["git", "-C", str(path), "pull", "--ff-only"],
+            capture_output=True,
+            text=True,
+        )
+        
+        if pull_result.returncode != 0:
+            # If fast-forward fails (divergent branches), reset to origin/main
+            # This is safe for a backup repository where we want main to match remote
+            current_branch = self._get_git_branch(path)
+            if current_branch == "main":
+                self.cab.log(
+                    f"SPOTIFY - Branches diverged during {context}, resetting main to match origin/main",
+                    level="warn",
+                )
+                subprocess.run(
+                    ["git", "-C", str(path), "reset", "--hard", "origin/main"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                self.cab.log("SPOTIFY - Reset main branch to match origin/main")
+            else:
+                # Not on main, can't safely reset - raise the error
+                raise subprocess.CalledProcessError(
+                    pull_result.returncode, "git pull", pull_result.stderr
+                )
+
     def _git_commit(self, path: Path, message: str, skip_pull: bool = False, skip_push: bool = False):
         """Commit changes in Git repository.
         
@@ -480,12 +527,7 @@ class SpotifyAnalyzer:
                 )
                 if branch_result.returncode == 0:
                     # Branch has upstream, safe to pull
-                    subprocess.run(
-                        ["git", "-C", str(path), "pull"],
-                        capture_output=True,
-                        text=True,
-                        check=True,
-                    )
+                    self._sync_with_remote(path, context="commit")
                 # If no upstream, skip pull (will be set on push with -u)
             if not skip_push:
                 subprocess.run(
@@ -594,35 +636,9 @@ class SpotifyAnalyzer:
                 text=True,
                 check=True,
             )
-            # Fetch latest changes first
-            subprocess.run(
-                ["git", "-C", str(self.log_backup_path), "fetch", "origin"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            # Try fast-forward pull first
-            pull_result = subprocess.run(
-                ["git", "-C", str(self.log_backup_path), "pull", "--ff-only"],
-                capture_output=True,
-                text=True,
-            )
-            if pull_result.returncode != 0:
-                # If fast-forward fails (divergent branches), reset to origin/main
-                # This is safe for a backup repository where we want main to match remote
-                self.cab.log(
-                    "SPOTIFY - Branches diverged, resetting main to match origin/main",
-                    level="warn",
-                )
-                subprocess.run(
-                    ["git", "-C", str(self.log_backup_path), "reset", "--hard", "origin/main"],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                )
-                self.cab.log("SPOTIFY - Reset main branch to match origin/main")
-            else:
-                self.cab.log("SPOTIFY - Checked out main branch and pulled latest changes")
+            # Sync with remote (handles divergence automatically)
+            self._sync_with_remote(self.log_backup_path, context="prepare")
+            self.cab.log("SPOTIFY - Checked out main branch and pulled latest changes")
         except subprocess.CalledProcessError as e:
             self.cab.log(
                 f"SPOTIFY - Failed to checkout/pull main branch: {e.stderr}",
