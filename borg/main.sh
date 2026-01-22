@@ -325,10 +325,19 @@ if [ ${global_exit} -eq 0 ]; then
             esac
             
             # Format for rsync: user@host:path
-            # Don't add leading / if path starts with ~ (home directory)
+            # Expand ~ to full home directory path (rsync doesn't expand ~ on remote)
             case "$PATH_PART" in
                 ~*)
-                    RSYNC_DEST="${HOST_PART}:${PATH_PART}"
+                    # Extract username from HOST_PART (format: user@host or just host)
+                    if [ "${HOST_PART#*@}" != "$HOST_PART" ]; then
+                        REMOTE_USER="${HOST_PART%%@*}"
+                    else
+                        # If no user specified, default to current user or extract from SSH config
+                        REMOTE_USER="tyler"
+                    fi
+                    # Replace ~ with /home/username using sed
+                    EXPANDED_PATH=$(echo "$PATH_PART" | sed "s|^~|/home/${REMOTE_USER}|")
+                    RSYNC_DEST="${HOST_PART}:${EXPANDED_PATH}"
                     ;;
                 *)
                     RSYNC_DEST="${HOST_PART}:/${PATH_PART}"
