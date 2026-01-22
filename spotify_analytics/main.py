@@ -5,6 +5,7 @@ Requires spotipy library and appropriate Spotify API credentials.
 """
 
 import os
+import sys
 import errno
 import atexit
 import time
@@ -593,13 +594,35 @@ class SpotifyAnalyzer:
                 text=True,
                 check=True,
             )
+            # Fetch latest changes first
             subprocess.run(
-                ["git", "-C", str(self.log_backup_path), "pull"],
+                ["git", "-C", str(self.log_backup_path), "fetch", "origin"],
                 capture_output=True,
                 text=True,
                 check=True,
             )
-            self.cab.log("SPOTIFY - Checked out main branch and pulled latest changes")
+            # Try fast-forward pull first
+            pull_result = subprocess.run(
+                ["git", "-C", str(self.log_backup_path), "pull", "--ff-only"],
+                capture_output=True,
+                text=True,
+            )
+            if pull_result.returncode != 0:
+                # If fast-forward fails (divergent branches), reset to origin/main
+                # This is safe for a backup repository where we want main to match remote
+                self.cab.log(
+                    "SPOTIFY - Branches diverged, resetting main to match origin/main",
+                    level="warn",
+                )
+                subprocess.run(
+                    ["git", "-C", str(self.log_backup_path), "reset", "--hard", "origin/main"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                self.cab.log("SPOTIFY - Reset main branch to match origin/main")
+            else:
+                self.cab.log("SPOTIFY - Checked out main branch and pulled latest changes")
         except subprocess.CalledProcessError as e:
             self.cab.log(
                 f"SPOTIFY - Failed to checkout/pull main branch: {e.stderr}",
@@ -722,8 +745,11 @@ class SpotifyAnalyzer:
             self._oauth_port = redirect_port
 
             # Use cache file based on username (spotipy convention)
+            # Use absolute path so it works in cron jobs (which run from different working directory)
             # This matches create_playlist_by_year.py so they share the same OAuth token
-            cache_path = f".cache-{username}"
+            # Store cache in script directory for consistency
+            script_dir = Path(__file__).parent.absolute()
+            cache_path = str(script_dir / f".cache-{username}")
             cache_file = Path(cache_path)
 
             # Check if cache file exists and appears valid
@@ -822,30 +848,34 @@ class SpotifyAnalyzer:
         return match.group(1) if match else None
 
     def update_last_25_added_playlist(self):
-        """Update the 'Last 25 Added' playlist with the 25 most recently added tracks."""
+        """Update the 'Last 25 Added' playlist with the 25 most recently added tracks.
+        
+        Returns:
+            bool: True if playlist was successfully updated, False otherwise.
+        """
         if not self.main_tracks:
             self.cab.log(
                 "SPOTIFY - No tracks available to update Last 25 Added playlist",
-                level="warning",
+                level="error",
             )
-            return
+            return False
 
         # Get playlist configuration (uses cached value if available)
         playlists = self._get_playlists()
         if not playlists or len(playlists) < 2:
             self.cab.log(
-                "SPOTIFY - Last 25 Added playlist not configured", level="warning"
+                "SPOTIFY - Last 25 Added playlist not configured", level="error"
             )
-            return
+            return False
 
         # Get playlist[1] which should be the "Last 25 Added" playlist
         parsed = self._parse_playlist_config(playlists[1])
         if not parsed:
             self.cab.log(
                 "SPOTIFY - Invalid playlist configuration for Last 25 Added",
-                level="warning",
+                level="error",
             )
-            return
+            return False
 
         playlist_id, playlist_name = parsed
         self.cab.log(
@@ -869,9 +899,9 @@ class SpotifyAnalyzer:
 
         if not tracks_with_added_at:
             self.cab.log(
-                "SPOTIFY - No tracks with added_at timestamps found", level="warning"
+                "SPOTIFY - No tracks with added_at timestamps found", level="error"
             )
-            return
+            return False
 
         # Sort by added_at (most recent first) - parse ISO 8601 timestamps
         def parse_timestamp(timestamp_str: str) -> datetime.datetime:
@@ -911,7 +941,7 @@ class SpotifyAnalyzer:
                 "SPOTIFY - No valid track IDs found for Last 25 Added playlist",
                 level="error",
             )
-            return
+            return False
 
         self.cab.log(
             f"SPOTIFY - Found {len(track_ids)} tracks to add to '{playlist_name}'"
@@ -927,6 +957,7 @@ class SpotifyAnalyzer:
             self.cab.log(
                 f"SPOTIFY - Successfully updated '{playlist_name}' with {len(track_ids)} tracks"
             )
+            return True
 
         except Exception as e:
             self.cab.log(
@@ -989,6 +1020,7 @@ def main():
     analyzer = SpotifyAnalyzer(cab)
 
     try:
+        playlist_update_success = False
         if args.update_last_25_only:
             # Only update the playlist, skip all processing
             cab.log("SPOTIFY - Running in update-last-25-only mode")
@@ -999,7 +1031,14 @@ def main():
             )  # pylint: disable=protected-access
 
             # Update the playlist
-            analyzer.update_last_25_added_playlist()
+            playlist_update_success = analyzer.update_last_25_added_playlist()
+            
+            if not playlist_update_success:
+                cab.log(
+                    "SPOTIFY - Playlist update failed in update-last-25-only mode",
+                    level="error",
+                )
+                sys.exit(1)
         else:
             # Full processing mode
             # Prepare Git repository before starting
@@ -1010,12 +1049,19 @@ def main():
             analyzer.validate_playlists()
 
             # Update the "Last 25 Added" playlist with most recently added tracks
-            analyzer.update_last_25_added_playlist()
+            playlist_update_success = analyzer.update_last_25_added_playlist()
+            
+            if not playlist_update_success:
+                cab.log(
+                    "SPOTIFY - Playlist update failed, but continuing with commit",
+                    level="error",
+                )
 
             # Commit updated data after validation
             analyzer.commit_updated_data()
     except Exception as e:
         logging.error("Analysis failed: %s", str(e))
+        cab.log(f"SPOTIFY - Analysis failed: {str(e)}", level="error")
         raise
 
 

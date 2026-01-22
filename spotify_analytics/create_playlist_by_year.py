@@ -92,7 +92,9 @@ def initialize_spotify_client(cab: Cabinet) -> spotipy.Spotify:
     scope = "playlist-modify-public playlist-modify-private"
 
     # Use cache file based on username (spotipy convention)
-    cache_path = f".cache-{username}"
+    # Use absolute path so it works consistently and shares token with main.py
+    script_dir = Path(__file__).parent.absolute()
+    cache_path = str(script_dir / f".cache-{username}")
 
     # Create auth manager
     auth_manager = SpotifyOAuth(
@@ -192,7 +194,8 @@ def main():
     # Check for and potentially clear old cache files with wrong redirect URI
     username = cab.get("spotipy", "username")
     if username:
-        cache_path = f".cache-{username}"
+        script_dir = Path(__file__).parent.absolute()
+        cache_path = str(script_dir / f".cache-{username}")
         if os.path.exists(cache_path):
             print(f"Found existing cache file: {cache_path}")
             msg = (
@@ -265,7 +268,8 @@ def main():
             print("\nIf you still get errors after updating:")
             username = cab.get("spotipy", "username")
             if username:
-                cache_path = f".cache-{username}"
+                script_dir = Path(__file__).parent.absolute()
+                cache_path = str(script_dir / f".cache-{username}")
                 print(f"- Delete the cache file: {cache_path}")
             print("- Wait a few minutes for changes to propagate")
             print("- Then run this script again")
