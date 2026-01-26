@@ -129,22 +129,50 @@ class SpotifyAnalyzer:
         playlist_id, playlist_name = playlist_config.split(",", 1)
         return (playlist_id.strip(), playlist_name.strip())
 
-    def _get_playlist(self, playlist_id: str) -> Optional[Dict]:
-        """Fetch playlist data from Spotify."""
-        max_retries = 3
+    def _retry_api_call(self, api_func, max_retries=3, base_delay=1, operation_name="API call"):
+        """Retry an API call with exponential backoff.
+        
+        Args:
+            api_func: Callable that performs the API call
+            max_retries: Maximum number of retry attempts (default: 3)
+            base_delay: Base delay in seconds for exponential backoff (default: 1)
+            operation_name: Name of the operation for logging (default: "API call")
+            
+        Returns:
+            Result of the API call
+            
+        Raises:
+            Exception: The last exception if all retries fail
+        """
         for attempt in range(max_retries):
             try:
-                return self.spotify_client.playlist(playlist_id)
+                return api_func()
             except Exception as e:  # pylint: disable=broad-except
-                self.cab.log(
-                    f"SPOTIFY - Attempt {attempt + 1} failed: {str(e)}", level="warning"
-                )
-                if attempt == max_retries - 1:
+                error_str = str(e)
+                
+                if attempt < max_retries - 1:
+                    # Calculate exponential backoff delay
+                    delay = base_delay * (2 ** attempt)
                     self.cab.log(
-                        f"SPOTIFY - Failed to fetch playlist {playlist_id} after 3 attempts",
-                        level="error",
+                        f"SPOTIFY - {operation_name} attempt {attempt + 1}/{max_retries} failed: {error_str}. "
+                        f"Retrying in {delay}s...",
+                        level="warning"
+                    )
+                    time.sleep(delay)
+                else:
+                    # Last attempt failed
+                    self.cab.log(
+                        f"SPOTIFY - {operation_name} failed after {max_retries} attempts: {error_str}",
+                        level="error"
                     )
                     raise
+
+    def _get_playlist(self, playlist_id: str) -> Optional[Dict]:
+        """Fetch playlist data from Spotify."""
+        return self._retry_api_call(
+            lambda: self.spotify_client.playlist(playlist_id),
+            operation_name=f"Fetch playlist {playlist_id}"
+        )
 
     def _check_duplicates(self, tracks: List[str], playlist_name: str):
         """Check for duplicate tracks within a playlist."""
@@ -248,7 +276,10 @@ class SpotifyAnalyzer:
                 )
                 if not tracks["next"]:
                     break
-                tracks = self.spotify_client.next(tracks)
+                tracks = self._retry_api_call(
+                    lambda: self.spotify_client.next(tracks),
+                    operation_name=f"Fetch next page for playlist {playlist_name}"
+                )
 
             # Check for duplicates in the playlist
             self._check_duplicates(playlist_tracks, playlist_name)
@@ -967,8 +998,11 @@ class SpotifyAnalyzer:
         try:
             oauth_client = self._initialize_oauth_client()
 
-            # Replace all items in the playlist with the new tracks
-            oauth_client.playlist_replace_items(playlist_id, track_ids)
+            # Replace all items in the playlist with the new tracks (with retry logic)
+            self._retry_api_call(
+                lambda: oauth_client.playlist_replace_items(playlist_id, track_ids),
+                operation_name=f"Update playlist '{playlist_name}'"
+            )
 
             self.cab.log(
                 f"SPOTIFY - Successfully updated '{playlist_name}' with {len(track_ids)} tracks"
@@ -982,6 +1016,7 @@ class SpotifyAnalyzer:
             )
             # Don't raise - allow script to continue even if playlist update fails
             self.cab.log("SPOTIFY - Continuing with remaining operations", level="info")
+            return False
 
     def commit_updated_data(self):
         """Commit the updated spotify songs.json file."""
