@@ -26,6 +26,7 @@ import re
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth
 from cabinet import Cabinet
+from tyler_python_helpers import ChatGPT
 
 
 @dataclass
@@ -38,10 +39,15 @@ class Track:
     release_date: str
     spotify_url: str
     added_at: Optional[str] = None
+    genre: Optional[str] = None
 
     @classmethod
     def from_spotify_track(
-        cls, index: int, track: Dict, added_at: Optional[str] = None
+        cls,
+        index: int,
+        track: Dict,
+        added_at: Optional[str] = None,
+        genre: Optional[str] = None,
     ) -> "Track":
         """Create a Track instance from Spotify API track data."""
         return cls(
@@ -53,6 +59,7 @@ class Track:
                 track["external_urls"]["spotify"] if not track["is_local"] else ""
             ),
             added_at=added_at,
+            genre=genre,
         )
 
 
@@ -62,10 +69,24 @@ class PlaylistData:
 
     name: str
     tracks: List[str]  # List of Spotify URLs
+    playlist_id: Optional[str] = None  # Spotify playlist ID for modifications
 
 
 class SpotifyAnalyzer:
     """Handles Spotify playlist analysis and backup."""
+
+    VALID_GENRES = [
+        "Chill and Lofi",
+        "Hip-Hop and Rap",
+        "Party and EDM",
+        "Pop",
+        "R&B",
+        "Rock",
+    ]
+
+    # Batch size for ChatGPT genre classification
+    # Smaller batches reduce token usage and improve reliability
+    GENRE_BATCH_SIZE = 40
 
     def __init__(self, cabinet: Cabinet):
         self.cab = cabinet
@@ -79,6 +100,11 @@ class SpotifyAnalyzer:
         self._playlists_cache: Optional[List[str]] = None
         self._oauth_client: Optional[spotipy.Spotify] = None
         self._oauth_port: Optional[int] = None
+        self._chatgpt: Optional[ChatGPT] = None
+        self._genre_cache: Dict[str, str] = {}  # Cache spotify_url -> genre
+        self._pending_classifications: List[Tuple[Track, str]] = (
+            []
+        )  # Tracks needing classification
 
         # Register cleanup function to run on exit
         atexit.register(self._cleanup_oauth_port)
@@ -88,6 +114,290 @@ class SpotifyAnalyzer:
         logger = logging.getLogger("spotify_analyzer")
         logger.setLevel(logging.INFO)
         return logger
+
+    def _initialize_chatgpt(self) -> ChatGPT:
+        """Initialize ChatGPT client for genre classification."""
+        if self._chatgpt is None:
+            self._chatgpt = ChatGPT()
+        return self._chatgpt
+
+    def _classify_genre(self, artist: str, song_name: str) -> str:
+        """Classify a song's genre using ChatGPT with rate limit handling.
+
+        Args:
+            artist: Artist name
+            song_name: Song name
+
+        Returns:
+            One of the valid genre options or "Error"
+        """
+        genres_list = "\n".join(f"- {genre}" for genre in self.VALID_GENRES)
+        prompt = f"""
+Select exactly one label from the following enum.
+The output must be one of these exact strings or the response is invalid:
+
+{genres_list}
+---
+IMPORTANT DEFINITIONS:
+- "Party and EDM" means electronic dance music intended for DJ club play
+  (e.g., house, techno, trance, dubstep).
+  It must be primarily electronic, beat-driven, and suitable for a dance club.
+  DO NOT use this genre for hip-hop, rap, pop, rock, R&B, comedy, acoustic,
+  or band-based songs, even if they are upbeat or popular.
+- "Chill and Lofi" means songs that are slow, mellow, and relaxing, often with a focus on instrumental or acoustic elements.
+  It must be primarily acoustic, instrumental, or have a slow, relaxed tempo.
+  DO NOT use this genre for hip-hop, rap, pop, rock, R&B, comedy, electronic, or band-based songs, even if they are slow or mellow.
+
+Song: "{song_name}" by {artist}
+
+Respond with ONLY the genre name, nothing else.
+You must choose one of the options above.
+If the song’s true genre is not listed, choose the closest available genre from the list.
+"""
+
+        return self._retry_chatgpt_classification(
+            lambda: self._execute_chatgpt_query(prompt), song_name, artist
+        )
+
+    def _classify_genres_batch(self, songs: List[Tuple[str, str]]) -> List[str]:
+        """Classify multiple songs' genres in a single ChatGPT query.
+
+        Args:
+            songs: List of (artist, song_name) tuples
+
+        Returns:
+            List of genres corresponding to each song, or "Error" for failed classifications
+        """
+        if not songs:
+            return []
+
+        genres_list = "\n".join(f"- {genre}" for genre in self.VALID_GENRES)
+        songs_list = "\n".join(
+            f'{i+1}. "{song_name}" by {artist}'
+            for i, (artist, song_name) in enumerate(songs)
+        )
+
+        prompt = f"""Classify the following songs into exactly one of these genres:
+{genres_list}
+
+Songs:
+{songs_list}
+
+Respond with a JSON array of genres, one for each song in the same order. Each genre must be exactly one of the options above. Example: ["Pop", "Rock", "Hip-Hop and Rap"]"""
+
+        # Retry logic for batch classification
+        max_retries = 3
+        base_delay = 2
+        for attempt in range(max_retries):
+            try:
+                response = self._execute_chatgpt_query(prompt)
+
+                # Try to parse as JSON array
+                try:
+                    # Extract JSON array from response (handle markdown code blocks)
+                    response_clean = response.strip()
+                    if response_clean.startswith("```"):
+                        # Remove markdown code blocks
+                        lines = response_clean.split("\n")
+                        response_clean = (
+                            "\n".join(lines[1:-1]) if len(lines) > 2 else response_clean
+                        )
+                    elif response_clean.startswith("```json"):
+                        lines = response_clean.split("\n")
+                        response_clean = (
+                            "\n".join(lines[1:-1]) if len(lines) > 2 else response_clean
+                        )
+
+                    genres = json.loads(response_clean)
+                    if not isinstance(genres, list):
+                        raise ValueError(
+                            f"Expected list of genres, got {type(genres).__name__}"
+                        )
+
+                    # Validate we got the correct number of genres
+                    # If we got fewer, we can't be sure they align correctly, so retry the batch
+                    if len(genres) < len(songs):
+                        raise ValueError(
+                            f"Got {len(genres)} genres instead of {len(songs)}. "
+                            "Cannot guarantee alignment - retrying batch."
+                        )
+                    elif len(genres) > len(songs):
+                        self.cab.log(
+                            f"SPOTIFY - ChatGPT returned {len(genres)} genres instead of {len(songs)}. Truncating to expected length",
+                            level="warning",
+                        )
+                        genres = genres[: len(songs)]
+
+                    # Validate each genre
+                    validated_genres = []
+                    for i, genre in enumerate(genres):
+                        artist, song_name = songs[i]
+                        validated = self._validate_genre_response(str(genre), song_name=song_name, artist=artist)
+                        validated_genres.append(validated)
+                        if validated == "Error":
+                            self.cab.log(
+                                f"SPOTIFY - Batch classification failed for song {i+1}: '{song_name}' by {artist}",
+                                level="warning",
+                            )
+                    return validated_genres
+                except (json.JSONDecodeError, ValueError, TypeError) as e:
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2**attempt)
+                        self.cab.log(
+                            f"SPOTIFY - Failed to parse batch classification response (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {delay}s...",
+                            level="warning",
+                        )
+                        time.sleep(delay)
+                        continue
+                    else:
+                        self.cab.log(
+                            f"SPOTIFY - Failed to parse batch classification response after {max_retries} attempts: {e}. Response: {response}",
+                            level="error",
+                        )
+                        # Fallback to individual classification
+                        return ["Error"] * len(songs)
+            except Exception as e:  # pylint: disable=broad-except
+                error_str = str(e)
+                is_rate_limit = (
+                    "429" in error_str
+                    or "rate limit" in error_str.lower()
+                    or "too many requests" in error_str.lower()
+                )
+
+                if attempt < max_retries - 1:
+                    # Calculate exponential backoff delay
+                    if is_rate_limit:
+                        delay = (
+                            base_delay * (2**attempt) * 2
+                        )  # Longer delay for rate limits
+                        self.cab.log(
+                            f"SPOTIFY - Rate limit hit during batch classification. "
+                            f"Retrying in {delay}s... (attempt {attempt + 1}/{max_retries})",
+                            level="warning",
+                        )
+                    else:
+                        delay = base_delay * (2**attempt)
+                        self.cab.log(
+                            f"SPOTIFY - Batch classification failed: {error_str}. "
+                            f"Retrying in {delay}s... (attempt {attempt + 1}/{max_retries})",
+                            level="warning",
+                        )
+                    time.sleep(delay)
+                else:
+                    self.cab.log(
+                        f"SPOTIFY - Batch classification failed after {max_retries} attempts: {error_str}",
+                        level="error",
+                    )
+                    return ["Error"] * len(songs)
+
+        return ["Error"] * len(songs)
+
+    def _execute_chatgpt_query(self, prompt: str) -> str:
+        """Execute a ChatGPT query and return the response."""
+        chatgpt = self._initialize_chatgpt()
+        return chatgpt.query(prompt).strip()
+
+    def _validate_genre_response(self, response: str, song_name: Optional[str] = None, artist: Optional[str] = None) -> str:
+        """Validate and normalize a genre response from ChatGPT.
+
+        Args:
+            response: Raw response from ChatGPT
+            song_name: Optional song name for logging
+            artist: Optional artist name for logging
+
+        Returns:
+            Validated genre string or "Error"
+        """
+        response = response.strip().strip('"').strip("'")
+
+        # Validate response matches one of the valid genres
+        for genre in self.VALID_GENRES:
+            if genre.lower() == response.lower():
+                return genre
+
+        # If response doesn't match exactly, try to find closest match
+        response_lower = response.lower()
+        for genre in self.VALID_GENRES:
+            if genre.lower() in response_lower or response_lower in genre.lower():
+                self.cab.log(
+                    f"SPOTIFY - ChatGPT returned '{response}', mapped to '{genre}'",
+                    level="debug",
+                )
+                return genre
+
+        # Default fallback - return "Error" to indicate classification failure
+        track_info = ""
+        if song_name and artist:
+            track_info = f" for '{song_name}' by {artist}"
+        elif song_name:
+            track_info = f" for '{song_name}'"
+        self.cab.log(
+            f"SPOTIFY - ChatGPT returned unexpected genre '{response}', cannot classify{track_info}",
+            level="warning",
+        )
+        return "Error"
+
+    def _retry_chatgpt_classification(
+        self,
+        query_func,
+        song_name: str,
+        artist: str,
+        max_retries: int = 3,
+        base_delay: int = 2,
+    ) -> str:
+        """Retry ChatGPT classification with exponential backoff and rate limit handling.
+
+        Args:
+            query_func: Callable that executes the ChatGPT query
+            song_name: Song name for logging
+            artist: Artist name for logging
+            max_retries: Maximum number of retry attempts
+            base_delay: Base delay in seconds for exponential backoff
+
+        Returns:
+            Classified genre or "Error"
+        """
+        for attempt in range(max_retries):
+            try:
+                response = query_func()
+                return self._validate_genre_response(response, song_name=song_name, artist=artist)
+            except Exception as e:  # pylint: disable=broad-except
+                error_str = str(e)
+                is_rate_limit = (
+                    "429" in error_str
+                    or "rate limit" in error_str.lower()
+                    or "too many requests" in error_str.lower()
+                )
+
+                if attempt < max_retries - 1:
+                    # Calculate exponential backoff delay
+                    # For rate limits, use longer delays
+                    if is_rate_limit:
+                        delay = (
+                            base_delay * (2**attempt) * 2
+                        )  # Longer delay for rate limits
+                        self.cab.log(
+                            f"SPOTIFY - Rate limit hit for '{song_name}' by {artist}. "
+                            f"Retrying in {delay}s... (attempt {attempt + 1}/{max_retries})",
+                            level="warning",
+                        )
+                    else:
+                        delay = base_delay * (2**attempt)
+                        self.cab.log(
+                            f"SPOTIFY - Classification failed for '{song_name}' by {artist}: {error_str}. "
+                            f"Retrying in {delay}s... (attempt {attempt + 1}/{max_retries})",
+                            level="warning",
+                        )
+                    time.sleep(delay)
+                else:
+                    # Last attempt failed
+                    self.cab.log(
+                        f"SPOTIFY - Failed to classify genre for '{song_name}' by {artist} after {max_retries} attempts: {error_str}",
+                        level="error",
+                    )
+                    return "Error"
+
+        return "Error"
 
     def _initialize_spotify_client(self) -> spotipy.Spotify:
         """Initialize and return Spotify client with proper credentials."""
@@ -129,18 +439,20 @@ class SpotifyAnalyzer:
         playlist_id, playlist_name = playlist_config.split(",", 1)
         return (playlist_id.strip(), playlist_name.strip())
 
-    def _retry_api_call(self, api_func, max_retries=3, base_delay=1, operation_name="API call"):
+    def _retry_api_call(
+        self, api_func, max_retries=3, base_delay=1, operation_name="API call"
+    ):
         """Retry an API call with exponential backoff.
-        
+
         Args:
             api_func: Callable that performs the API call
             max_retries: Maximum number of retry attempts (default: 3)
             base_delay: Base delay in seconds for exponential backoff (default: 1)
             operation_name: Name of the operation for logging (default: "API call")
-            
+
         Returns:
             Result of the API call
-            
+
         Raises:
             Exception: The last exception if all retries fail
         """
@@ -149,21 +461,21 @@ class SpotifyAnalyzer:
                 return api_func()
             except Exception as e:  # pylint: disable=broad-except
                 error_str = str(e)
-                
+
                 if attempt < max_retries - 1:
                     # Calculate exponential backoff delay
-                    delay = base_delay * (2 ** attempt)
+                    delay = base_delay * (2**attempt)
                     self.cab.log(
                         f"SPOTIFY - {operation_name} attempt {attempt + 1}/{max_retries} failed: {error_str}. "
                         f"Retrying in {delay}s...",
-                        level="warning"
+                        level="warning",
                     )
                     time.sleep(delay)
                 else:
                     # Last attempt failed
                     self.cab.log(
                         f"SPOTIFY - {operation_name} failed after {max_retries} attempts: {error_str}",
-                        level="error"
+                        level="error",
                     )
                     raise
 
@@ -171,27 +483,89 @@ class SpotifyAnalyzer:
         """Fetch playlist data from Spotify."""
         return self._retry_api_call(
             lambda: self.spotify_client.playlist(playlist_id),
-            operation_name=f"Fetch playlist {playlist_id}"
+            operation_name=f"Fetch playlist {playlist_id}",
         )
 
-    def _check_duplicates(self, tracks: List[str], playlist_name: str):
-        """Check for duplicate tracks within a playlist."""
-        track_counts = Counter(tracks)
+    def _check_duplicates(self, tracks: List[str], playlist_name: str, playlist_id: str):
+        """Check for duplicate tracks within a playlist and automatically remove them.
+        
+        Keeps one occurrence of each duplicate track and removes the rest.
+        Only warns if removal fails.
+        
+        Args:
+            tracks: List of track URLs
+            playlist_name: Name of the playlist for logging
+            playlist_id: Spotify playlist ID for removal operations
+        """
+        # Extract track IDs from URLs for reliable duplicate detection
+        track_ids = []
+        url_to_id_map = {}  # Map track_id -> first URL seen (for logging)
+        for url in tracks:
+            track_id = self._extract_track_id(url)
+            if track_id:
+                track_ids.append(track_id)
+                if track_id not in url_to_id_map:
+                    url_to_id_map[track_id] = url
+            else:
+                # If we can't extract track ID, fall back to URL-based detection
+                track_ids.append(url)
+                if url not in url_to_id_map:
+                    url_to_id_map[url] = url
+        
+        track_counts = Counter(track_ids)
         duplicates = {
-            track: count for track, count in track_counts.items() if count > 1
+            track_id: count for track_id, count in track_counts.items() if count > 1
         }
 
         if duplicates:
-            for track, count in duplicates.items():
+            oauth_client = None
+            try:
+                oauth_client = self._initialize_oauth_client()
+            except Exception as e:
                 self.cab.log(
-                    f"SPOTIFY - Duplicate found in {playlist_name}: {track} appears {count} times",
+                    f"SPOTIFY - Failed to initialize OAuth client for duplicate removal in {playlist_name}: {str(e)}",
                     level="warning",
                 )
+                # Fall back to just logging duplicates if OAuth fails
+                for track_id, count in duplicates.items():
+                    url = url_to_id_map.get(track_id, track_id)
+                    self.cab.log(
+                        f"SPOTIFY - Duplicate found in {playlist_name}: {url} appears {count} times (removal failed)",
+                        level="warning",
+                    )
+                return
+            
+            for track_id, count in duplicates.items():
+                url = url_to_id_map.get(track_id, track_id)
+                # Remove all occurrences of the duplicate track
+                try:
+                    self._retry_api_call(
+                        lambda: oauth_client.playlist_remove_all_occurrences_of_items(playlist_id, [track_id]),
+                        operation_name=f"Remove duplicate track from '{playlist_name}'",
+                    )
+                    # Add back one occurrence
+                    self._retry_api_call(
+                        lambda: oauth_client.playlist_add_items(playlist_id, [track_id]),
+                        operation_name=f"Re-add track to '{playlist_name}'",
+                    )
+                    self.cab.log(
+                        f"SPOTIFY - Removed {count - 1} duplicate(s) of {url} from {playlist_name}",
+                        level="info",
+                    )
+                except Exception as e:
+                    self.cab.log(
+                        f"SPOTIFY - Failed to remove duplicate {url} from {playlist_name}: {str(e)}",
+                        level="warning",
+                    )
 
     def _process_tracks(
         self, tracks: Dict, playlist_name: str, playlist_index: int, total_tracks: int
     ) -> List[str]:
-        """Process tracks from a playlist and return track URLs."""
+        """Process tracks from a playlist and return track URLs.
+
+        Note: Classification is deferred to allow batching across all pages.
+        Tracks needing classification are collected in self._pending_classifications.
+        """
         track_urls = []
 
         for _, item in enumerate(tracks["items"]):
@@ -204,10 +578,28 @@ class SpotifyAnalyzer:
 
             if playlist_index == 0:  # Main playlist
                 added_at = item.get("added_at")
+                spotify_url = (
+                    track["external_urls"]["spotify"] if not track["is_local"] else ""
+                )
+
+                # Check if genre is cached
+                genre = self._genre_cache.get(spotify_url) if spotify_url else None
+
+                # Create track object
+                if not spotify_url:
+                    # Local file, default to Pop
+                    genre = "Pop"
+
                 track_obj = Track.from_spotify_track(
-                    len(self.main_tracks) + 1, track, added_at
+                    len(self.main_tracks) + 1, track, added_at, genre=genre
                 )
                 self.main_tracks.append(track_obj)
+
+                # If not cached, collect for batch processing after all pages are processed
+                if not genre and spotify_url:
+                    if not hasattr(self, "_pending_classifications"):
+                        self._pending_classifications = []
+                    self._pending_classifications.append((track_obj, spotify_url))
 
                 if track["album"]["release_date"]:
                     try:
@@ -225,6 +617,66 @@ class SpotifyAnalyzer:
 
         return track_urls
 
+    def _process_pending_classifications(self):
+        """Process all tracks that need classification, using batching when possible.
+
+        Chunks large batches into smaller groups to avoid token limits.
+        """
+        if (
+            not hasattr(self, "_pending_classifications")
+            or not self._pending_classifications
+        ):
+            return
+
+        tracks_needing_classification = self._pending_classifications
+        self._pending_classifications = []  # Clear the list
+
+        if len(tracks_needing_classification) >= 10:
+            # Process in chunks
+            total_tracks = len(tracks_needing_classification)
+            self.cab.log(
+                f"SPOTIFY - Processing {total_tracks} songs in batches of {self.GENRE_BATCH_SIZE}",
+                level="info",
+            )
+
+            for batch_start in range(0, total_tracks, self.GENRE_BATCH_SIZE):
+                batch_end = min(batch_start + self.GENRE_BATCH_SIZE, total_tracks)
+                batch = tracks_needing_classification[batch_start:batch_end]
+
+                songs = [(t.artist, t.name) for t, _ in batch]
+                self.cab.log(
+                    f"SPOTIFY - Batch classifying songs {batch_start + 1}-{batch_end} of {total_tracks}",
+                    level="info",
+                )
+                genres = self._classify_genres_batch(songs)
+
+                # Update tracks and cache
+                for i, (track_obj, spotify_url) in enumerate(batch):
+                    genre = genres[i] if i < len(genres) else "Error"
+                    self._genre_cache[spotify_url] = genre
+                    track_obj.genre = genre
+                    self.cab.log(
+                        f"SPOTIFY - Classified '{track_obj.name}' by {track_obj.artist} as '{genre}'",
+                        level="info",
+                    )
+
+                # Small delay between batches to avoid rate limits
+                if batch_end < total_tracks:
+                    time.sleep(1)
+        else:
+            # Individual classification with small delay to avoid rate limits
+            for track_obj, spotify_url in tracks_needing_classification:
+                genre = self._classify_genre(track_obj.artist, track_obj.name)
+                self._genre_cache[spotify_url] = genre
+                track_obj.genre = genre
+                self.cab.log(
+                    f"SPOTIFY - Classified '{track_obj.name}' by {track_obj.artist} as '{genre}'",
+                    level="info",
+                )
+                # Small delay between individual requests to avoid rate limits
+                if len(tracks_needing_classification) > 1:
+                    time.sleep(0.2)
+
     def spotify_log(self, message, level="info", log_folder_path=None, log_name=None):
         """
         Wrapper function for cab.log that uses cabinet path structure for Spotify logs.
@@ -239,8 +691,179 @@ class SpotifyAnalyzer:
             message, level=level, log_folder_path=log_folder_path, log_name=log_name
         )
 
+    def _validate_and_retry_genres(self):
+        """Validate that all tracks have valid genres and retry classification for missing ones."""
+        tracks_missing_genre = []
+        tracks_invalid_genre = []
+
+        for track in self.main_tracks:
+            if not track.genre:
+                tracks_missing_genre.append(track)
+            elif track.genre not in self.VALID_GENRES:
+                tracks_invalid_genre.append(track)
+
+        # Process missing genres
+        if tracks_missing_genre:
+            self.cab.log(
+                f"SPOTIFY - Found {len(tracks_missing_genre)} tracks missing genre, retrying classification",
+                level="info",
+            )
+
+            # Separate tracks with URLs (can be classified) from local files
+            tracks_to_classify = [t for t in tracks_missing_genre if t.spotify_url]
+            local_files = [t for t in tracks_missing_genre if not t.spotify_url]
+
+            # Handle local files
+            for track in local_files:
+                track.genre = "Pop"
+                self.cab.log(
+                    f"SPOTIFY - Local file '{track.name}' by {track.artist} defaulted to 'Pop'",
+                    level="debug",
+                )
+
+            # Classify tracks with URLs
+            if tracks_to_classify:
+                # Check cache first
+                tracks_needing_api_call = []
+                for track in tracks_to_classify:
+                    genre = self._genre_cache.get(track.spotify_url)
+                    if genre:
+                        track.genre = genre
+                        self.cab.log(
+                            f"SPOTIFY - Found cached genre for '{track.name}' by {track.artist}: '{genre}'",
+                            level="debug",
+                        )
+                    else:
+                        tracks_needing_api_call.append(track)
+
+                # Batch or individual classification (chunked to avoid token limits)
+                if len(tracks_needing_api_call) >= 10:
+                    # Process in chunks
+                    total_tracks = len(tracks_needing_api_call)
+                    self.cab.log(
+                        f"SPOTIFY - Batch classifying {total_tracks} tracks missing genres in batches of {self.GENRE_BATCH_SIZE}",
+                        level="info",
+                    )
+
+                    for batch_start in range(0, total_tracks, self.GENRE_BATCH_SIZE):
+                        batch_end = min(
+                            batch_start + self.GENRE_BATCH_SIZE, total_tracks
+                        )
+                        batch = tracks_needing_api_call[batch_start:batch_end]
+
+                        songs = [(t.artist, t.name) for t in batch]
+                        self.cab.log(
+                            f"SPOTIFY - Batch classifying tracks {batch_start + 1}-{batch_end} of {total_tracks}",
+                            level="info",
+                        )
+                        genres = self._classify_genres_batch(songs)
+
+                        for i, track in enumerate(batch):
+                            genre = genres[i] if i < len(genres) else "Error"
+                            self._genre_cache[track.spotify_url] = genre
+                            track.genre = genre
+                            self.cab.log(
+                                f"SPOTIFY - Retried classification for '{track.name}' by {track.artist}: '{genre}'",
+                                level="debug",
+                            )
+
+                        # Small delay between batches
+                        if batch_end < total_tracks:
+                            time.sleep(1)
+                else:
+                    # Individual classification
+                    for track in tracks_needing_api_call:
+                        genre = self._classify_genre(track.artist, track.name)
+                        self._genre_cache[track.spotify_url] = genre
+                        track.genre = genre
+                        self.cab.log(
+                            f"SPOTIFY - Retried classification for '{track.name}' by {track.artist}: '{genre}'",
+                            level="debug",
+                        )
+                        if len(tracks_needing_api_call) > 1:
+                            time.sleep(0.2)
+
+        # Process invalid genres
+        if tracks_invalid_genre:
+            self.cab.log(
+                f"SPOTIFY - Found {len(tracks_invalid_genre)} tracks with invalid genres, retrying classification",
+                level="warning",
+            )
+
+            tracks_with_urls = [t for t in tracks_invalid_genre if t.spotify_url]
+            local_files = [t for t in tracks_invalid_genre if not t.spotify_url]
+
+            # Handle local files
+            for track in local_files:
+                track.genre = "Pop"
+
+            # Batch or individual classification for invalid genres (chunked to avoid token limits)
+            if len(tracks_with_urls) >= 10:
+                # Process in chunks
+                total_tracks = len(tracks_with_urls)
+                self.cab.log(
+                    f"SPOTIFY - Batch classifying {total_tracks} tracks with invalid genres in batches of {self.GENRE_BATCH_SIZE}",
+                    level="info",
+                )
+
+                for batch_start in range(0, total_tracks, self.GENRE_BATCH_SIZE):
+                    batch_end = min(batch_start + self.GENRE_BATCH_SIZE, total_tracks)
+                    batch = tracks_with_urls[batch_start:batch_end]
+
+                    songs = [(t.artist, t.name) for t in batch]
+                    self.cab.log(
+                        f"SPOTIFY - Batch classifying tracks {batch_start + 1}-{batch_end} of {total_tracks}",
+                        level="info",
+                    )
+                    genres = self._classify_genres_batch(songs)
+
+                    for i, track in enumerate(batch):
+                        genre = genres[i] if i < len(genres) else "Error"
+                        self._genre_cache[track.spotify_url] = genre
+                        track.genre = genre
+                        self.cab.log(
+                            f"SPOTIFY - Retried classification for '{track.name}' by {track.artist}: '{genre}' (was '{track.genre}')",
+                            level="debug",
+                        )
+
+                    # Small delay between batches
+                    if batch_end < total_tracks:
+                        time.sleep(1)
+            else:
+                # Individual classification
+                for track in tracks_with_urls:
+                    genre = self._classify_genre(track.artist, track.name)
+                    self._genre_cache[track.spotify_url] = genre
+                    track.genre = genre
+                    self.cab.log(
+                        f"SPOTIFY - Retried classification for '{track.name}' by {track.artist}: '{genre}' (was '{track.genre}')",
+                        level="debug",
+                    )
+                    if len(tracks_with_urls) > 1:
+                        time.sleep(0.2)
+
+        # Final validation
+        still_missing = [
+            t
+            for t in self.main_tracks
+            if not t.genre or t.genre not in self.VALID_GENRES
+        ]
+        if still_missing:
+            track_list = ", ".join([f"'{t.name}' by {t.artist}" for t in still_missing[:5]])
+            if len(still_missing) > 5:
+                track_list += f" (and {len(still_missing) - 5} more)"
+            self.cab.log(
+                f"SPOTIFY - Warning: {len(still_missing)} tracks still missing valid genres after retry: {track_list}",
+                level="warning",
+            )
+        else:
+            self.cab.log("SPOTIFY - All tracks have valid genres", level="info")
+
     def analyze_playlists(self):
         """Main method to analyze all configured playlists."""
+        # Load genre cache from existing JSON before processing
+        self._load_genre_cache_from_json()
+
         playlists = self._get_playlists()
         if not playlists or len(playlists) < 2:
             self.cab.log("SPOTIFY - Insufficient playlist configuration", level="error")
@@ -278,15 +901,21 @@ class SpotifyAnalyzer:
                     break
                 tracks = self._retry_api_call(
                     lambda: self.spotify_client.next(tracks),
-                    operation_name=f"Fetch next page for playlist {playlist_name}"
+                    operation_name=f"Fetch next page for playlist {playlist_name}",
                 )
 
-            # Check for duplicates in the playlist
-            self._check_duplicates(playlist_tracks, playlist_name)
+            # Check for duplicates in the playlist and remove them
+            self._check_duplicates(playlist_tracks, playlist_name, playlist_id)
 
             self.playlist_data.append(
-                PlaylistData(name=playlist_name, tracks=playlist_tracks)
+                PlaylistData(name=playlist_name, tracks=playlist_tracks, playlist_id=playlist_id)
             )
+
+        # Process all pending classifications (batch across all pages)
+        self._process_pending_classifications()
+
+        # Validate and retry genres for all tracks
+        self._validate_and_retry_genres()
 
         self._save_data()
         self._update_statistics()
@@ -311,6 +940,50 @@ class SpotifyAnalyzer:
             json.dump(track_data, f, indent=2, ensure_ascii=False)
 
         self.cab.log(f"SPOTIFY - Saved track data to {output_file}")
+
+    def _load_genre_cache_from_json(self, json_file: Optional[Path] = None) -> None:
+        """Load genre cache from existing JSON file.
+
+        Args:
+            json_file: Path to JSON file. If None, uses default location.
+        """
+        if json_file is None:
+            if self.log_backup_path is None:
+                log_backup_path: str = self.cab.get(
+                    "path", "cabinet", "log-backup"
+                ) or str(Path.home())
+                self.log_backup_path = Path(log_backup_path)
+            json_file = self.log_backup_path / "spotify songs.json"
+        else:
+            json_file = Path(json_file)
+
+        if not json_file.exists():
+            self.cab.log(
+                f"SPOTIFY - JSON file not found for genre cache: {json_file}",
+                level="debug",
+            )
+            return
+
+        try:
+            with open(json_file, "r", encoding="utf-8") as f:
+                track_data = json.load(f)
+
+            # Build cache: spotify_url -> genre
+            # Skip "Error" genres so they get retried
+            for track_dict in track_data:
+                spotify_url = track_dict.get("spotify_url", "")
+                genre = track_dict.get("genre")
+                if spotify_url and genre and genre != "Error":
+                    self._genre_cache[spotify_url] = genre
+
+            self.cab.log(f"SPOTIFY - Loaded {len(self._genre_cache)} genres from cache")
+
+        except json.JSONDecodeError as e:
+            self.cab.log(
+                f"SPOTIFY - Invalid JSON when loading genre cache: {e}", level="warning"
+            )
+        except Exception as e:
+            self.cab.log(f"SPOTIFY - Error loading genre cache: {e}", level="warning")
 
     def _load_tracks_from_json(self, json_file: Optional[str] = None) -> None:
         """Load tracks from existing JSON file into main_tracks.
@@ -349,6 +1022,7 @@ class SpotifyAnalyzer:
                     release_date=track_dict.get("release_date", ""),
                     spotify_url=track_dict.get("spotify_url", ""),
                     added_at=track_dict.get("added_at"),
+                    genre=track_dict.get("genre"),
                 )
                 self.main_tracks.append(track)
 
@@ -393,26 +1067,169 @@ class SpotifyAnalyzer:
         if len(self.playlist_data) > 8:
             self._check_playlist_exclusion(self.playlist_data[8], self.playlist_data[0])
 
-    def _validate_genre_assignments(self):
-        """Verify that each track appears in exactly one genre playlist."""
-        main_tracks = set(self.playlist_data[0].tracks)
-        genre_assignments = {}
+    def _add_track_to_playlist(self, playlist_id: str, track_url: str, playlist_name: str) -> bool:
+        """Add a track to a playlist.
+        
+        Args:
+            playlist_id: Spotify playlist ID
+            track_url: Spotify track URL
+            playlist_name: Playlist name for logging
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        track_id = self._extract_track_id(track_url)
+        if not track_id:
+            self.cab.log(
+                f"SPOTIFY - Cannot add track to {playlist_name}: invalid URL {track_url}",
+                level="warning",
+            )
+            return False
+        
+        try:
+            oauth_client = self._initialize_oauth_client()
+            self._retry_api_call(
+                lambda: oauth_client.playlist_add_items(playlist_id, [track_id]),
+                operation_name=f"Add track to '{playlist_name}'",
+            )
+            return True
+        except Exception as e:
+            self.cab.log(
+                f"SPOTIFY - Failed to add track {track_url} to {playlist_name}: {str(e)}",
+                level="warning",
+            )
+            return False
 
-        for playlist in self.playlist_data[2:8]:  # Genre playlists
-            for track in playlist.tracks:
-                if track in genre_assignments:
-                    genres = f"{playlist.name} and {genre_assignments[track]}"
+    def _remove_track_from_playlist(self, playlist_id: str, track_url: str, playlist_name: str) -> bool:
+        """Remove a track from a playlist.
+        
+        Args:
+            playlist_id: Spotify playlist ID
+            track_url: Spotify track URL
+            playlist_name: Playlist name for logging
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        track_id = self._extract_track_id(track_url)
+        if not track_id:
+            self.cab.log(
+                f"SPOTIFY - Cannot remove track from {playlist_name}: invalid URL {track_url}",
+                level="warning",
+            )
+            return False
+        
+        try:
+            oauth_client = self._initialize_oauth_client()
+            self._retry_api_call(
+                lambda: oauth_client.playlist_remove_all_occurrences_of_items(playlist_id, [track_id]),
+                operation_name=f"Remove track from '{playlist_name}'",
+            )
+            return True
+        except Exception as e:
+            self.cab.log(
+                f"SPOTIFY - Failed to remove track {track_url} from {playlist_name}: {str(e)}",
+                level="warning",
+            )
+            return False
+
+    def _validate_genre_assignments(self):
+        """Verify that each track appears in exactly one genre playlist.
+        Adds missing tracks and removes duplicates based on JSON genre assignments."""
+        if len(self.playlist_data) < 8:
+            self.cab.log(
+                "SPOTIFY - Not enough playlists loaded for genre validation",
+                level="warning",
+            )
+            return
+        
+        main_tracks = set(self.playlist_data[0].tracks)
+        genre_playlists = self.playlist_data[2:8]  # Genre playlists
+        
+        # Create mapping: track_url -> genre from JSON
+        track_genre_map = {}
+        for track in self.main_tracks:
+            if track.spotify_url and track.genre and track.genre in self.VALID_GENRES:
+                track_genre_map[track.spotify_url] = track.genre
+        
+        # Create mapping: genre_name -> playlist
+        genre_to_playlist = {}
+        for playlist in genre_playlists:
+            # Extract genre name from playlist name (assuming playlist names match genre names)
+            genre_to_playlist[playlist.name] = playlist
+        
+        # Track which playlists each track is in
+        track_playlist_map = {}  # track_url -> list of playlist names it's in
+        for playlist in genre_playlists:
+            for track_url in playlist.tracks:
+                if track_url not in track_playlist_map:
+                    track_playlist_map[track_url] = []
+                track_playlist_map[track_url].append(playlist.name)
+        
+        # Process each track in main playlist
+        for track_url in main_tracks:
+            expected_genre = track_genre_map.get(track_url)
+            
+            if not expected_genre:
+                # Track doesn't have a genre in JSON, skip it
+                continue
+            
+            expected_playlist = genre_to_playlist.get(expected_genre)
+            if not expected_playlist or not expected_playlist.playlist_id:
+                self.cab.log(
+                    f"SPOTIFY - No playlist found for genre '{expected_genre}'",
+                    level="warning",
+                )
+                continue
+            
+            # Check if track is in the correct playlist
+            is_in_correct_playlist = track_url in expected_playlist.tracks
+            
+            # Check if track is in wrong playlists
+            wrong_playlists = []
+            if track_url in track_playlist_map:
+                for playlist_name in track_playlist_map[track_url]:
+                    if playlist_name != expected_genre:
+                        wrong_playlists.append(playlist_name)
+            
+            # Add to correct playlist if missing
+            if not is_in_correct_playlist:
+                self.cab.log(
+                    f"SPOTIFY - Adding track {track_url} to '{expected_genre}' playlist",
+                    level="info",
+                )
+                success = self._add_track_to_playlist(
+                    expected_playlist.playlist_id, track_url, expected_genre
+                )
+                if success:
+                    # Update local data structure
+                    expected_playlist.tracks.append(track_url)
+                else:
                     self.cab.log(
-                        f"SPOTIFY - Track {track} found in multiple genres: {genres}",
+                        f"SPOTIFY - Warning: Could not add track {track_url} to '{expected_genre}' playlist",
                         level="warning",
                     )
-                genre_assignments[track] = playlist.name
-
-        for track in main_tracks:
-            if track not in genre_assignments:
-                self.cab.log(
-                    f"SPOTIFY - Track {track} missing genre assignment", level="warning"
-                )
+            
+            # Remove from wrong playlists
+            for wrong_playlist_name in wrong_playlists:
+                wrong_playlist = genre_to_playlist.get(wrong_playlist_name)
+                if wrong_playlist and wrong_playlist.playlist_id:
+                    self.cab.log(
+                        f"SPOTIFY - Removing track {track_url} from '{wrong_playlist_name}' playlist (should be in '{expected_genre}')",
+                        level="info",
+                    )
+                    success = self._remove_track_from_playlist(
+                        wrong_playlist.playlist_id, track_url, wrong_playlist_name
+                    )
+                    if success:
+                        # Update local data structure
+                        if track_url in wrong_playlist.tracks:
+                            wrong_playlist.tracks.remove(track_url)
+                    else:
+                        self.cab.log(
+                            f"SPOTIFY - Warning: Could not remove track {track_url} from '{wrong_playlist_name}' playlist",
+                            level="warning",
+                        )
 
     def _check_playlist_subset(self, subset: PlaylistData, superset: PlaylistData):
         """Verify that all tracks in subset appear in superset."""
@@ -480,11 +1297,11 @@ class SpotifyAnalyzer:
 
     def _sync_with_remote(self, path: Path, context: str = "sync") -> None:
         """Sync local repository with remote, handling divergence by resetting main to origin/main.
-        
+
         Args:
             path: Path to Git repository
             context: Context string for log messages (e.g., "commit", "prepare")
-        
+
         Raises:
             subprocess.CalledProcessError: If sync fails and we're not on main branch
         """
@@ -495,14 +1312,14 @@ class SpotifyAnalyzer:
             text=True,
             check=True,
         )
-        
+
         # Try fast-forward pull first
         pull_result = subprocess.run(
             ["git", "-C", str(path), "pull", "--ff-only"],
             capture_output=True,
             text=True,
         )
-        
+
         if pull_result.returncode != 0:
             # If fast-forward fails (divergent branches), reset to origin/main
             # This is safe for a backup repository where we want main to match remote
@@ -525,9 +1342,11 @@ class SpotifyAnalyzer:
                     pull_result.returncode, "git pull", pull_result.stderr
                 )
 
-    def _git_commit(self, path: Path, message: str, skip_pull: bool = False, skip_push: bool = False):
+    def _git_commit(
+        self, path: Path, message: str, skip_pull: bool = False, skip_push: bool = False
+    ):
         """Commit changes in Git repository.
-        
+
         Args:
             path: Path to Git repository
             message: Commit message
@@ -551,7 +1370,15 @@ class SpotifyAnalyzer:
             if not skip_pull:
                 # Check if current branch has upstream tracking
                 branch_result = subprocess.run(
-                    ["git", "-C", str(path), "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+                    [
+                        "git",
+                        "-C",
+                        str(path),
+                        "rev-parse",
+                        "--abbrev-ref",
+                        "--symbolic-full-name",
+                        "@{u}",
+                    ],
                     capture_output=True,
                     text=True,
                     check=False,
@@ -601,35 +1428,111 @@ class SpotifyAnalyzer:
             hostname = socket.gethostname()
             new_branch = f"{hostname}-unsaved-changes-{today}"
 
-            self.cab.log(
-                f"SPOTIFY - Unsaved changes detected on main branch. Creating branch: {new_branch}",
-                level="info",
-            )
-
             try:
-                # Create and checkout new branch
-                subprocess.run(
+                # Check if branch already exists
+                branch_check = subprocess.run(
                     [
                         "git",
                         "-C",
                         str(self.log_backup_path),
-                        "checkout",
-                        "-b",
-                        new_branch,
+                        "show-ref",
+                        "--verify",
+                        "--quiet",
+                        f"refs/heads/{new_branch}",
                     ],
                     capture_output=True,
                     text=True,
-                    check=True,
+                    check=False,
                 )
+                
+                if branch_check.returncode == 0:
+                    # Branch exists - stash changes, checkout, then commit on the branch
+                    self.cab.log(
+                        f"SPOTIFY - Branch {new_branch} already exists. Stashing changes and checking out.",
+                        level="info",
+                    )
+                    # Stash current changes
+                    subprocess.run(
+                        [
+                            "git",
+                            "-C",
+                            str(self.log_backup_path),
+                            "stash",
+                            "push",
+                            "-m",
+                            f"Auto-stash before checkout to {new_branch}",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    # Checkout to existing branch
+                    subprocess.run(
+                        [
+                            "git",
+                            "-C",
+                            str(self.log_backup_path),
+                            "checkout",
+                            new_branch,
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    # Apply stashed changes
+                    stash_result = subprocess.run(
+                        [
+                            "git",
+                            "-C",
+                            str(self.log_backup_path),
+                            "stash",
+                            "pop",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if stash_result.returncode != 0:
+                        self.cab.log(
+                            f"SPOTIFY - No stashed changes to apply (or stash conflict): {stash_result.stderr}",
+                            level="info",
+                        )
+                    # Commit changes on the branch
+                    if self._git_has_changes(self.log_backup_path):
+                        self._git_commit(
+                            self.log_backup_path,
+                            f"Save unsaved changes from {hostname} on {today}",
+                            skip_pull=True,
+                            skip_push=True,
+                        )
+                else:
+                    # Branch doesn't exist, create it
+                    self.cab.log(
+                        f"SPOTIFY - Unsaved changes detected on main branch. Creating branch: {new_branch}",
+                        level="info",
+                    )
+                    subprocess.run(
+                        [
+                            "git",
+                            "-C",
+                            str(self.log_backup_path),
+                            "checkout",
+                            "-b",
+                            new_branch,
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
 
-                # Commit changes (skip pull and push since this is a new branch without upstream)
-                # Push will be done separately with -u flag to set upstream
-                self._git_commit(
-                    self.log_backup_path,
-                    f"Save unsaved changes from {hostname} on {today}",
-                    skip_pull=True,
-                    skip_push=True,
-                )
+                    # Commit changes (skip pull and push since this is a new branch without upstream)
+                    # Push will be done separately with -u flag to set upstream
+                    self._git_commit(
+                        self.log_backup_path,
+                        f"Save unsaved changes from {hostname} on {today}",
+                        skip_pull=True,
+                        skip_push=True,
+                    )
 
                 # Push branch
                 subprocess.run(
@@ -896,7 +1799,7 @@ class SpotifyAnalyzer:
 
     def update_last_25_added_playlist(self):
         """Update the 'Last 25 Added' playlist with the 25 most recently added tracks.
-        
+
         Returns:
             bool: True if playlist was successfully updated, False otherwise.
         """
@@ -1001,7 +1904,7 @@ class SpotifyAnalyzer:
             # Replace all items in the playlist with the new tracks (with retry logic)
             self._retry_api_call(
                 lambda: oauth_client.playlist_replace_items(playlist_id, track_ids),
-                operation_name=f"Update playlist '{playlist_name}'"
+                operation_name=f"Update playlist '{playlist_name}'",
             )
 
             self.cab.log(
@@ -1062,7 +1965,17 @@ def main():
     parser.add_argument(
         "--json-file",
         type=str,
-        help="Path to JSON file (only used with --update-last-25-only)",
+        help="Path to JSON file (only used with --update-last-25-only or --genres-only)",
+    )
+    parser.add_argument(
+        "--genres-only",
+        action="store_true",
+        help="Only update genres for tracks in existing JSON file (loads, validates/retries genres, saves, commits)",
+    )
+    parser.add_argument(
+        "--reclassify-genre",
+        type=str,
+        help="Reclassify all tracks with the specified genre (e.g., 'Party and EDM'). Loads from JSON, reclassifies matching tracks, saves, commits.",
     )
 
     args = parser.parse_args()
@@ -1072,7 +1985,91 @@ def main():
 
     try:
         playlist_update_success = False
-        if args.update_last_25_only:
+        if args.reclassify_genre:
+            # Reclassify tracks with a specific genre
+            target_genre = args.reclassify_genre
+            cab.log(f"SPOTIFY - Running in reclassify-genre mode for '{target_genre}'")
+
+            # Validate the genre is valid
+            if target_genre not in SpotifyAnalyzer.VALID_GENRES:
+                cab.log(
+                    f"SPOTIFY - Invalid genre '{target_genre}'. Valid genres: {', '.join(SpotifyAnalyzer.VALID_GENRES)}",
+                    level="error",
+                )
+                sys.exit(1)
+
+            # Prepare Git repository
+            analyzer.prepare_git_repo()
+
+            # Load genre cache from existing JSON (to avoid re-classifying other tracks)
+            analyzer._load_genre_cache_from_json()  # pylint: disable=protected-access
+
+            # Load tracks from existing JSON file
+            analyzer._load_tracks_from_json(
+                args.json_file
+            )  # pylint: disable=protected-access
+
+            # Find tracks with the target genre
+            tracks_to_reclassify = [
+                t for t in analyzer.main_tracks if t.genre == target_genre and t.spotify_url
+            ]
+            
+            if not tracks_to_reclassify:
+                cab.log(
+                    f"SPOTIFY - No tracks found with genre '{target_genre}'",
+                    level="info",
+                )
+                sys.exit(0)
+
+            cab.log(
+                f"SPOTIFY - Found {len(tracks_to_reclassify)} tracks with genre '{target_genre}' to reclassify",
+                level="info",
+            )
+
+            # Clear their genres and remove from cache so they get reclassified
+            for track in tracks_to_reclassify:
+                track.genre = None
+                if track.spotify_url in analyzer._genre_cache:
+                    del analyzer._genre_cache[track.spotify_url]
+
+            # Reclassify using the existing validation/retry logic
+            analyzer._validate_and_retry_genres()  # pylint: disable=protected-access
+
+            # Save updated data
+            analyzer._save_data()  # pylint: disable=protected-access
+
+            # Commit updated data
+            analyzer.commit_updated_data()
+
+            cab.log(
+                f"SPOTIFY - Reclassification of '{target_genre}' tracks completed successfully"
+            )
+        elif args.genres_only:
+            # Only update genres, skip all playlist processing
+            cab.log("SPOTIFY - Running in genres-only mode")
+
+            # Prepare Git repository before starting
+            analyzer.prepare_git_repo()
+
+            # Load genre cache from existing JSON
+            analyzer._load_genre_cache_from_json()  # pylint: disable=protected-access
+
+            # Load tracks from existing JSON file
+            analyzer._load_tracks_from_json(
+                args.json_file
+            )  # pylint: disable=protected-access
+
+            # Validate and retry genres for all tracks
+            analyzer._validate_and_retry_genres()  # pylint: disable=protected-access
+
+            # Save updated data
+            analyzer._save_data()  # pylint: disable=protected-access
+
+            # Commit updated data
+            analyzer.commit_updated_data()
+
+            cab.log("SPOTIFY - Genres-only update completed successfully")
+        elif args.update_last_25_only:
             # Only update the playlist, skip all processing
             cab.log("SPOTIFY - Running in update-last-25-only mode")
 
@@ -1083,7 +2080,7 @@ def main():
 
             # Update the playlist
             playlist_update_success = analyzer.update_last_25_added_playlist()
-            
+
             if not playlist_update_success:
                 cab.log(
                     "SPOTIFY - Playlist update failed in update-last-25-only mode",
@@ -1101,7 +2098,7 @@ def main():
 
             # Update the "Last 25 Added" playlist with most recently added tracks
             playlist_update_success = analyzer.update_last_25_added_playlist()
-            
+
             if not playlist_update_success:
                 cab.log(
                     "SPOTIFY - Playlist update failed, but continuing with commit",
