@@ -133,10 +133,11 @@ class SpotifyAnalyzer:
         """
         genres_list = "\n".join(f"- {genre}" for genre in self.VALID_GENRES)
         prompt = f"""
-Classify the following song into exactly ONE of these genres:
+Select exactly one label from the following enum.
+The output must be one of these exact strings or the response is invalid:
 
 {genres_list}
-
+---
 IMPORTANT DEFINITIONS:
 - "Party and EDM" means electronic dance music intended for DJ club play
   (e.g., house, techno, trance, dubstep).
@@ -151,6 +152,7 @@ Song: "{song_name}" by {artist}
 
 Respond with ONLY the genre name, nothing else.
 You must choose one of the options above.
+If the song’s true genre is not listed, choose the closest available genre from the list.
 """
 
         return self._retry_chatgpt_classification(
@@ -229,11 +231,12 @@ Respond with a JSON array of genres, one for each song in the same order. Each g
                     # Validate each genre
                     validated_genres = []
                     for i, genre in enumerate(genres):
-                        validated = self._validate_genre_response(str(genre))
+                        artist, song_name = songs[i]
+                        validated = self._validate_genre_response(str(genre), song_name=song_name, artist=artist)
                         validated_genres.append(validated)
                         if validated == "Error":
                             self.cab.log(
-                                f"SPOTIFY - Batch classification failed for song {i+1}: '{songs[i][1]}' by {songs[i][0]}",
+                                f"SPOTIFY - Batch classification failed for song {i+1}: '{song_name}' by {artist}",
                                 level="warning",
                             )
                     return validated_genres
@@ -294,11 +297,13 @@ Respond with a JSON array of genres, one for each song in the same order. Each g
         chatgpt = self._initialize_chatgpt()
         return chatgpt.query(prompt).strip()
 
-    def _validate_genre_response(self, response: str) -> str:
+    def _validate_genre_response(self, response: str, song_name: Optional[str] = None, artist: Optional[str] = None) -> str:
         """Validate and normalize a genre response from ChatGPT.
 
         Args:
             response: Raw response from ChatGPT
+            song_name: Optional song name for logging
+            artist: Optional artist name for logging
 
         Returns:
             Validated genre string or "Error"
@@ -321,8 +326,13 @@ Respond with a JSON array of genres, one for each song in the same order. Each g
                 return genre
 
         # Default fallback - return "Error" to indicate classification failure
+        track_info = ""
+        if song_name and artist:
+            track_info = f" for '{song_name}' by {artist}"
+        elif song_name:
+            track_info = f" for '{song_name}'"
         self.cab.log(
-            f"SPOTIFY - ChatGPT returned unexpected genre '{response}', cannot classify",
+            f"SPOTIFY - ChatGPT returned unexpected genre '{response}', cannot classify{track_info}",
             level="warning",
         )
         return "Error"
@@ -350,7 +360,7 @@ Respond with a JSON array of genres, one for each song in the same order. Each g
         for attempt in range(max_retries):
             try:
                 response = query_func()
-                return self._validate_genre_response(response)
+                return self._validate_genre_response(response, song_name=song_name, artist=artist)
             except Exception as e:  # pylint: disable=broad-except
                 error_str = str(e)
                 is_rate_limit = (
@@ -476,19 +486,77 @@ Respond with a JSON array of genres, one for each song in the same order. Each g
             operation_name=f"Fetch playlist {playlist_id}",
         )
 
-    def _check_duplicates(self, tracks: List[str], playlist_name: str):
-        """Check for duplicate tracks within a playlist."""
-        track_counts = Counter(tracks)
+    def _check_duplicates(self, tracks: List[str], playlist_name: str, playlist_id: str):
+        """Check for duplicate tracks within a playlist and automatically remove them.
+        
+        Keeps one occurrence of each duplicate track and removes the rest.
+        Only warns if removal fails.
+        
+        Args:
+            tracks: List of track URLs
+            playlist_name: Name of the playlist for logging
+            playlist_id: Spotify playlist ID for removal operations
+        """
+        # Extract track IDs from URLs for reliable duplicate detection
+        track_ids = []
+        url_to_id_map = {}  # Map track_id -> first URL seen (for logging)
+        for url in tracks:
+            track_id = self._extract_track_id(url)
+            if track_id:
+                track_ids.append(track_id)
+                if track_id not in url_to_id_map:
+                    url_to_id_map[track_id] = url
+            else:
+                # If we can't extract track ID, fall back to URL-based detection
+                track_ids.append(url)
+                if url not in url_to_id_map:
+                    url_to_id_map[url] = url
+        
+        track_counts = Counter(track_ids)
         duplicates = {
-            track: count for track, count in track_counts.items() if count > 1
+            track_id: count for track_id, count in track_counts.items() if count > 1
         }
 
         if duplicates:
-            for track, count in duplicates.items():
+            oauth_client = None
+            try:
+                oauth_client = self._initialize_oauth_client()
+            except Exception as e:
                 self.cab.log(
-                    f"SPOTIFY - Duplicate found in {playlist_name}: {track} appears {count} times",
+                    f"SPOTIFY - Failed to initialize OAuth client for duplicate removal in {playlist_name}: {str(e)}",
                     level="warning",
                 )
+                # Fall back to just logging duplicates if OAuth fails
+                for track_id, count in duplicates.items():
+                    url = url_to_id_map.get(track_id, track_id)
+                    self.cab.log(
+                        f"SPOTIFY - Duplicate found in {playlist_name}: {url} appears {count} times (removal failed)",
+                        level="warning",
+                    )
+                return
+            
+            for track_id, count in duplicates.items():
+                url = url_to_id_map.get(track_id, track_id)
+                # Remove all occurrences of the duplicate track
+                try:
+                    self._retry_api_call(
+                        lambda: oauth_client.playlist_remove_all_occurrences_of_items(playlist_id, [track_id]),
+                        operation_name=f"Remove duplicate track from '{playlist_name}'",
+                    )
+                    # Add back one occurrence
+                    self._retry_api_call(
+                        lambda: oauth_client.playlist_add_items(playlist_id, [track_id]),
+                        operation_name=f"Re-add track to '{playlist_name}'",
+                    )
+                    self.cab.log(
+                        f"SPOTIFY - Removed {count - 1} duplicate(s) of {url} from {playlist_name}",
+                        level="info",
+                    )
+                except Exception as e:
+                    self.cab.log(
+                        f"SPOTIFY - Failed to remove duplicate {url} from {playlist_name}: {str(e)}",
+                        level="warning",
+                    )
 
     def _process_tracks(
         self, tracks: Dict, playlist_name: str, playlist_index: int, total_tracks: int
@@ -781,8 +849,11 @@ Respond with a JSON array of genres, one for each song in the same order. Each g
             if not t.genre or t.genre not in self.VALID_GENRES
         ]
         if still_missing:
+            track_list = ", ".join([f"'{t.name}' by {t.artist}" for t in still_missing[:5]])
+            if len(still_missing) > 5:
+                track_list += f" (and {len(still_missing) - 5} more)"
             self.cab.log(
-                f"SPOTIFY - Warning: {len(still_missing)} tracks still missing valid genres after retry",
+                f"SPOTIFY - Warning: {len(still_missing)} tracks still missing valid genres after retry: {track_list}",
                 level="warning",
             )
         else:
@@ -833,8 +904,8 @@ Respond with a JSON array of genres, one for each song in the same order. Each g
                     operation_name=f"Fetch next page for playlist {playlist_name}",
                 )
 
-            # Check for duplicates in the playlist
-            self._check_duplicates(playlist_tracks, playlist_name)
+            # Check for duplicates in the playlist and remove them
+            self._check_duplicates(playlist_tracks, playlist_name, playlist_id)
 
             self.playlist_data.append(
                 PlaylistData(name=playlist_name, tracks=playlist_tracks, playlist_id=playlist_id)
