@@ -152,7 +152,13 @@ else
         info "Backup from today already exists, skipping create step"
         backup_exit=0
     else
-        # Backup $HOME/syncthing
+        # Create temporary file for crontab backup
+        CRONTAB_TMP=$(mktemp)
+        crontab -l > "$CRONTAB_TMP" 2>/dev/null || touch "$CRONTAB_TMP"
+        trap "rm -f $CRONTAB_TMP" EXIT
+
+        # Backup multiple paths
+        # Exclude .git and .github directories recursively within ~/git
         "$BORG_CMD" create                         \
             --verbose                       \
             --filter AME                    \
@@ -161,16 +167,23 @@ else
             --show-rc                       \
             --compression lz4               \
             --exclude-caches                \
+            --exclude 'sh:**/.git'          \
+            --exclude 'sh:**/.github'       \
                                             \
             ::'{hostname}-{now}'            \
-            $HOME/syncthing
+            $HOME/syncthing                 \
+            "$HOME/git"                     \
+            "$HOME/.zshrc"                  \
+            "$HOME/.config"                 \
+            "$CRONTAB_TMP:crontab.txt"
 
         backup_exit=$?
+        rm -f "$CRONTAB_TMP"
     fi
 
     info "Pruning repository"
 
-    # Use the `prune` subcommand to maintain 1 daily, 2 weekly and 1 monthly
+    # Use the `prune` subcommand to maintain 7 daily, 4 weekly and 6 monthly
     # archives of THIS machine. The '{hostname}-*' matching is very important to
     # limit prune's operation to this machine's archives and not apply to
     # other machines' archives also:
@@ -210,7 +223,7 @@ else
         
         today=$(date +%Y-%m-%d)
         yesterday=$(date -d "yesterday" +%Y-%m-%d)
-        last_month=$(date -d "last month" +%Y-%m)
+        last_month=$(date -d "-1 month" +%Y-%m)
 
         # Count backups matching dates (handle empty grep results)
         today_count=$(echo "$backups" | grep -c "$today" 2>/dev/null || echo 0)

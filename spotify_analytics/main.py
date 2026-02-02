@@ -924,7 +924,7 @@ Respond with a JSON array of genres, one for each song in the same order. Each g
         """Save processed track data to JSON file."""
         # Use existing path if already set by prepare_git_repo
         if self.log_backup_path is None:
-            log_backup_path: str = self.cab.get("path", "cabinet", "log-backup") or str(
+            log_backup_path: str = self.cab.get("path", "cabinet", "log") or str(
                 Path.home()
             )
             self.log_backup_path = Path(log_backup_path)
