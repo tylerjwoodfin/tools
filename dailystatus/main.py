@@ -4,12 +4,10 @@ Generate a daily status email detailing key activities, back up essential files,
 
 import os
 import difflib
-import pwd
 import datetime
 import glob
 import subprocess
 import textwrap
-import socket
 import json
 import sys
 from pathlib import Path
@@ -145,34 +143,6 @@ def append_service_check_summary(email):
     return email
 
 
-def get_paths_and_config():
-    """retrieve and configure paths"""
-    today = datetime.date.today()
-    device_name = socket.gethostname()
-    user_home = pwd.getpwuid(os.getuid())[0]
-    path_dot_cabinet = os.path.join(f"/home/{user_home}/.cabinet")
-    path_zshrc = os.path.join(f"/home/{user_home}/.zshrc")
-    path_notes = cab.get("path", "notes") or f"{path_dot_cabinet}/notes"
-    log_path_today = os.path.join(cab.path_dir_log, str(today))
-    log_path_syncthing_backups = (
-        cab.get("path", "backups") or f"{path_dot_cabinet}/backups"
-    )
-    log_path_git_backend_backups = (
-        cab.get("path", "cabinet", "log-backup") or f"{path_dot_cabinet}/log-backup"
-    )
-
-    return {
-        "today": today,
-        "device_name": device_name,
-        "user_home": user_home,
-        "log_path_git_backend_backups": log_path_git_backend_backups,
-        "path_zshrc": path_zshrc,
-        "path_notes": path_notes,
-        "log_path_today": log_path_today,
-        "log_path_backups": log_path_syncthing_backups,
-    }
-
-
 def append_food_log(email):
     """check if food has been logged today, print total calories or an error if none found."""
     log_file = os.path.expanduser("~/syncthing/log/food.json")
@@ -279,11 +249,11 @@ def append_syncthing_conflict_check(email):
     return email + "<br>".join(html_diffs)
 
 
-def analyze_logs(paths, email):
+def analyze_logs(today, log_path_today, email):
     """append daily log analysis"""
     daily_log_file = (
         cab.get_file_as_array(
-            f"LOG_DAILY_{paths['today']}.log", file_path=paths["log_path_today"]
+            f"LOG_DAILY_{today}.log", file_path=log_path_today
         )
         or []
     )
@@ -319,12 +289,12 @@ def analyze_logs(paths, email):
     return email, is_warnings, is_errors, only_food_log_error
 
 
-def append_spotify_info(paths, email):
+def append_spotify_info(today, log_path_today, email):
     """append spotify issues and stats"""
     # Read from daily log and filter for SPOTIFY entries
     daily_log = (
         cab.get_file_as_array(
-            f"LOG_DAILY_{paths['today']}.log", file_path=paths["log_path_today"]
+            f"LOG_DAILY_{today}.log", file_path=log_path_today
         )
         or []
     )
@@ -383,8 +353,9 @@ def send_status_email(email, is_warnings, is_errors, only_food_log_error, today)
 
 
 if __name__ == "__main__":
-    # retrieve paths and configuration
-    config_data = get_paths_and_config()
+    # set up paths
+    today = datetime.date.today()
+    log_path_today = os.path.join(cab.path_dir_log, str(today))
 
     # set up email content
     status_email = "Dear Tyler,<br><br>This is your daily status report.<br><br>"
@@ -399,11 +370,11 @@ if __name__ == "__main__":
     status_email = append_syncthing_conflict_check(status_email)
 
     # add spotify info
-    status_email = append_spotify_info(config_data, status_email)
+    status_email = append_spotify_info(today, log_path_today, status_email)
 
     # analyze logs
     status_email, has_warnings, has_errors, is_only_food_log_error = analyze_logs(
-        config_data, status_email
+        today, log_path_today, status_email
     )
 
     # append weather info
@@ -421,5 +392,5 @@ if __name__ == "__main__":
         has_warnings,
         has_errors,
         is_only_food_log_error,
-        config_data["today"],
+        today,
     )
