@@ -157,7 +157,8 @@ def append_food_log(email):
             log_data = json.load(f)
 
         if today not in log_data or not log_data[today]:
-            cab.log("No food logged for today.", level="error")
+            mail.send("🍊 Log food for today!",
+            "No food logged for today. Please log your food for today.")
             return email
         else:
             total_calories = sum(entry["calories"] for entry in log_data[today])

@@ -499,6 +499,20 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
             if merge_result.returncode == 0:
                 cab.log(f"✓ Successfully merged {backup_branch} into main")
                 merged_any = True
+                # Delete the backup branch since it's been merged
+                delete_result = subprocess.run(
+                    ["git", "branch", "-d", backup_branch],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if delete_result.returncode == 0:
+                    cab.log(f"Deleted merged backup branch: {backup_branch}")
+                else:
+                    cab.log(
+                        f"Warning: Could not delete backup branch {backup_branch}: {delete_result.stderr.strip()}",
+                        level="warning",
+                    )
             else:
                 # Check if merge failed due to conflicts
                 if "CONFLICT" in merge_result.stdout or "conflict" in merge_result.stderr.lower():
@@ -543,6 +557,20 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                     if commit_result.returncode == 0:
                         cab.log(f"✓ Successfully merged {backup_branch} into main (resolved conflicts)")
                         merged_any = True
+                        # Delete the backup branch since it's been merged
+                        delete_result = subprocess.run(
+                            ["git", "branch", "-d", backup_branch],
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                        )
+                        if delete_result.returncode == 0:
+                            cab.log(f"Deleted merged backup branch: {backup_branch}")
+                        else:
+                            cab.log(
+                                f"Warning: Could not delete backup branch {backup_branch}: {delete_result.stderr.strip()}",
+                                level="warning",
+                            )
                     else:
                         cab.log(
                             f"⚠ Could not complete merge for {backup_branch}: {commit_result.stderr.strip()}",
@@ -560,6 +588,20 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                     
                     if backup_branch in check_result.stdout:
                         cab.log(f"Backup branch {backup_branch} is already merged")
+                        # Delete the backup branch since it's already merged
+                        delete_result = subprocess.run(
+                            ["git", "branch", "-d", backup_branch],
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                        )
+                        if delete_result.returncode == 0:
+                            cab.log(f"Deleted already-merged backup branch: {backup_branch}")
+                        else:
+                            cab.log(
+                                f"Warning: Could not delete backup branch {backup_branch}: {delete_result.stderr.strip()}",
+                                level="warning",
+                            )
                     else:
                         cab.log(
                             f"⚠ Could not merge {backup_branch}: {merge_result.stderr.strip()}",
@@ -601,15 +643,15 @@ def update_git_repo():
     Handle uncommitted changes by stashing them and creating a backup branch.
     """
     cab = Cabinet()
-    log_path_git_backend_backups = cab.get("path", "cabinet", "log-backup")
+    log_path_git_backend = os.path.expanduser("~/git/backend")
 
-    if not log_path_git_backend_backups:
-        cab.log("Missing log-backup path for Git operations", level="error")
+    if not log_path_git_backend:
+        cab.log("Missing ~/git/backend", level="error")
         return False
 
-    if not os.path.exists(log_path_git_backend_backups):
+    if not os.path.exists(log_path_git_backend):
         cab.log(
-            f"Git repository path does not exist: {log_path_git_backend_backups}",
+            f"Git repository path does not exist: {log_path_git_backend}",
             level="error",
         )
         return False
@@ -619,7 +661,7 @@ def update_git_repo():
     # Change to the repository directory
     original_cwd = os.getcwd()
     try:
-        os.chdir(log_path_git_backend_backups)
+        os.chdir(log_path_git_backend)
 
         # Check if we're in a Git repository
         result = subprocess.run(
@@ -732,10 +774,27 @@ def update_git_repo():
         # Switch to main branch
         subprocess.run(["git", "checkout", "main"], check=True)
 
-        # Pull latest main
+        # Check if branches have diverged before pulling
+        status_result = subprocess.run(
+            ["git", "status", "-sb"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        
+        branches_diverged = False
+        if status_result.returncode == 0:
+            status_output = status_result.stdout.strip()
+            if "ahead" in status_output and "behind" in status_output:
+                branches_diverged = True
+                cab.log("Branches have diverged, will rebase local changes on top of remote", level="info")
+
+        # Pull latest main with rebase strategy to handle divergent branches
+        # Use --rebase to keep history linear, which is cleaner for maintenance scripts
         try:
+            pull_cmd = ["git", "pull", "--rebase", "origin", "main"]
             result = subprocess.run(
-                ["git", "pull", "origin", "main"],
+                pull_cmd,
                 capture_output=True,
                 text=True,
                 check=False,
@@ -754,10 +813,37 @@ def update_git_repo():
             # After successfully pulling, merge any backup branches into main
             _merge_backup_branches(cab, env, backup_branch)
         else:
-            error_msg = result.stderr.strip()
+            error_msg = result.stderr.strip() or result.stdout.strip()
             cab.log(f"✗ Failed to pull latest main: {error_msg}", level="error")
+            
+            # Check for divergent branches error and try merge strategy as fallback
+            if "divergent" in error_msg.lower() or "reconcile" in error_msg.lower():
+                cab.log("Attempting pull with merge strategy as fallback", level="info")
+                try:
+                    merge_result = subprocess.run(
+                        ["git", "pull", "--no-rebase", "origin", "main"],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        env=env,
+                        timeout=GIT_OPERATION_TIMEOUT,
+                    )
+                    if merge_result.returncode == 0:
+                        cab.log("✓ Successfully updated to latest main branch (using merge strategy)")
+                        if merge_result.stdout.strip():
+                            cab.log(f"Git output: {merge_result.stdout.strip()}")
+                        # After successfully pulling, merge any backup branches into main
+                        _merge_backup_branches(cab, env, backup_branch)
+                        # Successfully handled with merge strategy
+                        return True
+                    else:
+                        cab.log(f"✗ Merge strategy also failed: {merge_result.stderr.strip() or merge_result.stdout.strip()}", level="error")
+                        return False
+                except subprocess.TimeoutExpired:
+                    cab.log("✗ Git pull (merge) timed out after 60 seconds", level="error")
+                    return False
             # Provide helpful error message for credential issues
-            if (
+            elif (
                 "could not read Username" in error_msg
                 or "No such device or address" in error_msg
             ):
@@ -777,7 +863,10 @@ def update_git_repo():
                     "  3. Using a personal access token in the remote URL",
                     level="warning",
                 )
-            return False
+                return False
+            else:
+                # Other errors - return False
+                return False
 
         return True
 
