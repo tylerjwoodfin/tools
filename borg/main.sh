@@ -157,6 +157,34 @@ else
         crontab -l > "$CRONTAB_TMP" 2>/dev/null || touch "$CRONTAB_TMP"
         trap "rm -f $CRONTAB_TMP" EXIT
 
+        # Create temporary file to capture borg error output
+        BORG_ERROR_TMP=$(mktemp)
+        trap "rm -f $BORG_ERROR_TMP" EXIT
+
+        # Build list of paths to backup, checking if they exist
+        BACKUP_PATHS=""
+        
+        # Helper function to add path if it exists
+        add_backup_path() {
+            local path="$1"
+            if [ -e "$path" ]; then
+                [ -n "$BACKUP_PATHS" ] && BACKUP_PATHS="$BACKUP_PATHS "
+                BACKUP_PATHS="$BACKUP_PATHS$path"
+            else
+                debug "Skipping $path (does not exist)"
+            fi
+        }
+        
+        # Check and add paths that exist
+        add_backup_path "$HOME/syncthing"
+        add_backup_path "$HOME/git"
+        add_backup_path "$HOME/.zshrc"
+        add_backup_path "$HOME/.config"
+        
+        # Always add crontab backup
+        [ -n "$BACKUP_PATHS" ] && BACKUP_PATHS="$BACKUP_PATHS "
+        BACKUP_PATHS="$BACKUP_PATHS$CRONTAB_TMP:crontab.txt"
+
         # Backup multiple paths
         # Exclude .git and .github directories recursively within ~/git
         "$BORG_CMD" create                         \
@@ -171,14 +199,23 @@ else
             --exclude 'sh:**/.github'       \
                                             \
             ::'{hostname}-{now}'            \
-            $HOME/syncthing                 \
-            "$HOME/git"                     \
-            "$HOME/.zshrc"                  \
-            "$HOME/.config"                 \
-            "$CRONTAB_TMP:crontab.txt"
+            $BACKUP_PATHS \
+            2>"$BORG_ERROR_TMP"
 
         backup_exit=$?
-        rm -f "$CRONTAB_TMP"
+        
+        # Log error details if backup failed
+        if [ $backup_exit -ne 0 ]; then
+            error "Borg backup creation failed with exit code: $backup_exit"
+            if [ -s "$BORG_ERROR_TMP" ]; then
+                error "Borg error output:"
+                while IFS= read -r line; do
+                    error "  $line"
+                done < "$BORG_ERROR_TMP"
+            fi
+        fi
+        
+        rm -f "$CRONTAB_TMP" "$BORG_ERROR_TMP"
     fi
 
     info "Pruning repository"
