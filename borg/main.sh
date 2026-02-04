@@ -181,12 +181,15 @@ else
         add_backup_path "$HOME/.zshrc"
         add_backup_path "$HOME/.config"
         
-        # Always add crontab backup
-        [ -n "$BACKUP_PATHS" ] && BACKUP_PATHS="$BACKUP_PATHS "
-        BACKUP_PATHS="$BACKUP_PATHS$CRONTAB_TMP:crontab.txt"
+        # Always add crontab backup (only if file exists and is readable)
+        if [ -r "$CRONTAB_TMP" ]; then
+            [ -n "$BACKUP_PATHS" ] && BACKUP_PATHS="$BACKUP_PATHS "
+            BACKUP_PATHS="$BACKUP_PATHS$CRONTAB_TMP:crontab.txt"
+        fi
 
         # Backup multiple paths
         # Exclude .git and .github directories recursively within ~/git
+        # Also exclude files that typically have permission issues
         "$BORG_CMD" create                         \
             --verbose                       \
             --filter AME                    \
@@ -197,6 +200,10 @@ else
             --exclude-caches                \
             --exclude 'sh:**/.git'          \
             --exclude 'sh:**/.github'       \
+            --exclude 'sh:**/ssh_host_*_key*' \
+            --exclude 'sh:**/logrotate'     \
+            --exclude 'sh:**/postgres'       \
+            --exclude 'sh:**/tmp_objdir-*'  \
                                             \
             ::'{hostname}-{now}'            \
             $BACKUP_PATHS \
@@ -204,8 +211,16 @@ else
 
         backup_exit=$?
         
-        # Log error details if backup failed
-        if [ $backup_exit -ne 0 ]; then
+        # Borg exit codes: 0=success, 1=warning (some files skipped), 2=fatal error
+        if [ $backup_exit -eq 1 ]; then
+            info "Borg backup completed with warnings (some files were skipped)"
+            if [ -s "$BORG_ERROR_TMP" ]; then
+                info "Borg warning output:"
+                while IFS= read -r line; do
+                    info "  $line"
+                done < "$BORG_ERROR_TMP"
+            fi
+        elif [ $backup_exit -ne 0 ]; then
             error "Borg backup creation failed with exit code: $backup_exit"
             if [ -s "$BORG_ERROR_TMP" ]; then
                 error "Borg error output:"
@@ -215,6 +230,7 @@ else
             fi
         fi
         
+        # Clean up temp files after Borg is done
         rm -f "$CRONTAB_TMP" "$BORG_ERROR_TMP"
     fi
 
@@ -331,6 +347,8 @@ else
     info "check_exit=$check_exit"
 
     # Use highest exit code as global exit code
+    # Note: exit code 1 from Borg is a warning (archive created successfully, some files skipped)
+    # Only exit codes >= 2 are actual failures
     global_exit=$(( backup_exit > prune_exit ? backup_exit : prune_exit ))
     global_exit=$(( compact_exit > global_exit ? compact_exit : global_exit ))
     global_exit=$(( check_exit > global_exit ? check_exit : global_exit ))
