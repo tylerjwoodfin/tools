@@ -68,6 +68,36 @@ def ping_host(hostname):
     success, _, _ = run_command(f"ping -c 1 -W 3 {hostname}")
     return success
 
+
+def check_dawarich_recent_points():
+    """Check if new points have been added to Dawarich within the past 24 hours"""
+    # First check if the database container is running
+    if not check_docker_container("dawarich_db"):
+        return False, "Dawarich database container is not running"
+    
+    # Query for points created in the last 24 hours
+    # Using docker exec to query the PostgreSQL database
+    query = (
+        "SELECT COUNT(*) FROM points "
+        "WHERE created_at >= NOW() - INTERVAL '24 hours';"
+    )
+    
+    command = (
+        f'docker exec dawarich_db psql -U postgres -d dawarich_development '
+        f'-t -c "{query}"'
+    )
+    
+    success, output, error = run_command(command)
+    
+    if not success:
+        return False, f"Failed to query database: {error}"
+    
+    try:
+        count = int(output.strip())
+        return True, count
+    except ValueError:
+        return False, f"Invalid response from database: {output}"
+
 def main():
     """Main function to perform comprehensive service check"""
     cabinet = Cabinet()
@@ -86,6 +116,24 @@ def main():
                 cabinet.log(
                     f"✗ {service_name} Docker container is NOT running", level="error"
                 )
+        
+        # Check for recent Dawarich points
+        success, result = check_dawarich_recent_points()
+        if success:
+            if isinstance(result, int) and result > 0:
+                cabinet.log(
+                    f"{result} new point(s) added in the past 24 hours"
+                )
+            else:
+                cabinet.log(
+                    "No new points added in the past 24 hours",
+                    level="warning"
+                )
+        else:
+            cabinet.log(
+                f"Failed to check recent points - {result}",
+                level="error"
+            )
     else:
         cabinet.log(f"Skipping Docker container checks on device: {device_name}")
 
