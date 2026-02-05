@@ -607,7 +607,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                     self.cab.log(
                         f"SPOTIFY - {operation_name} attempt {attempt + 1}/{max_retries} failed: {error_str}. "
                         f"Retrying in {delay}s...",
-                        level="warning",
+                        level="info",
                     )
                     time.sleep(delay)
                 else:
