@@ -9,9 +9,12 @@ run_pylint() {
 repo_root=$(git rev-parse --show-toplevel)
 
 # Iterate over all Python files in the repository
+python_files=0
 while IFS= read -r file; do
   if [[ $file == *.py ]]; then
+    python_files=$((python_files + 1))
     # Run Pylint and store the output
+    echo "Checking $file..." >&2
     pylint_output=$(run_pylint "$repo_root/$file")
 
     # Check if any non-refactor messages are present or pylint command failed
@@ -28,4 +31,6 @@ done < <(git ls-tree --full-tree -r --name-only HEAD)
 if [ "$non_refactor_found" = true ]; then
   echo "Please fix all issues before pushing."
   exit 1
+else
+  echo "✓ Checked $python_files Python file(s) - all clear!" >&2
 fi

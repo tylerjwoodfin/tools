@@ -113,7 +113,10 @@ def apply_stow():
         if stderr:
             cab.log(f"Error: {stderr}", level="error")
         else:
-            cab.log("No error output captured - script may have failed silently", level="warning")
+            cab.log(
+                "No error output captured - script may have failed silently",
+                level="warning",
+            )
         if stdout:
             cab.log(f"Output: {stdout}")
         # Log the command that was run for debugging
@@ -140,10 +143,7 @@ def _configure_https_credentials(cab, host, git_token):
         text=True,
         check=False,
     )
-    if (
-        cred_helper_result.returncode != 0
-        or not cred_helper_result.stdout.strip()
-    ):
+    if cred_helper_result.returncode != 0 or not cred_helper_result.stdout.strip():
         subprocess.run(
             ["git", "config", "credential.helper", "store"],
             capture_output=True,
@@ -431,21 +431,25 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
             text=True,
             check=False,
         )
-        
-        backup_branches = [b.strip().replace("*", "").strip() for b in result.stdout.strip().split("\n") if b.strip()]
-        
+
+        backup_branches = [
+            b.strip().replace("*", "").strip()
+            for b in result.stdout.strip().split("\n")
+            if b.strip()
+        ]
+
         if not backup_branches:
             return True
-        
+
         cab.log(f"Found {len(backup_branches)} backup branch(es) to merge")
-        
+
         for backup_branch in backup_branches:
             if backup_branch == current_backup_branch:
                 cab.log(f"Skipping current backup branch: {backup_branch}")
                 continue
-                
+
             cab.log(f"Merging backup branch: {backup_branch}")
-            
+
             # Check if branch has commits not in main
             merge_base_result = subprocess.run(
                 ["git", "merge-base", "main", backup_branch],
@@ -453,19 +457,27 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                 text=True,
                 check=False,
             )
-            
+
             if merge_base_result.returncode != 0:
-                cab.log(f"Warning: Could not find merge base for {backup_branch}, skipping", level="warning")
+                cab.log(
+                    f"Warning: Could not find merge base for {backup_branch}, skipping",
+                    level="warning",
+                )
                 continue
-            
+
             # Check if branch has commits not in main OR has different file contents
             log_result = subprocess.run(
-                ["git", "log", "--oneline", f"{merge_base_result.stdout.strip()}..{backup_branch}"],
+                [
+                    "git",
+                    "log",
+                    "--oneline",
+                    f"{merge_base_result.stdout.strip()}..{backup_branch}",
+                ],
                 capture_output=True,
                 text=True,
                 check=False,
             )
-            
+
             # Also check if there are file differences between main and backup branch
             diff_result = subprocess.run(
                 ["git", "diff", "--quiet", "main", backup_branch],
@@ -473,17 +485,20 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                 text=True,
                 check=False,
             )
-            
+
             # Skip only if there are no new commits AND no file differences
             if not log_result.stdout.strip() and diff_result.returncode == 0:
-                cab.log(f"Backup branch {backup_branch} is already fully merged, skipping")
+                cab.log(
+                    f"Backup branch {backup_branch} is already fully merged, skipping"
+                )
                 continue
-            
+
             if not log_result.stdout.strip() and diff_result.returncode != 0:
                 cab.log(
-                    f"Backup branch {backup_branch} has no new commits but has file differences, merging..."
+                    f"Backup branch {backup_branch} has no new commits "
+                    f"but has file differences, merging..."
                 )
-            
+
             # Try to merge with strategy that prefers backup branch content (theirs)
             # This ensures all content from backup branches is included in main
             # For binary files, we'll handle conflicts by preferring the newer version
@@ -495,7 +510,7 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                 env=env,
                 timeout=GIT_OPERATION_TIMEOUT,
             )
-            
+
             if merge_result.returncode == 0:
                 cab.log(f"✓ Successfully merged {backup_branch} into main")
                 merged_any = True
@@ -510,14 +525,21 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                     cab.log(f"Deleted merged backup branch: {backup_branch}")
                 else:
                     cab.log(
-                        f"Warning: Could not delete backup branch {backup_branch}: {delete_result.stderr.strip()}",
+                        f"Warning: Could not delete backup branch "
+                        f"{backup_branch}: {delete_result.stderr.strip()}",
                         level="warning",
                     )
             else:
                 # Check if merge failed due to conflicts
-                if "CONFLICT" in merge_result.stdout or "conflict" in merge_result.stderr.lower():
-                    cab.log(f"Merge conflicts detected for {backup_branch}, resolving...")
-                    
+                conflict_detected = (
+                    "CONFLICT" in merge_result.stdout
+                    or "conflict" in merge_result.stderr.lower()
+                )
+                if conflict_detected:
+                    cab.log(
+                        f"Merge conflicts detected for {backup_branch}, resolving..."
+                    )
+
                     # For binary file conflicts, prefer main (newer backups)
                     # Get list of conflicted files
                     conflict_result = subprocess.run(
@@ -526,14 +548,22 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                         text=True,
                         check=False,
                     )
-                    
-                    conflicted_files = [f.strip() for f in conflict_result.stdout.strip().split("\n") if f.strip()]
-                    
+
+                    conflicted_files = [
+                        f.strip()
+                        for f in conflict_result.stdout.strip().split("\n")
+                        if f.strip()
+                    ]
+
                     for conflicted_file in conflicted_files:
                         # For binary files (zip), prefer main (ours)
-                        # For text files (json), prefer backup branch (theirs) - already done by -X theirs
-                        if conflicted_file.endswith('.zip'):
-                            cab.log(f"Resolving binary conflict for {conflicted_file} (preferring main)")
+                        # For text files (json), prefer backup branch (theirs)
+                        # - already done by -X theirs
+                        if conflicted_file.endswith(".zip"):
+                            cab.log(
+                                f"Resolving binary conflict for {conflicted_file} "
+                                f"(preferring main)"
+                            )
                             subprocess.run(
                                 ["git", "checkout", "--ours", conflicted_file],
                                 capture_output=True,
@@ -544,7 +574,7 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                                 capture_output=True,
                                 check=False,
                             )
-                    
+
                     # Complete the merge
                     commit_result = subprocess.run(
                         ["git", "commit", "--no-edit"],
@@ -553,9 +583,12 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                         check=False,
                         env=env,
                     )
-                    
+
                     if commit_result.returncode == 0:
-                        cab.log(f"✓ Successfully merged {backup_branch} into main (resolved conflicts)")
+                        cab.log(
+                            f"✓ Successfully merged {backup_branch} into main "
+                            f"(resolved conflicts)"
+                        )
                         merged_any = True
                         # Delete the backup branch since it's been merged
                         delete_result = subprocess.run(
@@ -568,15 +601,21 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                             cab.log(f"Deleted merged backup branch: {backup_branch}")
                         else:
                             cab.log(
-                                f"Warning: Could not delete backup branch {backup_branch}: {delete_result.stderr.strip()}",
+                                f"Warning: Could not delete backup branch "
+                                f"{backup_branch}: {delete_result.stderr.strip()}",
                                 level="warning",
                             )
                     else:
                         cab.log(
-                            f"⚠ Could not complete merge for {backup_branch}: {commit_result.stderr.strip()}",
+                            f"⚠ Could not complete merge for {backup_branch}: "
+                            f"{commit_result.stderr.strip()}",
                             level="warning",
                         )
-                        subprocess.run(["git", "merge", "--abort"], capture_output=True, check=False)
+                        subprocess.run(
+                            ["git", "merge", "--abort"],
+                            capture_output=True,
+                            check=False,
+                        )
                 else:
                     # Check if branch is already merged
                     check_result = subprocess.run(
@@ -585,7 +624,7 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                         text=True,
                         check=False,
                     )
-                    
+
                     if backup_branch in check_result.stdout:
                         cab.log(f"Backup branch {backup_branch} is already merged")
                         # Delete the backup branch since it's already merged
@@ -596,10 +635,13 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                             check=False,
                         )
                         if delete_result.returncode == 0:
-                            cab.log(f"Deleted already-merged backup branch: {backup_branch}")
+                            cab.log(
+                                f"Deleted already-merged backup branch: {backup_branch}"
+                            )
                         else:
                             cab.log(
-                                f"Warning: Could not delete backup branch {backup_branch}: {delete_result.stderr.strip()}",
+                                f"Warning: Could not delete backup branch "
+                                f"{backup_branch}: {delete_result.stderr.strip()}",
                                 level="warning",
                             )
                     else:
@@ -608,8 +650,12 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                             level="warning",
                         )
                         # Abort the failed merge
-                        subprocess.run(["git", "merge", "--abort"], capture_output=True, check=False)
-        
+                        subprocess.run(
+                            ["git", "merge", "--abort"],
+                            capture_output=True,
+                            check=False,
+                        )
+
         # After merging backup branches, push to ensure remote main has everything
         if merged_any:
             cab.log("Pushing merged changes to remote")
@@ -621,7 +667,7 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                 env=env,
                 timeout=GIT_OPERATION_TIMEOUT,
             )
-            
+
             if push_result.returncode == 0:
                 cab.log("✓ Successfully pushed merged changes to remote")
             else:
@@ -629,9 +675,9 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                     f"⚠ Could not push merged changes: {push_result.stderr.strip()}",
                     level="warning",
                 )
-        
+
         return True
-        
+
     except Exception as e:  # pylint: disable=broad-exception-caught
         cab.log(f"Error merging backup branches: {str(e)}", level="warning")
         return False
@@ -745,7 +791,8 @@ def update_git_repo():
         # Set SSH connection timeout to prevent hanging
         env = os.environ.copy()
         env["GIT_TERMINAL_PROMPT"] = "0"
-        # Set SSH timeout: ConnectTimeout=10, ServerAliveInterval=5, ServerAliveCountMax=3
+        # Set SSH timeout: ConnectTimeout=10, ServerAliveInterval=5,
+        # ServerAliveCountMax=3
         ssh_opts = (
             "ssh -o ConnectTimeout=10 -o ServerAliveInterval=5 "
             "-o ServerAliveCountMax=3 -o StrictHostKeyChecking=no"
@@ -781,13 +828,14 @@ def update_git_repo():
             text=True,
             check=False,
         )
-        
-        branches_diverged = False
+
         if status_result.returncode == 0:
             status_output = status_result.stdout.strip()
             if "ahead" in status_output and "behind" in status_output:
-                branches_diverged = True
-                cab.log("Branches have diverged, will rebase local changes on top of remote", level="info")
+                cab.log(
+                    "Branches have diverged, will rebase local changes on top of remote",
+                    level="info",
+                )
 
         # Pull latest main with rebase strategy to handle divergent branches
         # Use --rebase to keep history linear, which is cleaner for maintenance scripts
@@ -809,13 +857,13 @@ def update_git_repo():
             cab.log("✓ Successfully updated to latest main branch")
             if result.stdout.strip():
                 cab.log(f"Git output: {result.stdout.strip()}")
-            
+
             # After successfully pulling, merge any backup branches into main
             _merge_backup_branches(cab, env, backup_branch)
         else:
             error_msg = result.stderr.strip() or result.stdout.strip()
             cab.log(f"✗ Failed to pull latest main: {error_msg}", level="error")
-            
+
             # Check for divergent branches error and try merge strategy as fallback
             if "divergent" in error_msg.lower() or "reconcile" in error_msg.lower():
                 cab.log("Attempting pull with merge strategy as fallback", level="info")
@@ -829,7 +877,9 @@ def update_git_repo():
                         timeout=GIT_OPERATION_TIMEOUT,
                     )
                     if merge_result.returncode == 0:
-                        cab.log("✓ Successfully updated to latest main branch (using merge strategy)")
+                        cab.log(
+                            "✓ Successfully updated to latest main branch (using merge strategy)"
+                        )
                         if merge_result.stdout.strip():
                             cab.log(f"Git output: {merge_result.stdout.strip()}")
                         # After successfully pulling, merge any backup branches into main
@@ -837,10 +887,16 @@ def update_git_repo():
                         # Successfully handled with merge strategy
                         return True
                     else:
-                        cab.log(f"✗ Merge strategy also failed: {merge_result.stderr.strip() or merge_result.stdout.strip()}", level="error")
+                        cab.log(
+                            f"✗ Merge strategy also failed: "
+                            f"{merge_result.stderr.strip() or merge_result.stdout.strip()}",
+                            level="error",
+                        )
                         return False
                 except subprocess.TimeoutExpired:
-                    cab.log("✗ Git pull (merge) timed out after 60 seconds", level="error")
+                    cab.log(
+                        "✗ Git pull (merge) timed out after 60 seconds", level="error"
+                    )
                     return False
             # Provide helpful error message for credential issues
             elif (

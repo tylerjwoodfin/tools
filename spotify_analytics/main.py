@@ -55,9 +55,7 @@ class Track:
             artist=track["artists"][0]["name"],
             name=track["name"],
             release_date=str(track["album"]["release_date"]),
-            spotify_url=(
-                track["external_urls"]["spotify"] if not track["is_local"] else ""
-            ),
+            spotify_url=(track["external_urls"]["spotify"] if not track["is_local"] else ""),
             added_at=added_at,
             genre=genre,
         )
@@ -102,9 +100,7 @@ class SpotifyAnalyzer:
         self._oauth_port: Optional[int] = None
         self._chatgpt: Optional[ChatGPT] = None
         self._genre_cache: Dict[str, str] = {}  # Cache spotify_url -> genre
-        self._pending_classifications: List[Tuple[Track, str]] = (
-            []
-        )  # Tracks needing classification
+        self._pending_classifications: List[Tuple[Track, str]] = []  # Tracks needing classification
 
         # Register cleanup function to run on exit
         atexit.register(self._cleanup_oauth_port)
@@ -173,8 +169,7 @@ If the song’s true genre is not listed, choose the closest available genre fro
 
         genres_list = "\n".join(f"- {genre}" for genre in self.VALID_GENRES)
         songs_list = "\n".join(
-            f'{i+1}. "{song_name}" by {artist}'
-            for i, (artist, song_name) in enumerate(songs)
+            f'{i+1}. "{song_name}" by {artist}' for i, (artist, song_name) in enumerate(songs)
         )
 
         prompt = f"""Classify the following songs into exactly one of these genres:
@@ -214,9 +209,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
 
                     genres = json.loads(response_clean)
                     if not isinstance(genres, list):
-                        raise ValueError(
-                            f"Expected list of genres, got {type(genres).__name__}"
-                        )
+                        raise ValueError(f"Expected list of genres, got {type(genres).__name__}")
 
                     # Validate we got the correct number of genres
                     # If we got fewer, we can't be sure they align correctly, so retry the batch
@@ -227,7 +220,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                         )
                     elif len(genres) > len(songs):
                         self.cab.log(
-                            f"SPOTIFY - ChatGPT returned {len(genres)} genres instead of {len(songs)}. Truncating to expected length",
+                            f"SPOTIFY - ChatGPT returned {len(genres)} genres "
+                            f"instead of {len(songs)}. Truncating to expected length",
                             level="warning",
                         )
                         genres = genres[: len(songs)]
@@ -242,7 +236,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                         validated_genres.append(validated)
                         if validated == "Error":
                             self.cab.log(
-                                f"SPOTIFY - Batch classification failed for song {i+1}: '{song_name}' by {artist}",
+                                f"SPOTIFY - Batch classification failed for song "
+                                f"{i+1}: '{song_name}' by {artist}",
                                 level="warning",
                             )
                     return validated_genres
@@ -250,14 +245,18 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                     if attempt < max_retries - 1:
                         delay = base_delay * (2**attempt)
                         self.cab.log(
-                            f"SPOTIFY - Failed to parse batch classification response (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {delay}s...",
+                            f"SPOTIFY - Failed to parse batch classification response "
+                            f"(attempt {attempt + 1}/{max_retries}): {e}. "
+                            f"Retrying in {delay}s...",
                             level="info",
                         )
                         time.sleep(delay)
                         continue
                     else:
                         self.cab.log(
-                            f"SPOTIFY - Failed to parse batch classification response after {max_retries} attempts: {e}. Response: {response}",
+                            f"SPOTIFY - Failed to parse batch classification response "
+                            f"after {max_retries} attempts: {e}. "
+                            f"Response: {response}",
                             level="info",
                         )
                         # Fallback to individual classification
@@ -286,7 +285,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                     time.sleep(delay)
                 else:
                     self.cab.log(
-                        f"SPOTIFY - Batch classification failed after {max_retries} attempts: {error_str}",
+                        f"SPOTIFY - Batch classification failed after {max_retries} "
+                        f"attempts: {error_str}",
                         level="error",
                     )
                     # Fallback to individual classification
@@ -379,7 +379,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             # Process in batches
             total_tracks = len(tracks)
             self.cab.log(
-                f"SPOTIFY - Batch classifying {total_tracks} tracks ({log_context}) in batches of {self.GENRE_BATCH_SIZE}",
+                f"SPOTIFY - Batch classifying {total_tracks} tracks "
+                f"({log_context}) in batches of {self.GENRE_BATCH_SIZE}",
                 level=log_level,
             )
 
@@ -389,7 +390,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
 
                 songs = [(t.artist, t.name) for t in batch]
                 self.cab.log(
-                    f"SPOTIFY - Batch classifying tracks {batch_start + 1}-{batch_end} of {total_tracks}",
+                    f"SPOTIFY - Batch classifying tracks "
+                    f"{batch_start + 1}-{batch_end} of {total_tracks}",
                     level="info",
                 )
                 genres = self._classify_genres_batch(songs)
@@ -401,13 +403,22 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                     old_genre = old_genres.get(track.spotify_url)
                     track.genre = genre
                     if log_context == "classification":
-                        log_msg = f"SPOTIFY - Classified '{track.name}' by {track.artist} as '{genre}'"
+                        log_msg = (
+                            f"SPOTIFY - Classified '{track.name}' by {track.artist} "
+                            f"as '{genre}'"
+                        )
                         log_level_msg = "info"
                     else:
                         if old_genre and log_context == "invalid genres":
-                            log_msg = f"SPOTIFY - Retried classification for '{track.name}' by {track.artist}: '{genre}' (was '{old_genre}')"
+                            log_msg = (
+                                f"SPOTIFY - Retried classification for '{track.name}' "
+                                f"by {track.artist}: '{genre}' (was '{old_genre}')"
+                            )
                         else:
-                            log_msg = f"SPOTIFY - Retried classification for '{track.name}' by {track.artist}: '{genre}'"
+                            log_msg = (
+                                f"SPOTIFY - Retried classification for '{track.name}' "
+                                f"by {track.artist}: '{genre}'"
+                            )
                         log_level_msg = "debug"
                     self.cab.log(log_msg, level=log_level_msg)
 
@@ -426,9 +437,15 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                     log_level_msg = "info"
                 else:
                     if old_genre and log_context == "invalid genres":
-                        log_msg = f"SPOTIFY - Retried classification for '{track.name}' by {track.artist}: '{genre}' (was '{old_genre}')"
+                        log_msg = (
+                            f"SPOTIFY - Retried classification for '{track.name}' "
+                            f"by {track.artist}: '{genre}' (was '{old_genre}')"
+                        )
                     else:
-                        log_msg = f"SPOTIFY - Retried classification for '{track.name}' by {track.artist}: '{genre}'"
+                        log_msg = (
+                            f"SPOTIFY - Retried classification for '{track.name}' "
+                            f"by {track.artist}: '{genre}'"
+                        )
                     log_level_msg = "debug"
                 self.cab.log(log_msg, level=log_level_msg)
                 # Small delay between individual requests to avoid rate limits
@@ -475,7 +492,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         elif song_name:
             track_info = f" for '{song_name}'"
         self.cab.log(
-            f"SPOTIFY - ChatGPT returned unexpected genre '{response}', cannot classify{track_info}",
+            f"SPOTIFY - ChatGPT returned unexpected genre '{response}', "
+            f"cannot classify{track_info}",
             level="warning",
         )
         return "Error"
@@ -503,9 +521,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         for attempt in range(max_retries):
             try:
                 response = query_func()
-                return self._validate_genre_response(
-                    response, song_name=song_name, artist=artist
-                )
+                return self._validate_genre_response(response, song_name=song_name, artist=artist)
             except Exception as e:  # pylint: disable=broad-except
                 error_str = str(e)
                 is_rate_limit = self._is_rate_limit_error(error_str)
@@ -523,15 +539,18 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                         )
                     else:
                         self.cab.log(
-                            f"SPOTIFY - Classification failed for '{song_name}' by {artist}: {error_str}. "
-                            f"Retrying in {delay}s... (attempt {attempt + 1}/{max_retries})",
+                            f"SPOTIFY - Classification failed for '{song_name}' "
+                            f"by {artist}: {error_str}. "
+                            f"Retrying in {delay}s... "
+                            f"(attempt {attempt + 1}/{max_retries})",
                             level="warning",
                         )
                     time.sleep(delay)
                 else:
                     # Last attempt failed
                     self.cab.log(
-                        f"SPOTIFY - Failed to classify genre for '{song_name}' by {artist} after {max_retries} attempts: {error_str}",
+                        f"SPOTIFY - Failed to classify genre for '{song_name}' "
+                        f"by {artist} after {max_retries} attempts: {error_str}",
                         level="error",
                     )
                     return "Error"
@@ -578,9 +597,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         playlist_id, playlist_name = playlist_config.split(",", 1)
         return (playlist_id.strip(), playlist_name.strip())
 
-    def _retry_api_call(
-        self, api_func, max_retries=3, base_delay=1, operation_name="API call"
-    ):
+    def _retry_api_call(self, api_func, max_retries=3, base_delay=1, operation_name="API call"):
         """Retry an API call with exponential backoff.
 
         Args:
@@ -605,7 +622,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                     # Calculate exponential backoff delay
                     delay = base_delay * (2**attempt)
                     self.cab.log(
-                        f"SPOTIFY - {operation_name} attempt {attempt + 1}/{max_retries} failed: {error_str}. "
+                        f"SPOTIFY - {operation_name} attempt "
+                        f"{attempt + 1}/{max_retries} failed: {error_str}. "
                         f"Retrying in {delay}s...",
                         level="info",
                     )
@@ -613,7 +631,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 else:
                     # Last attempt failed
                     self.cab.log(
-                        f"SPOTIFY - {operation_name} failed after {max_retries} attempts: {error_str}",
+                        f"SPOTIFY - {operation_name} failed after {max_retries} "
+                        f"attempts: {error_str}",
                         level="error",
                     )
                     raise
@@ -625,9 +644,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             operation_name=f"Fetch playlist {playlist_id}",
         )
 
-    def _check_duplicates(
-        self, tracks: List[str], playlist_name: str, playlist_id: str
-    ):
+    def _check_duplicates(self, tracks: List[str], playlist_name: str, playlist_id: str):
         """Check for duplicate tracks within a playlist and automatically remove them.
 
         Keeps one occurrence of each duplicate track and removes the rest.
@@ -654,9 +671,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                     url_to_id_map[url] = url
 
         track_counts = Counter(track_ids)
-        duplicates = {
-            track_id: count for track_id, count in track_counts.items() if count > 1
-        }
+        duplicates = {track_id: count for track_id, count in track_counts.items() if count > 1}
 
         if duplicates:
             oauth_client = None
@@ -664,14 +679,16 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 oauth_client = self._initialize_oauth_client()
             except Exception as e:
                 self.cab.log(
-                    f"SPOTIFY - Failed to initialize OAuth client for duplicate removal in {playlist_name}: {str(e)}",
+                    f"SPOTIFY - Failed to initialize OAuth client for duplicate "
+                    f"removal in {playlist_name}: {str(e)}",
                     level="warning",
                 )
                 # Fall back to just logging duplicates if OAuth fails
                 for track_id, count in duplicates.items():
                     url = url_to_id_map.get(track_id, track_id)
                     self.cab.log(
-                        f"SPOTIFY - Duplicate found in {playlist_name}: {url} appears {count} times (removal failed)",
+                        f"SPOTIFY - Duplicate found in {playlist_name}: {url} "
+                        f"appears {count} times (removal failed)",
                         level="warning",
                     )
                 return
@@ -680,17 +697,16 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 url = url_to_id_map.get(track_id, track_id)
                 # Remove all occurrences of the duplicate track
                 try:
+                    # Use default argument to capture track_id properly
                     self._retry_api_call(
-                        lambda: oauth_client.playlist_remove_all_occurrences_of_items(
-                            playlist_id, [track_id]
+                        lambda tid=track_id: oauth_client.playlist_remove_all_occurrences_of_items(
+                            playlist_id, [tid]
                         ),
                         operation_name=f"Remove duplicate track from '{playlist_name}'",
                     )
                     # Add back one occurrence
                     self._retry_api_call(
-                        lambda: oauth_client.playlist_add_items(
-                            playlist_id, [track_id]
-                        ),
+                        lambda tid=track_id: oauth_client.playlist_add_items(playlist_id, [tid]),
                         operation_name=f"Re-add track to '{playlist_name}'",
                     )
                     self.cab.log(
@@ -699,7 +715,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                     )
                 except Exception as e:
                     self.cab.log(
-                        f"SPOTIFY - Failed to remove duplicate {url} from {playlist_name}: {str(e)}",
+                        f"SPOTIFY - Failed to remove duplicate {url} from "
+                        f"{playlist_name}: {str(e)}",
                         level="warning",
                     )
 
@@ -723,9 +740,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
 
             if playlist_index == 0:  # Main playlist
                 added_at = item.get("added_at")
-                spotify_url = (
-                    track["external_urls"]["spotify"] if not track["is_local"] else ""
-                )
+                spotify_url = track["external_urls"]["spotify"] if not track["is_local"] else ""
 
                 # Check if genre is cached
                 genre = self._genre_cache.get(spotify_url) if spotify_url else None
@@ -756,9 +771,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                             level="debug",
                         )
 
-                print(
-                    f"Processed {len(self.main_tracks)} of {total_tracks} in {playlist_name}"
-                )
+                print(f"Processed {len(self.main_tracks)} of {total_tracks} in {playlist_name}")
 
         return track_urls
 
@@ -767,10 +780,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
 
         Chunks large batches into smaller groups to avoid token limits.
         """
-        if (
-            not hasattr(self, "_pending_classifications")
-            or not self._pending_classifications
-        ):
+        if not hasattr(self, "_pending_classifications") or not self._pending_classifications:
             return
 
         tracks_needing_classification = self._pending_classifications
@@ -790,9 +800,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             log_folder_path = os.path.join(log_base_path, str(today))
         if log_name is None:
             log_name = f"LOG_SPOTIFY_{today}"
-        self.cab.log(
-            message, level=level, log_folder_path=log_folder_path, log_name=log_name
-        )
+        self.cab.log(message, level=level, log_folder_path=log_folder_path, log_name=log_name)
 
     def _validate_and_retry_genres(self):
         """Validate that all tracks have valid genres and retry classification for missing ones."""
@@ -808,7 +816,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         # Process missing genres
         if tracks_missing_genre:
             self.cab.log(
-                f"SPOTIFY - Found {len(tracks_missing_genre)} tracks missing genre, retrying classification",
+                f"SPOTIFY - Found {len(tracks_missing_genre)} tracks missing "
+                f"genre, retrying classification",
                 level="info",
             )
 
@@ -833,7 +842,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                     if genre:
                         track.genre = genre
                         self.cab.log(
-                            f"SPOTIFY - Found cached genre for '{track.name}' by {track.artist}: '{genre}'",
+                            f"SPOTIFY - Found cached genre for '{track.name}' "
+                            f"by {track.artist}: '{genre}'",
                             level="debug",
                         )
                     else:
@@ -847,7 +857,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         # Process invalid genres
         if tracks_invalid_genre:
             self.cab.log(
-                f"SPOTIFY - Found {len(tracks_invalid_genre)} tracks with invalid genres, retrying classification",
+                f"SPOTIFY - Found {len(tracks_invalid_genre)} tracks with "
+                f"invalid genres, retrying classification",
                 level="warning",
             )
 
@@ -859,24 +870,19 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 track.genre = "Pop"
 
             # Batch or individual classification for invalid genres (chunked to avoid token limits)
-            self._classify_tracks_batch_or_individual(
-                tracks_with_urls, "invalid genres", "info"
-            )
+            self._classify_tracks_batch_or_individual(tracks_with_urls, "invalid genres", "info")
 
         # Final validation
         still_missing = [
-            t
-            for t in self.main_tracks
-            if not t.genre or t.genre not in self.VALID_GENRES
+            t for t in self.main_tracks if not t.genre or t.genre not in self.VALID_GENRES
         ]
         if still_missing:
-            track_list = ", ".join(
-                [f"'{t.name}' by {t.artist}" for t in still_missing[:5]]
-            )
+            track_list = ", ".join([f"'{t.name}' by {t.artist}" for t in still_missing[:5]])
             if len(still_missing) > 5:
                 track_list += f" (and {len(still_missing) - 5} more)"
             self.cab.log(
-                f"SPOTIFY - Warning: {len(still_missing)} tracks still missing valid genres after retry: {track_list}",
+                f"SPOTIFY - Warning: {len(still_missing)} tracks still missing "
+                f"valid genres after retry: {track_list}",
                 level="warning",
             )
         else:
@@ -913,9 +919,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             playlist_tracks = []
             while True:
                 if not tracks:
-                    self.cab.log(
-                        "SPOTIFY - No tracks found in playlist", level="warning"
-                    )
+                    self.cab.log("SPOTIFY - No tracks found in playlist", level="warning")
                     break
                 playlist_tracks.extend(
                     self._process_tracks(tracks, playlist_name, index, total_tracks)
@@ -923,7 +927,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 if not tracks["next"]:
                     break
                 tracks = self._retry_api_call(
-                    lambda: self.spotify_client.next(tracks),
+                    lambda t=tracks: self.spotify_client.next(t),
                     operation_name=f"Fetch next page for playlist {playlist_name}",
                 )
 
@@ -931,9 +935,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             self._check_duplicates(playlist_tracks, playlist_name, playlist_id)
 
             self.playlist_data.append(
-                PlaylistData(
-                    name=playlist_name, tracks=playlist_tracks, playlist_id=playlist_id
-                )
+                PlaylistData(name=playlist_name, tracks=playlist_tracks, playlist_id=playlist_id)
             )
 
         # Process all pending classifications (batch across all pages)
@@ -1000,9 +1002,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             self.cab.log(f"SPOTIFY - Loaded {len(self._genre_cache)} genres from cache")
 
         except json.JSONDecodeError as e:
-            self.cab.log(
-                f"SPOTIFY - Invalid JSON when loading genre cache: {e}", level="warning"
-            )
+            self.cab.log(f"SPOTIFY - Invalid JSON when loading genre cache: {e}", level="warning")
         except Exception as e:
             self.cab.log(f"SPOTIFY - Error loading genre cache: {e}", level="warning")
 
@@ -1086,9 +1086,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         if len(self.playlist_data) > 8:
             self._check_playlist_exclusion(self.playlist_data[8], self.playlist_data[0])
 
-    def _add_track_to_playlist(
-        self, playlist_id: str, track_url: str, playlist_name: str
-    ) -> bool:
+    def _add_track_to_playlist(self, playlist_id: str, track_url: str, playlist_name: str) -> bool:
         """Add a track to a playlist.
 
         Args:
@@ -1110,7 +1108,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         try:
             oauth_client = self._initialize_oauth_client()
             self._retry_api_call(
-                lambda: oauth_client.playlist_add_items(playlist_id, [track_id]),
+                lambda tid=track_id: oauth_client.playlist_add_items(playlist_id, [tid]),
                 operation_name=f"Add track to '{playlist_name}'",
             )
             return True
@@ -1231,7 +1229,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                     expected_playlist.tracks.append(track_url)
                 else:
                     self.cab.log(
-                        f"SPOTIFY - Warning: Could not add track {track_url} to '{expected_genre}' playlist",
+                        f"SPOTIFY - Warning: Could not add track {track_url} "
+                        f"to '{expected_genre}' playlist",
                         level="warning",
                     )
 
@@ -1240,7 +1239,9 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 wrong_playlist = genre_to_playlist.get(wrong_playlist_name)
                 if wrong_playlist and wrong_playlist.playlist_id:
                     self.cab.log(
-                        f"SPOTIFY - Removing track {track_url} from '{wrong_playlist_name}' playlist (should be in '{expected_genre}')",
+                        f"SPOTIFY - Removing track {track_url} from "
+                        f"'{wrong_playlist_name}' playlist (should be in "
+                        f"'{expected_genre}')",
                         level="info",
                     )
                     success = self._remove_track_from_playlist(
@@ -1252,7 +1253,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                             wrong_playlist.tracks.remove(track_url)
                     else:
                         self.cab.log(
-                            f"SPOTIFY - Warning: Could not remove track {track_url} from '{wrong_playlist_name}' playlist",
+                            f"SPOTIFY - Warning: Could not remove track "
+                            f"{track_url} from '{wrong_playlist_name}' playlist",
                             level="warning",
                         )
 
@@ -1265,9 +1267,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 level="warning",
             )
 
-    def _check_playlist_exclusion(
-        self, excluded: PlaylistData, main_playlist: PlaylistData
-    ):
+    def _check_playlist_exclusion(self, excluded: PlaylistData, main_playlist: PlaylistData):
         """Verify that no tracks from excluded appear in main."""
         present = set(excluded.tracks) & set(main_playlist.tracks)
         if present:
@@ -1315,9 +1315,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             )
             return bool(result.stdout.strip())
         except subprocess.CalledProcessError as e:
-            self.cab.log(
-                f"SPOTIFY - Error checking Git changes: {str(e)}", level="error"
-            )
+            self.cab.log(f"SPOTIFY - Error checking Git changes: {str(e)}", level="error")
             return False
 
     def _sync_with_remote(self, path: Path, context: str = "sync") -> None:
@@ -1343,6 +1341,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             ["git", "-C", str(path), "pull", "--ff-only"],
             capture_output=True,
             text=True,
+            check=False,
         )
 
         if pull_result.returncode != 0:
@@ -1351,7 +1350,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             current_branch = self._get_git_branch(path)
             if current_branch == "main":
                 self.cab.log(
-                    f"SPOTIFY - Branches diverged during {context}, resetting main to match origin/main",
+                    f"SPOTIFY - Branches diverged during {context}, "
+                    f"resetting main to match origin/main",
                     level="warn",
                 )
                 subprocess.run(
@@ -1375,7 +1375,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         Args:
             path: Path to Git repository
             message: Commit message
-            skip_pull: If True, skip pulling before pushing (useful for new branches without upstream)
+            skip_pull: If True, skip pulling before pushing
+                (useful for new branches without upstream)
             skip_push: If True, skip pushing (useful when push will be done separately with -u flag)
         """
         try:
@@ -1471,7 +1472,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 if branch_check.returncode == 0:
                     # Branch exists - stash changes, checkout, then commit on the branch
                     self.cab.log(
-                        f"SPOTIFY - Branch {new_branch} already exists. Stashing changes and checking out.",
+                        f"SPOTIFY - Branch {new_branch} already exists. "
+                        f"Stashing changes and checking out.",
                         level="info",
                     )
                     # Stash current changes
@@ -1517,7 +1519,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                     )
                     if stash_result.returncode != 0:
                         self.cab.log(
-                            f"SPOTIFY - No stashed changes to apply (or stash conflict): {stash_result.stderr}",
+                            f"SPOTIFY - No stashed changes to apply "
+                            f"(or stash conflict): {stash_result.stderr}",
                             level="info",
                         )
                     # Commit changes on the branch
@@ -1531,7 +1534,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 else:
                     # Branch doesn't exist, create it
                     self.cab.log(
-                        f"SPOTIFY - Unsaved changes detected on main branch. Creating branch: {new_branch}",
+                        f"SPOTIFY - Unsaved changes detected on main branch. "
+                        f"Creating branch: {new_branch}",
                         level="info",
                     )
                     subprocess.run(
@@ -1548,7 +1552,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                         check=True,
                     )
 
-                    # Commit changes (skip pull and push since this is a new branch without upstream)
+                    # Commit changes (skip pull and push since this is a new branch
+                    # without upstream)
                     # Push will be done separately with -u flag to set upstream
                     self._git_commit(
                         self.log_path,
@@ -1708,9 +1713,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             # Set environment variables for spotipy
             # Try common redirect URI formats - user should match one in their dashboard
             # Most common: http://127.0.0.1:8888 or http://127.0.0.1:8888/callback
-            redirect_uri = os.environ.get(
-                "SPOTIPY_REDIRECT_URI", "http://127.0.0.1:8888"
-            )
+            redirect_uri = os.environ.get("SPOTIPY_REDIRECT_URI", "http://127.0.0.1:8888")
 
             # Extract port from redirect URI
             port_match = re.search(r":(\d+)", redirect_uri)
@@ -1718,7 +1721,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             self._oauth_port = redirect_port
 
             # Use cache file based on username (spotipy convention)
-            # Use absolute path so it works in cron jobs (which run from different working directory)
+            # Use absolute path so it works in cron jobs
+            # (which run from different working directory)
             # This matches create_playlist_by_year.py so they share the same OAuth token
             # Store cache in script directory for consistency
             script_dir = Path(__file__).parent.absolute()
@@ -1739,7 +1743,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 killed = self._kill_processes_on_port(redirect_port)
                 if killed:
                     self.cab.log(
-                        f"SPOTIFY - Killed stale processes. Port {redirect_port} should now be available.",
+                        f"SPOTIFY - Killed stale processes. Port {redirect_port} "
+                        f"should now be available.",
                         level="info",
                     )
                 else:
@@ -1807,9 +1812,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 )
             raise
         except Exception as e:
-            self.cab.log(
-                f"SPOTIFY - Failed to initialize OAuth client: {str(e)}", level="error"
-            )
+            self.cab.log(f"SPOTIFY - Failed to initialize OAuth client: {str(e)}", level="error")
             raise
 
     def _extract_track_id(self, url: str) -> Optional[str]:
@@ -1836,9 +1839,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         # Get playlist configuration (uses cached value if available)
         playlists = self._get_playlists()
         if not playlists or len(playlists) < 2:
-            self.cab.log(
-                "SPOTIFY - Last 25 Added playlist not configured", level="error"
-            )
+            self.cab.log("SPOTIFY - Last 25 Added playlist not configured", level="error")
             return False
 
         # Get playlist[1] which should be the "Last 25 Added" playlist
@@ -1851,9 +1852,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             return False
 
         playlist_id, playlist_name = parsed
-        self.cab.log(
-            f"SPOTIFY - Updating '{playlist_name}' with 25 most recently added tracks"
-        )
+        self.cab.log(f"SPOTIFY - Updating '{playlist_name}' with 25 most recently added tracks")
 
         # Filter tracks that have added_at timestamps and valid Spotify URLs
         # Note: Local files (empty spotify_url) cannot be added via API and are excluded
@@ -1871,26 +1870,20 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         ]
 
         if not tracks_with_added_at:
-            self.cab.log(
-                "SPOTIFY - No tracks with added_at timestamps found", level="error"
-            )
+            self.cab.log("SPOTIFY - No tracks with added_at timestamps found", level="error")
             return False
 
         # Sort by added_at (most recent first) - parse ISO 8601 timestamps
         def parse_timestamp(timestamp_str: str) -> datetime.datetime:
             try:
                 # Handle ISO 8601 format with Z timezone
-                return datetime.datetime.fromisoformat(
-                    timestamp_str.replace("Z", "+00:00")
-                )
+                return datetime.datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
             except ValueError:
                 # Fallback for different formats
                 return datetime.datetime.min
 
         tracks_with_added_at.sort(
-            key=lambda t: (
-                parse_timestamp(t.added_at) if t.added_at else datetime.datetime.min
-            ),
+            key=lambda t: (parse_timestamp(t.added_at) if t.added_at else datetime.datetime.min),
             reverse=True,
         )
 
@@ -1916,9 +1909,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             )
             return False
 
-        self.cab.log(
-            f"SPOTIFY - Found {len(track_ids)} tracks to add to '{playlist_name}'"
-        )
+        self.cab.log(f"SPOTIFY - Found {len(track_ids)} tracks to add to '{playlist_name}'")
 
         # Initialize OAuth client for playlist modification
         try:
@@ -1926,7 +1917,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
 
             # Replace all items in the playlist with the new tracks (with retry logic)
             self._retry_api_call(
-                lambda: oauth_client.playlist_replace_items(playlist_id, track_ids),
+                lambda tids=track_ids: oauth_client.playlist_replace_items(playlist_id, tids),
                 operation_name=f"Update playlist '{playlist_name}'",
             )
 
@@ -1977,9 +1968,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
 
 def main():
     """Main entry point for the script."""
-    parser = argparse.ArgumentParser(
-        description="Spotify playlist analysis and backup tool"
-    )
+    parser = argparse.ArgumentParser(description="Spotify playlist analysis and backup tool")
     parser.add_argument(
         "--update-last-25-only",
         action="store_true",
@@ -1988,17 +1977,23 @@ def main():
     parser.add_argument(
         "--json-file",
         type=str,
-        help="Path to JSON file (only used with --update-last-25-only or --genres-only)",
+        help=("Path to JSON file (only used with --update-last-25-only " "or --genres-only)"),
     )
     parser.add_argument(
         "--genres-only",
         action="store_true",
-        help="Only update genres for tracks in existing JSON file (loads, validates/retries genres, saves, commits)",
+        help=(
+            "Only update genres for tracks in existing JSON file "
+            "(loads, validates/retries genres, saves, commits)"
+        ),
     )
     parser.add_argument(
         "--reclassify-genre",
         type=str,
-        help="Reclassify all tracks with the specified genre (e.g., 'Party and EDM'). Loads from JSON, reclassifies matching tracks, saves, commits.",
+        help=(
+            "Reclassify all tracks with the specified genre (e.g., 'Party and EDM'). "
+            "Loads from JSON, reclassifies matching tracks, saves, commits."
+        ),
     )
 
     args = parser.parse_args()
@@ -2015,8 +2010,10 @@ def main():
 
             # Validate the genre is valid
             if target_genre not in SpotifyAnalyzer.VALID_GENRES:
+                valid_genres_str = ", ".join(SpotifyAnalyzer.VALID_GENRES)
                 cab.log(
-                    f"SPOTIFY - Invalid genre '{target_genre}'. Valid genres: {', '.join(SpotifyAnalyzer.VALID_GENRES)}",
+                    f"SPOTIFY - Invalid genre '{target_genre}'. "
+                    f"Valid genres: {valid_genres_str}",
                     level="error",
                 )
                 sys.exit(1)
@@ -2028,15 +2025,11 @@ def main():
             analyzer._load_genre_cache_from_json()  # pylint: disable=protected-access
 
             # Load tracks from existing JSON file
-            analyzer._load_tracks_from_json(
-                args.json_file
-            )  # pylint: disable=protected-access
+            analyzer._load_tracks_from_json(args.json_file)  # pylint: disable=protected-access
 
             # Find tracks with the target genre
             tracks_to_reclassify = [
-                t
-                for t in analyzer.main_tracks
-                if t.genre == target_genre and t.spotify_url
+                t for t in analyzer.main_tracks if t.genre == target_genre and t.spotify_url
             ]
 
             if not tracks_to_reclassify:
@@ -2047,15 +2040,16 @@ def main():
                 sys.exit(0)
 
             cab.log(
-                f"SPOTIFY - Found {len(tracks_to_reclassify)} tracks with genre '{target_genre}' to reclassify",
+                f"SPOTIFY - Found {len(tracks_to_reclassify)} tracks with genre "
+                f"'{target_genre}' to reclassify",
                 level="info",
             )
 
             # Clear their genres and remove from cache so they get reclassified
             for track in tracks_to_reclassify:
                 track.genre = None
-                if track.spotify_url in analyzer._genre_cache:
-                    del analyzer._genre_cache[track.spotify_url]
+                if track.spotify_url in analyzer._genre_cache:  # pylint: disable=protected-access
+                    del analyzer._genre_cache[track.spotify_url]  # pylint: disable=protected-access
 
             # Reclassify using the existing validation/retry logic
             analyzer._validate_and_retry_genres()  # pylint: disable=protected-access
@@ -2066,9 +2060,7 @@ def main():
             # Commit updated data
             analyzer.commit_updated_data()
 
-            cab.log(
-                f"SPOTIFY - Reclassification of '{target_genre}' tracks completed successfully"
-            )
+            cab.log(f"SPOTIFY - Reclassification of '{target_genre}' tracks completed successfully")
         elif args.genres_only:
             # Only update genres, skip all playlist processing
             cab.log("SPOTIFY - Running in genres-only mode")
@@ -2080,9 +2072,7 @@ def main():
             analyzer._load_genre_cache_from_json()  # pylint: disable=protected-access
 
             # Load tracks from existing JSON file
-            analyzer._load_tracks_from_json(
-                args.json_file
-            )  # pylint: disable=protected-access
+            analyzer._load_tracks_from_json(args.json_file)  # pylint: disable=protected-access
 
             # Validate and retry genres for all tracks
             analyzer._validate_and_retry_genres()  # pylint: disable=protected-access
@@ -2099,9 +2089,7 @@ def main():
             cab.log("SPOTIFY - Running in update-last-25-only mode")
 
             # Load tracks from existing JSON file
-            analyzer._load_tracks_from_json(
-                args.json_file
-            )  # pylint: disable=protected-access
+            analyzer._load_tracks_from_json(args.json_file)  # pylint: disable=protected-access
 
             # Update the playlist
             playlist_update_success = analyzer.update_last_25_added_playlist()

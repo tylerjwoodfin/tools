@@ -118,10 +118,10 @@ def append_free_space_info(email):
 def append_service_check_summary(email):
     """Append a summary of service check results only if there are errors"""
     # Get today's log to find service check results
-    today = datetime.date.today()
-    log_path_today = os.path.join(cab.path_dir_log, str(today))
+    today_date = datetime.date.today()
+    log_path = os.path.join(cab.path_dir_log, str(today_date))
     daily_log_file = (
-        cab.get_file_as_array(f"LOG_DAILY_{today}.log", file_path=log_path_today) or []
+        cab.get_file_as_array(f"LOG_DAILY_{today_date}.log", file_path=log_path) or []
     )
 
     # Filter for service check error entries only
@@ -146,7 +146,7 @@ def append_service_check_summary(email):
 def append_food_log(email):
     """check if food has been logged today, print total calories or an error if none found."""
     log_file = os.path.expanduser("~/syncthing/log/food.json")
-    today = datetime.date.today().isoformat()
+    today_str = datetime.date.today().isoformat()
 
     if not os.path.exists(log_file):
         cab.log("Food log file does not exist.", level="error")
@@ -156,12 +156,12 @@ def append_food_log(email):
         with open(log_file, "r", encoding="utf-8") as f:
             log_data = json.load(f)
 
-        if today not in log_data or not log_data[today]:
+        if today_str not in log_data or not log_data[today_str]:
             mail.send("🍊 Log food for today!",
             "No food logged for today. Please log your food for today.")
             return email
         else:
-            total_calories = sum(entry["calories"] for entry in log_data[today])
+            total_calories = sum(entry["calories"] for entry in log_data[today_str])
             return email + textwrap.dedent(
                 f"""
             <h3>Calories Eaten Today:</h3>
@@ -250,7 +250,7 @@ def append_syncthing_conflict_check(email):
     return email + "<br>".join(html_diffs)
 
 
-def analyze_logs(today, log_path_today, email):
+def analyze_logs(today, log_path_today, email):  # pylint: disable=redefined-outer-name
     """append daily log analysis"""
     daily_log_file = (
         cab.get_file_as_array(
@@ -290,7 +290,7 @@ def analyze_logs(today, log_path_today, email):
     return email, is_warnings, is_errors, only_food_log_error
 
 
-def append_spotify_info(today, log_path_today, email):
+def append_spotify_info(today, log_path_today, email):  # pylint: disable=redefined-outer-name
     """append spotify issues and stats"""
     # Read from daily log and filter for SPOTIFY entries
     daily_log = (
@@ -337,7 +337,7 @@ def append_weather_info(email):
     return email
 
 
-def send_status_email(email, is_warnings, is_errors, only_food_log_error, today):
+def send_status_email(email, is_warnings, is_errors, only_food_log_error, today):  # pylint: disable=redefined-outer-name
     """determine and send status email"""
     email_subject = f"Daily Status - {today}"
     if is_errors and is_warnings:

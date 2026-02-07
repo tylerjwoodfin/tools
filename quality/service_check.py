@@ -12,9 +12,7 @@ from cabinet import Cabinet
 def run_command(command):
     """Run a shell command and return the result"""
     try:
-        result = subprocess.run(
-            command, shell=True, capture_output=True, text=True, check=False
-        )
+        result = subprocess.run(command, shell=True, capture_output=True, text=True, check=False)
         return result.returncode == 0, result.stdout.strip(), result.stderr.strip()
     except Exception as e:  # pylint: disable=broad-exception-caught
         return False, "", str(e)
@@ -74,29 +72,29 @@ def check_dawarich_recent_points():
     # First check if the database container is running
     if not check_docker_container("dawarich_db"):
         return False, "Dawarich database container is not running"
-    
+
     # Query for points created in the last 24 hours
     # Using docker exec to query the PostgreSQL database
     query = (
         "SELECT COUNT(*) FROM points "
         "WHERE created_at >= NOW() - INTERVAL '24 hours';"
     )
-    
+
     command = (
-        f'docker exec dawarich_db psql -U postgres -d dawarich_development '
-        f'-t -c "{query}"'
+        f"docker exec dawarich_db psql -U postgres -d dawarich_development " f'-t -c "{query}"'
     )
-    
+
     success, output, error = run_command(command)
-    
+
     if not success:
         return False, f"Failed to query database: {error}"
-    
+
     try:
         count = int(output.strip())
         return True, count
     except ValueError:
         return False, f"Invalid response from database: {output}"
+
 
 def main():
     """Main function to perform comprehensive service check"""
@@ -113,27 +111,17 @@ def main():
             if check_docker_container(container_name):
                 cabinet.log(f"✓ {service_name} Docker container is running")
             else:
-                cabinet.log(
-                    f"✗ {service_name} Docker container is NOT running", level="error"
-                )
-        
+                cabinet.log(f"✗ {service_name} Docker container is NOT running", level="error")
+
         # Check for recent Dawarich points
         success, result = check_dawarich_recent_points()
         if success:
             if isinstance(result, int) and result > 0:
-                cabinet.log(
-                    f"{result} new point(s) added in the past 24 hours"
-                )
+                cabinet.log(f"{result} new point(s) added in the past 24 hours")
             else:
-                cabinet.log(
-                    "No new points added in the past 24 hours",
-                    level="warning"
-                )
+                cabinet.log("No new points added in the past 24 hours", level="warning")
         else:
-            cabinet.log(
-                f"Failed to check recent points - {result}",
-                level="error"
-            )
+            cabinet.log(f"Failed to check recent points - {result}", level="error")
     else:
         cabinet.log(f"Skipping Docker container checks on device: {device_name}")
 
@@ -145,9 +133,7 @@ def main():
             if check_system_service(service_name):
                 cabinet.log(f"✓ {service_name} system service is running")
             else:
-                cabinet.log(
-                    f"✗ {service_name} system service is NOT running", level="error"
-                )
+                cabinet.log(f"✗ {service_name} system service is NOT running", level="error")
     else:
         cabinet.log(f"Skipping system service checks on device: {device_name}")
 
@@ -155,9 +141,7 @@ def main():
     disk_info = get_disk_usage("/")
     if disk_info:
         cabinet.put("quality", device_name, "free_gb", disk_info["free_gb"])
-        timezone = (
-            time.tzname[time.daylight] if time.tzname[time.daylight] else "UNKNOWN"
-        )
+        timezone = time.tzname[time.daylight] if time.tzname[time.daylight] else "UNKNOWN"
         timestamp = datetime.now().strftime(f"%Y-%m-%d %H:%M:%S {timezone}")
         cabinet.put("quality", device_name, "updated_at", timestamp)
         cabinet.log(
@@ -167,9 +151,7 @@ def main():
 
         # Warn if disk usage is high
         if disk_info["usage_percent"] > 90:
-            cabinet.log(
-                f"⚠ High disk usage: {disk_info['usage_percent']}%", level="warning"
-            )
+            cabinet.log(f"⚠ High disk usage: {disk_info['usage_percent']}%", level="warning")
     else:
         cabinet.log("✗ Failed to get disk usage information", level="error")
 
@@ -185,13 +167,9 @@ def main():
             if check_directory_exists(subfolder_path):
                 cabinet.log(f"✓ Syncthing subfolder exists: {subfolder}")
             else:
-                cabinet.log(
-                    f"✗ Syncthing subfolder missing: {subfolder}", level="error"
-                )
+                cabinet.log(f"✗ Syncthing subfolder missing: {subfolder}", level="error")
     else:
-        cabinet.log(
-            f"✗ Syncthing base directory missing: {syncthing_base}", level="error"
-        )
+        cabinet.log(f"✗ Syncthing base directory missing: {syncthing_base}", level="error")
 
     # Ping external hosts
     external_hosts = ["git.tyler.cloud", "photos.tyler.cloud"]
