@@ -75,7 +75,10 @@ def check_dawarich_recent_points():
 
     # Query for points created in the last 24 hours
     # Using docker exec to query the PostgreSQL database
-    query = "SELECT COUNT(*) FROM points " "WHERE created_at >= NOW() - INTERVAL '24 hours';"
+    query = (
+        "SELECT COUNT(*) FROM points "
+        "WHERE created_at >= NOW() - INTERVAL '24 hours';"
+    )
 
     command = (
         f"docker exec dawarich_db psql -U postgres -d dawarich_development " f'-t -c "{query}"'
