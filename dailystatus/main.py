@@ -250,7 +250,7 @@ def append_syncthing_conflict_check(email):
     return email + "<br>".join(html_diffs)
 
 
-def analyze_logs(today, log_path_today, email):
+def analyze_logs(today, log_path_today, email):  # pylint: disable=redefined-outer-name
     """append daily log analysis"""
     daily_log_file = (
         cab.get_file_as_array(
@@ -290,7 +290,7 @@ def analyze_logs(today, log_path_today, email):
     return email, is_warnings, is_errors, only_food_log_error
 
 
-def append_spotify_info(today, log_path_today, email):
+def append_spotify_info(today, log_path_today, email):  # pylint: disable=redefined-outer-name
     """append spotify issues and stats"""
     # Read from daily log and filter for SPOTIFY entries
     daily_log = (
@@ -337,7 +337,7 @@ def append_weather_info(email):
     return email
 
 
-def send_status_email(email, is_warnings, is_errors, only_food_log_error, today):
+def send_status_email(email, is_warnings, is_errors, only_food_log_error, today):  # pylint: disable=redefined-outer-name
     """determine and send status email"""
     email_subject = f"Daily Status - {today}"
     if is_errors and is_warnings:

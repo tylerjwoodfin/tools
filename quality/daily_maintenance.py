@@ -113,7 +113,10 @@ def apply_stow():
         if stderr:
             cab.log(f"Error: {stderr}", level="error")
         else:
-            cab.log("No error output captured - script may have failed silently", level="warning")
+            cab.log(
+                "No error output captured - script may have failed silently",
+                level="warning",
+            )
         if stdout:
             cab.log(f"Output: {stdout}")
         # Log the command that was run for debugging
@@ -140,10 +143,7 @@ def _configure_https_credentials(cab, host, git_token):
         text=True,
         check=False,
     )
-    if (
-        cred_helper_result.returncode != 0
-        or not cred_helper_result.stdout.strip()
-    ):
+    if cred_helper_result.returncode != 0 or not cred_helper_result.stdout.strip():
         subprocess.run(
             ["git", "config", "credential.helper", "store"],
             capture_output=True,
@@ -442,7 +442,7 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
             return True
 
         cab.log(f"Found {len(backup_branches)} backup branch(es) to merge")
-        
+
         for backup_branch in backup_branches:
             if backup_branch == current_backup_branch:
                 cab.log(f"Skipping current backup branch: {backup_branch}")
@@ -559,7 +559,7 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                         # For binary files (zip), prefer main (ours)
                         # For text files (json), prefer backup branch (theirs)
                         # - already done by -X theirs
-                        if conflicted_file.endswith('.zip'):
+                        if conflicted_file.endswith(".zip"):
                             cab.log(
                                 f"Resolving binary conflict for {conflicted_file} "
                                 f"(preferring main)"
@@ -635,10 +635,13 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
                             check=False,
                         )
                         if delete_result.returncode == 0:
-                            cab.log(f"Deleted already-merged backup branch: {backup_branch}")
+                            cab.log(
+                                f"Deleted already-merged backup branch: {backup_branch}"
+                            )
                         else:
                             cab.log(
-                                f"Warning: Could not delete backup branch {backup_branch}: {delete_result.stderr.strip()}",
+                                f"Warning: Could not delete backup branch "
+                                f"{backup_branch}: {delete_result.stderr.strip()}",
                                 level="warning",
                             )
                     else:
@@ -874,7 +877,9 @@ def update_git_repo():
                         timeout=GIT_OPERATION_TIMEOUT,
                     )
                     if merge_result.returncode == 0:
-                        cab.log("✓ Successfully updated to latest main branch (using merge strategy)")
+                        cab.log(
+                            "✓ Successfully updated to latest main branch (using merge strategy)"
+                        )
                         if merge_result.stdout.strip():
                             cab.log(f"Git output: {merge_result.stdout.strip()}")
                         # After successfully pulling, merge any backup branches into main
@@ -882,10 +887,16 @@ def update_git_repo():
                         # Successfully handled with merge strategy
                         return True
                     else:
-                        cab.log(f"✗ Merge strategy also failed: {merge_result.stderr.strip() or merge_result.stdout.strip()}", level="error")
+                        cab.log(
+                            f"✗ Merge strategy also failed: "
+                            f"{merge_result.stderr.strip() or merge_result.stdout.strip()}",
+                            level="error",
+                        )
                         return False
                 except subprocess.TimeoutExpired:
-                    cab.log("✗ Git pull (merge) timed out after 60 seconds", level="error")
+                    cab.log(
+                        "✗ Git pull (merge) timed out after 60 seconds", level="error"
+                    )
                     return False
             # Provide helpful error message for credential issues
             elif (
