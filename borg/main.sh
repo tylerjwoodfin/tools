@@ -183,7 +183,7 @@ else
         
         # Always add crontab backup
         [ -n "$BACKUP_PATHS" ] && BACKUP_PATHS="$BACKUP_PATHS "
-        BACKUP_PATHS="$BACKUP_PATHS$CRONTAB_TMP:crontab.txt"
+        BACKUP_PATHS="$BACKUP_PATHS$CRONTAB_TMP::crontab.txt"
 
         # Backup multiple paths
         # Exclude .git and .github directories recursively within ~/git
@@ -208,10 +208,34 @@ else
         if [ $backup_exit -ne 0 ]; then
             error "Borg backup creation failed with exit code: $backup_exit"
             if [ -s "$BORG_ERROR_TMP" ]; then
-                error "Borg error output:"
-                while IFS= read -r line; do
-                    error "  $line"
-                done < "$BORG_ERROR_TMP"
+                # Save full error output to permanent location for later review
+                ERROR_LOG_DIR="$HOME/.cabinet/log/borg-errors"
+                mkdir -p "$ERROR_LOG_DIR"
+                ERROR_LOG_FILE="$ERROR_LOG_DIR/borg-error-$(date +%Y%m%d-%H%M%S).log"
+                cp "$BORG_ERROR_TMP" "$ERROR_LOG_FILE"
+                error "Full Borg error output saved to: $ERROR_LOG_FILE"
+                
+                # Extract only actual error messages (exclude normal borg output)
+                actual_errors=$(grep -E '(stat:|No such file|Error|error|failed|Failed)' "$BORG_ERROR_TMP" | grep -v '^[MA] ' | sort -u)
+                
+                if [ -n "$actual_errors" ]; then
+                    error "Borg error details (showing first 10):"
+                    echo "$actual_errors" | head -10 | while IFS= read -r line; do
+                        error "  $line"
+                    done
+                    # If there are more than 10 errors, summarize
+                    error_count=$(echo "$actual_errors" | wc -l | tr -d ' ')
+                    if [ "$error_count" -gt 10 ]; then
+                        error "  ... and $((error_count - 10)) more error(s) - see full details in: $ERROR_LOG_FILE"
+                    fi
+                else
+                    # If no clear errors found, log first few lines as context
+                    error "Borg warning output (first 5 lines):"
+                    head -5 "$BORG_ERROR_TMP" | while IFS= read -r line; do
+                        error "  $line"
+                    done
+                    error "Full output available in: $ERROR_LOG_FILE"
+                fi
             fi
         fi
         
