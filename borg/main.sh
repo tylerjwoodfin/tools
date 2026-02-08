@@ -153,14 +153,16 @@ else
         info "Backup from today already exists, skipping create step"
         backup_exit=0
     else
-        # Create temporary file for crontab backup
-        CRONTAB_TMP=$(mktemp)
+        # Create temporary directory for crontab backup
+        # Use a fixed subdirectory name so the archive path is predictable
+        CRONTAB_TMP_DIR=$(mktemp -d)
+        CRONTAB_TMP="$CRONTAB_TMP_DIR/crontab.txt"
         crontab -l > "$CRONTAB_TMP" 2>/dev/null || touch "$CRONTAB_TMP"
 
         # Create temporary file to capture borg error output
         BORG_ERROR_TMP=$(mktemp)
-        # Set trap to clean up both temp files
-        trap "rm -f $CRONTAB_TMP $BORG_ERROR_TMP" EXIT
+        # Set trap to clean up temp files and directory
+        trap "rm -rf $CRONTAB_TMP_DIR $BORG_ERROR_TMP" EXIT
 
         # Build list of paths to backup, checking if they exist
         BACKUP_PATHS=""
@@ -184,15 +186,17 @@ else
         
         # Always add crontab backup (only if file exists, is readable, and has content)
         # Check that file has content (not just empty from failed crontab -l)
+        # Back up the temp directory; Borg will store it with the temp dir path,
+        # but crontab.txt will be accessible in the archive
         if [ -r "$CRONTAB_TMP" ] && [ -s "$CRONTAB_TMP" ]; then
-            [ -n "$BACKUP_PATHS" ] && BACKUP_PATHS="$BACKUP_PATHS "
-            # Use colon syntax to rename file in archive: source:destination
-            BACKUP_PATHS="$BACKUP_PATHS$CRONTAB_TMP::crontab.txt"
+            add_backup_path "$CRONTAB_TMP_DIR"
         fi
 
         # Backup multiple paths
         # Exclude .git and .github directories recursively within ~/git
         # Also exclude files that typically have permission issues
+        # Redirect stdout to /dev/null to avoid logging file listing spam
+        # Only capture stderr for actual warnings/errors
         "$BORG_CMD" create                         \
             --verbose                       \
             --filter AME                    \
@@ -210,6 +214,7 @@ else
                                             \
             ::'{hostname}-{now}'            \
             $BACKUP_PATHS \
+            >/dev/null \
             2>"$BORG_ERROR_TMP"
 
         backup_exit=$?
@@ -218,10 +223,19 @@ else
         if [ $backup_exit -eq 1 ]; then
             warning "Borg backup completed with warnings (some files were skipped)"
             if [ -s "$BORG_ERROR_TMP" ]; then
-                warning "Borg warning output:"
-                while IFS= read -r line; do
-                    warning "  $line"
-                done < "$BORG_ERROR_TMP"
+                # Filter out file listing lines (M/A prefixes) and normal borg output
+                actual_warnings=$(grep -v '^[MA] ' "$BORG_ERROR_TMP" | grep -v '^Creating archive' | grep -v '^Repository:' | grep -v '^Archive name:' | grep -v '^Archive fingerprint:' | grep -v '^Time (' | grep -v '^Duration:' | grep -v '^Number of files:' | grep -v '^Utilization' | grep -v '^Original size' | grep -v '^This archive:' | grep -v '^All archives:' | grep -v '^Unique chunks' | grep -v '^Chunk index:' | grep -v '^---' | grep -v '^$' | grep -E '(stat:|No such file|Error|error|failed|Failed|warning|Warning)' | sort -u)
+                
+                if [ -n "$actual_warnings" ]; then
+                    warning "Borg warning details:"
+                    echo "$actual_warnings" | head -10 | while IFS= read -r line; do
+                        warning "  $line"
+                    done
+                    warning_count=$(echo "$actual_warnings" | wc -l | tr -d ' ')
+                    if [ "$warning_count" -gt 10 ]; then
+                        warning "  ... and $((warning_count - 10)) more warning(s)"
+                    fi
+                fi
             fi
         elif [ $backup_exit -ne 0 ]; then
             error "Borg backup creation failed with exit code: $backup_exit"
