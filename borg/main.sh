@@ -183,7 +183,32 @@ else
         add_backup_path "$HOME/git"
         add_backup_path "$HOME/.zshrc"
         add_backup_path "$HOME/.config"
-        
+        add_backup_path "$HOME/.affine"
+
+        # Export Taiga Docker data for backup (DB, media, static)
+        # Data is normally in named volumes - we export to a dir under git so it gets backed up
+        TAIGA_DIR="$HOME/git/docker/taiga-docker"
+        TAIGA_BACKUP_DIR="$TAIGA_DIR/taiga-backup"
+        if [ -d "$TAIGA_DIR" ] && command -v docker >/dev/null 2>&1; then
+            mkdir -p "$TAIGA_BACKUP_DIR"
+            if docker compose -f "$TAIGA_DIR/docker-compose.yml" ps taiga-db 2>/dev/null | grep -q Up; then
+                if docker compose -f "$TAIGA_DIR/docker-compose.yml" exec -T taiga-db pg_dump -U taiga taiga > "$TAIGA_BACKUP_DIR/taiga_db.sql" 2>/dev/null; then
+                    debug "Taiga database dumped to taiga-backup/"
+                else
+                    warning "Failed to dump Taiga database"
+                fi
+                # Export media and static volumes
+                for vol_suffix in media static; do
+                    vol_name="taiga-docker_taiga-${vol_suffix}-data"
+                    if docker run --rm -v "$vol_name:/data" -v "$TAIGA_BACKUP_DIR/$vol_suffix:/backup" alpine cp -a /data/. /backup/ 2>/dev/null; then
+                        debug "Taiga $vol_suffix exported"
+                    fi
+                done
+            else
+                warning "Taiga not running, skipping Taiga data export"
+            fi
+        fi
+
         # Always add crontab backup (only if file exists, is readable, and has content)
         # Check that file has content (not just empty from failed crontab -l)
         # Back up the temp directory; Borg will store it with the temp dir path,
@@ -209,7 +234,7 @@ else
             --exclude 'sh:**/.github'       \
             --exclude 'sh:**/ssh_host_*_key*' \
             --exclude 'sh:**/logrotate'     \
-            --exclude 'sh:**/postgres'       \
+            --exclude 'sh:**/var/lib/postgresql*' \
             --exclude 'sh:**/tmp_objdir-*'  \
                                             \
             ::'{hostname}-{now}'            \
@@ -273,6 +298,11 @@ else
         
         # Clean up temp files after Borg is done
         rm -f "$CRONTAB_TMP" "$BORG_ERROR_TMP"
+
+        # Clean up Taiga export (was captured in backup)
+        if [ -d "${TAIGA_BACKUP_DIR:-}" ]; then
+            rm -rf "$TAIGA_BACKUP_DIR"
+        fi
     fi
 
     info "Pruning repository"
