@@ -172,7 +172,7 @@ def main():
         cabinet.log(f"✗ Syncthing base directory missing: {syncthing_base}", level="error")
 
     # Ping external hosts
-    external_hosts = ["git.tyler.cloud", "photos.tyler.cloud"]
+    external_hosts = ["git.tyler.cloud", "photos.tyler.cloud", "affine.tyler.cloud"]
 
     for host in external_hosts:
         if ping_host(host):
