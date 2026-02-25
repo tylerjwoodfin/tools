@@ -185,6 +185,38 @@ else
         add_backup_path "$HOME/.config"
         add_backup_path "$HOME/.affine"
 
+        # Export Immich database for backup (pg_dump - postgres data dir has restrictive perms)
+        IMMICH_DIR="$HOME/git/docker/immich"
+        IMMICH_BACKUP_DIR="$IMMICH_DIR/database-backup"
+        if [ -d "$IMMICH_DIR" ] && command -v docker >/dev/null 2>&1; then
+            mkdir -p "$IMMICH_BACKUP_DIR"
+            if docker ps --format '{{.Names}}' 2>/dev/null | grep -q immich_postgres; then
+                if docker exec -t immich_postgres pg_dumpall --clean --if-exists --username=postgres > "$IMMICH_BACKUP_DIR/immich-database.sql" 2>/dev/null; then
+                    debug "Immich database dumped to database-backup/"
+                else
+                    warning "Failed to dump Immich database"
+                fi
+            else
+                debug "Immich postgres not running, skipping database dump"
+            fi
+        fi
+
+        # Export Affine database for backup (pg_dump - postgres data dir has restrictive perms)
+        AFFINE_DIR="$HOME/git/docker/affine"
+        AFFINE_BACKUP_DIR="$AFFINE_DIR/database-backup"
+        if [ -d "$AFFINE_DIR" ] && command -v docker >/dev/null 2>&1; then
+            mkdir -p "$AFFINE_BACKUP_DIR"
+            if docker ps --format '{{.Names}}' 2>/dev/null | grep -q affine_postgres; then
+                if docker exec -t affine_postgres pg_dump -U affine affine > "$AFFINE_BACKUP_DIR/affine-database.sql" 2>/dev/null; then
+                    debug "Affine database dumped to database-backup/"
+                else
+                    warning "Failed to dump Affine database"
+                fi
+            else
+                debug "Affine postgres not running, skipping database dump"
+            fi
+        fi
+
         # Export Taiga Docker data for backup (DB, media, static)
         # Data is normally in named volumes - we export to a dir under git so it gets backed up
         TAIGA_DIR="$HOME/git/docker/taiga-docker"
@@ -220,8 +252,8 @@ else
         # Backup multiple paths
         # Exclude .git and .github directories recursively within ~/git
         # Also exclude files that typically have permission issues
-        # Redirect stdout to /dev/null to avoid logging file listing spam
-        # Only capture stderr for actual warnings/errors
+        # Capture both stdout and stderr - stdout has "E path" lines for skipped files
+        # (Borg --list sends file listing to stdout, errors/warnings to stderr)
         "$BORG_CMD" create                         \
             --verbose                       \
             --filter AME                    \
@@ -235,12 +267,13 @@ else
             --exclude 'sh:**/ssh_host_*_key*' \
             --exclude 'sh:**/logrotate'     \
             --exclude 'sh:**/var/lib/postgresql*' \
+            --exclude 'sh:**/postgres/pgdata' \
+            --exclude 'sh:**/docker/immich/postgres' \
             --exclude 'sh:**/tmp_objdir-*'  \
                                             \
             ::'{hostname}-{now}'            \
             $BACKUP_PATHS \
-            >/dev/null \
-            2>"$BORG_ERROR_TMP"
+            >"$BORG_ERROR_TMP" 2>&1
 
         backup_exit=$?
         
@@ -248,9 +281,21 @@ else
         if [ $backup_exit -eq 1 ]; then
             warning "Borg backup completed with warnings (some files were skipped)"
             if [ -s "$BORG_ERROR_TMP" ]; then
-                # Filter out file listing lines (M/A prefixes) and normal borg output
-                actual_warnings=$(grep -v '^[MA] ' "$BORG_ERROR_TMP" | grep -v '^Creating archive' | grep -v '^Repository:' | grep -v '^Archive name:' | grep -v '^Archive fingerprint:' | grep -v '^Time (' | grep -v '^Duration:' | grep -v '^Number of files:' | grep -v '^Utilization' | grep -v '^Original size' | grep -v '^This archive:' | grep -v '^All archives:' | grep -v '^Unique chunks' | grep -v '^Chunk index:' | grep -v '^---' | grep -v '^$' | grep -E '(stat:|No such file|Error|error|failed|Failed|warning|Warning)' | sort -u)
+                # Extract "E path" lines - Borg uses E = error (file could not be read)
+                skipped_files=$(grep '^E ' "$BORG_ERROR_TMP" | sed 's/^E //' | sort -u)
+                # Extract other warning/error messages (exclude M/A/E file listing, normal borg output)
+                actual_warnings=$(grep -v '^[MAE] ' "$BORG_ERROR_TMP" | grep -v '^Creating archive' | grep -v '^Repository:' | grep -v '^Archive name:' | grep -v '^Archive fingerprint:' | grep -v '^Time (' | grep -v '^Duration:' | grep -v '^Number of files:' | grep -v '^Utilization' | grep -v '^Original size' | grep -v '^This archive:' | grep -v '^All archives:' | grep -v '^Unique chunks' | grep -v '^Chunk index:' | grep -v '^---' | grep -v '^$' | grep -E '(stat:|No such file|Error|error|failed|Failed|Permission denied|warning|Warning)' | grep -v '^terminating with warning status' | sort -u)
                 
+                if [ -n "$skipped_files" ]; then
+                    warning "Skipped files (could not be read):"
+                    echo "$skipped_files" | head -20 | while IFS= read -r line; do
+                        warning "  $line"
+                    done
+                    skipped_count=$(echo "$skipped_files" | wc -l | tr -d ' ')
+                    if [ "$skipped_count" -gt 20 ]; then
+                        warning "  ... and $((skipped_count - 20)) more skipped file(s)"
+                    fi
+                fi
                 if [ -n "$actual_warnings" ]; then
                     warning "Borg warning details:"
                     echo "$actual_warnings" | head -10 | while IFS= read -r line; do
@@ -260,6 +305,14 @@ else
                     if [ "$warning_count" -gt 10 ]; then
                         warning "  ... and $((warning_count - 10)) more warning(s)"
                     fi
+                fi
+                # If we found nothing useful, save full output for debugging
+                if [ -z "$skipped_files" ] && [ -z "$actual_warnings" ]; then
+                    WARN_LOG_DIR="$HOME/.cabinet/log/borg-errors"
+                    mkdir -p "$WARN_LOG_DIR"
+                    WARN_LOG_FILE="$WARN_LOG_DIR/borg-warning-$(date +%Y%m%d-%H%M%S).log"
+                    cp "$BORG_ERROR_TMP" "$WARN_LOG_FILE"
+                    warning "Full Borg output saved to: $WARN_LOG_FILE (no parseable details found)"
                 fi
             fi
         elif [ $backup_exit -ne 0 ]; then
@@ -299,10 +352,10 @@ else
         # Clean up temp files after Borg is done
         rm -f "$CRONTAB_TMP" "$BORG_ERROR_TMP"
 
-        # Clean up Taiga export (was captured in backup)
-        if [ -d "${TAIGA_BACKUP_DIR:-}" ]; then
-            rm -rf "$TAIGA_BACKUP_DIR"
-        fi
+        # Clean up exports (were captured in backup)
+        for _dir in "${TAIGA_BACKUP_DIR:-}" "${IMMICH_BACKUP_DIR:-}" "${AFFINE_BACKUP_DIR:-}"; do
+            [ -d "$_dir" ] && rm -rf "$_dir"
+        done
     fi
 
     info "Pruning repository"
