@@ -747,12 +747,13 @@ def update_git_repo():
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_branch = f"backup_{timestamp}"
 
-            # Stash current changes
+            # Stash current changes (include untracked to allow clean pull)
             stash_result = subprocess.run(
                 [
                     "git",
                     "stash",
                     "push",
+                    "--include-untracked",
                     "-m",
                     f"Auto-stash before pulling main - {timestamp}",
                 ],
@@ -762,29 +763,29 @@ def update_git_repo():
             )
             if stash_result.returncode != 0:
                 cab.log(
-                    f"Warning: Failed to stash changes: {stash_result.stderr}",
+                    f"Failed to stash changes - cannot pull with uncommitted changes: "
+                    f"{stash_result.stderr or stash_result.stdout}".strip(),
+                    level="error",
+                )
+                return False
+            cab.log("Stashed changes")
+
+            # Create backup branch from stash
+            stash_branch_result = subprocess.run(
+                ["git", "stash", "branch", backup_branch],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if stash_branch_result.returncode == 0:
+                cab.log(f"Created backup branch: {backup_branch}")
+                # git stash branch checks out the new branch, so switch back to original
+                subprocess.run(["git", "checkout", current_branch], check=False)
+            else:
+                cab.log(
+                    f"Warning: Failed to create backup branch: {stash_branch_result.stderr}",
                     level="warning",
                 )
-            else:
-                cab.log("Stashed changes")
-
-            # Create backup branch from stash (only if stash was successful)
-            if stash_result.returncode == 0:
-                stash_branch_result = subprocess.run(
-                    ["git", "stash", "branch", backup_branch],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if stash_branch_result.returncode == 0:
-                    cab.log(f"Created backup branch: {backup_branch}")
-                    # git stash branch checks out the new branch, so switch back to original branch
-                    subprocess.run(["git", "checkout", current_branch], check=False)
-                else:
-                    cab.log(
-                        f"Warning: Failed to create backup branch: {stash_branch_result.stderr}",
-                        level="warning",
-                    )
 
         # Fetch latest changes from remote
         # Set GIT_TERMINAL_PROMPT=0 to prevent interactive credential prompts
