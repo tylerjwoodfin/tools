@@ -2,7 +2,9 @@
 Generate a daily status email detailing key activities, back up essential files, and manage logs.
 """
 
+import argparse
 import os
+import re
 import difflib
 import datetime
 import glob
@@ -10,8 +12,10 @@ import subprocess
 import textwrap
 import json
 import sys
+import html
 from pathlib import Path
 import cabinet
+from tyler_python_helpers import ChatGPT
 
 # pylint: disable=invalid-name
 
@@ -143,7 +147,7 @@ def append_service_check_summary(email):
     return email
 
 
-def append_food_log(email):
+def append_food_log(email, dry_run=False):
     """check if food has been logged today, print total calories or an error if none found."""
     log_file = os.path.expanduser("~/syncthing/log/food.json")
     today_str = datetime.date.today().isoformat()
@@ -157,8 +161,9 @@ def append_food_log(email):
             log_data = json.load(f)
 
         if today_str not in log_data or not log_data[today_str]:
-            mail.send("🍊 Log food for today!",
-            "No food logged for today. Please log your food for today.")
+            if not dry_run:
+                mail.send("🍊 Log food for today!",
+                "No food logged for today. Please log your food for today.")
             return email
         else:
             total_calories = sum(entry["calories"] for entry in log_data[today_str])
@@ -173,6 +178,75 @@ def append_food_log(email):
 
     except (json.JSONDecodeError, OSError):
         cab.log("Error reading food log file.", level="error")
+        return email
+
+
+def append_nutrition_summary(email):
+    """Append a bulleted summary of nutritional quality from the past 7 days via ChatGPT."""
+    log_file = os.path.expanduser("~/syncthing/log/food.json")
+
+    if not os.path.exists(log_file):
+        cab.log("Food log file does not exist for nutrition summary.", level="error")
+        return email
+
+    try:
+        with open(log_file, "r", encoding="utf-8") as f:
+            log_data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        cab.log(f"Error reading food log for nutrition summary: {e}", level="error")
+        return email
+
+    # Build food log for past 7 days
+    today = datetime.date.today()
+    week_entries = []
+    for i in range(7):
+        date = today - datetime.timedelta(days=i)
+        date_str = date.isoformat()
+        if date_str in log_data and log_data[date_str]:
+            day_foods = [
+                f"  - {e.get('food', 'unknown')}: {e.get('calories', 0)} cal"
+                for e in log_data[date_str]
+            ]
+            day_total = sum(e.get("calories", 0) for e in log_data[date_str])
+            week_entries.append(
+                f"{date_str} ({day_total} cal total):\n" + "\n".join(day_foods)
+            )
+
+    if not week_entries:
+        cab.log("No food log data in the past 7 days for nutrition summary.")
+        return email
+
+    food_log_text = "\n\n".join(week_entries)
+
+    prompt = textwrap.dedent(f"""
+        You are a nutritionist. Analyze the following 7-day food log and provide a concise bulleted summary
+        of how well I ate nutritionally. Focus on: balance, variety, consistency, and any patterns or concerns.
+        Use 3-6 bullet points. Suggest suitable replacement foods as needed.
+        Point to specific examples as needed.
+        Be direct and actionable. Output no more than 6 bullet points.
+
+        Food log:
+        {food_log_text}
+    """).strip()
+
+    try:
+        chatgpt = ChatGPT()
+        summary = chatgpt.query(prompt)
+        # Convert markdown bullets to HTML if needed (ChatGPT may return -* or •)
+        lines = summary.strip().split("\n")
+        html_bullets = "".join(
+            f"<li>{line.lstrip('*-• ').strip().replace('**', '')}</li>"
+            for line in lines if line.strip()
+        )
+        return email + textwrap.dedent(f"""
+            <h3>Nutrition Summary (Past 7 Days):</h3>
+            <ul>
+            {html_bullets}
+            </ul>
+            <br>
+        """)
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        cab.log(f"ChatGPT nutrition summary failed: {e}", level="error")
         return email
 
 
@@ -337,8 +411,15 @@ def append_weather_info(email):
     return email
 
 
-def send_status_email(email, is_warnings, is_errors, only_food_log_error, today):  # pylint: disable=redefined-outer-name
-    """determine and send status email"""
+def send_status_email(
+    email,
+    is_warnings,
+    is_errors,
+    only_food_log_error,
+    today,
+    dry_run=False,
+):  # pylint: disable=redefined-outer-name
+    """determine and send status email (or print to terminal if dry_run)"""
     email_subject = f"Daily Status - {today}"
     if is_errors and is_warnings:
         email_subject += " - Check Errors/Warnings"
@@ -350,10 +431,40 @@ def send_status_email(email, is_warnings, is_errors, only_food_log_error, today)
     elif is_warnings:
         email_subject += " - Check Warnings"
 
+    if dry_run:
+        plain = html_to_plain_text(email)
+        print(f"Subject: {email_subject}\n")
+        print(plain)
+        return
+
     mail.send(email_subject, email)
 
 
+def html_to_plain_text(html_content):
+    """Convert HTML email content to readable plain text for terminal display."""
+    text = html_content.replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+    # Convert list items to bullets before stripping other tags
+    text = re.sub(r"<li[^>]*>", "\n• ", text, flags=re.IGNORECASE)
+    # Add newlines after block elements
+    text = re.sub(r"</(?:h[1-6]|p|li|tr|pre|div)>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<(?:h[1-6]|p|li|tr|pre|div)[^>]*>", "\n", text, flags=re.IGNORECASE)
+    # Strip remaining tags
+    text = re.sub(r"<[^>]+>", "", text)
+    text = html.unescape(text)
+    # Collapse excessive newlines, trim
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate daily status email")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the full email to terminal without sending",
+    )
+    args = parser.parse_args()
+
     # set up paths
     today = datetime.date.today()
     log_path_today = os.path.join(cab.path_dir_log, str(today))
@@ -365,7 +476,10 @@ if __name__ == "__main__":
     run_service_check()
 
     # check if food has been logged today
-    status_email = append_food_log(status_email)
+    status_email = append_food_log(status_email, dry_run=args.dry_run)
+
+    # add nutrition summary for past 7 days
+    status_email = append_nutrition_summary(status_email)
 
     # add syncthing conflict check
     status_email = append_syncthing_conflict_check(status_email)
@@ -387,11 +501,12 @@ if __name__ == "__main__":
     # append service check summary
     status_email = append_service_check_summary(status_email)
 
-    # send the email
+    # send the email (or print to terminal if --dry-run)
     send_status_email(
         status_email,
         has_warnings,
         has_errors,
         is_only_food_log_error,
         today,
+        dry_run=args.dry_run,
     )
