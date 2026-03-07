@@ -269,6 +269,9 @@ else
             --exclude 'sh:**/var/lib/postgresql*' \
             --exclude 'sh:**/postgres/pgdata' \
             --exclude 'sh:**/docker/immich/postgres' \
+            --exclude 'sh:**/etc-pihole/cli_pw'     \
+            --exclude 'sh:**/etc-pihole/logrotate'  \
+            --exclude 're:etc-pihole'               \
             --exclude 'sh:**/tmp_objdir-*'  \
                                             \
             ::'{hostname}-{now}'            \
