@@ -282,9 +282,11 @@ else
             warning "Borg backup completed with warnings (some files were skipped)"
             if [ -s "$BORG_ERROR_TMP" ]; then
                 # Extract "E path" lines - Borg uses E = error (file could not be read)
-                skipped_files=$(grep '^E ' "$BORG_ERROR_TMP" | sed 's/^E //' | sort -u)
+                # Support both "E /path" and " E /path" (some Borg versions use leading space)
+                skipped_files=$(grep -E '^[[:space:]]*E[[:space:]]+' "$BORG_ERROR_TMP" | sed 's/^[[:space:]]*E[[:space:]]*//' | sort -u)
                 # Extract other warning/error messages (exclude M/A/E file listing, normal borg output)
-                actual_warnings=$(grep -v '^[MAE] ' "$BORG_ERROR_TMP" | grep -v '^Creating archive' | grep -v '^Repository:' | grep -v '^Archive name:' | grep -v '^Archive fingerprint:' | grep -v '^Time (' | grep -v '^Duration:' | grep -v '^Number of files:' | grep -v '^Utilization' | grep -v '^Original size' | grep -v '^This archive:' | grep -v '^All archives:' | grep -v '^Unique chunks' | grep -v '^Chunk index:' | grep -v '^---' | grep -v '^$' | grep -E '(stat:|No such file|Error|error|failed|Failed|Permission denied|warning|Warning)' | grep -v '^terminating with warning status' | sort -u)
+                # Include "terminating with warning" - it's the primary reason for exit 1 when no E lines exist
+                actual_warnings=$(grep -v -E '^[[:space:]]*[MAE][[:space:]]' "$BORG_ERROR_TMP" | grep -v '^Creating archive' | grep -v '^Repository:' | grep -v '^Archive name:' | grep -v '^Archive fingerprint:' | grep -v '^Time (' | grep -v '^Duration:' | grep -v '^Number of files:' | grep -v '^Utilization' | grep -v '^Original size' | grep -v '^This archive:' | grep -v '^All archives:' | grep -v '^Unique chunks' | grep -v '^Chunk index:' | grep -v '^---' | grep -v '^$' | grep -E '(stat:|No such file|Error|error|failed|Failed|Permission denied|warning|Warning|terminating|skipped|could not)' | sort -u)
                 
                 if [ -n "$skipped_files" ]; then
                     warning "Skipped files (could not be read):"
@@ -306,13 +308,25 @@ else
                         warning "  ... and $((warning_count - 10)) more warning(s)"
                     fi
                 fi
-                # If we found nothing useful, save full output for debugging
+                # If we found nothing useful, extract any relevant lines and save full output for debugging
                 if [ -z "$skipped_files" ] && [ -z "$actual_warnings" ]; then
+                    # Last resort: show lines that might explain the warning
+                    hint_lines=$(grep -iE '(warning|error|skip|terminat|could not|permission denied|failed)' "$BORG_ERROR_TMP" | head -5)
+                    if [ -n "$hint_lines" ]; then
+                        warning "Borg output (no structured details parsed):"
+                        echo "$hint_lines" | while IFS= read -r line; do
+                            warning "  $line"
+                        done
+                    fi
                     WARN_LOG_DIR="$HOME/.cabinet/log/borg-errors"
                     mkdir -p "$WARN_LOG_DIR"
                     WARN_LOG_FILE="$WARN_LOG_DIR/borg-warning-$(date +%Y%m%d-%H%M%S).log"
                     cp "$BORG_ERROR_TMP" "$WARN_LOG_FILE"
-                    warning "Full Borg output saved to: $WARN_LOG_FILE (no parseable details found)"
+                    if [ -n "$hint_lines" ]; then
+                        warning "Full Borg output saved to: $WARN_LOG_FILE"
+                    else
+                        warning "Full Borg output saved to: $WARN_LOG_FILE (no parseable details found)"
+                    fi
                 fi
             fi
         elif [ $backup_exit -ne 0 ]; then
@@ -464,7 +478,7 @@ else
     # Check backups (always run to verify repository state)
     info "Checking backups"
     if [ "$backup_exit" -eq 1 ]; then
-        warning "Backup creation completed with warnings (exit code: 1), but checking existing backups anyway"
+        info "Backup created with warnings (some files skipped), verifying existing backups"
     elif [ "$backup_exit" -ne 0 ]; then
         error "Backup creation failed (exit code: $backup_exit), but checking existing backups anyway"
     fi
