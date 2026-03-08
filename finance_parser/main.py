@@ -537,7 +537,7 @@ class SchwabParser(BaseParser):
         ]
 
 
-def ask_for_file(file_description: str) -> str:
+def ask_for_file(file_description: str) -> Optional[str]:
     """Prompts the user to select a file via a file dialog."""
     print(f"Please select the {file_description}.")
     Tk().withdraw()
@@ -553,8 +553,8 @@ def ask_for_file(file_description: str) -> str:
 def update_spreadsheet_with_totals(
     spreadsheet_path: str,
     totals_df: pd.DataFrame,
-    schwab_balance: float,
-    venmo_balance: float,
+    schwab_balance: Optional[float],
+    venmo_balance: Optional[float],
 ) -> None:
     """Reads an ODS spreadsheet, allows the user to select a sheet, and updates only Column C."""
     # Open the spreadsheet
@@ -590,12 +590,18 @@ def update_spreadsheet_with_totals(
                     selected_sheet[row_idx, 2].set_value(total)
                     matched = True
                     break
-                # Update Schwab balance
-                elif cell_value.strip().lower() == "schwab checking":
+                # Update Schwab balance (only if we loaded Schwab data)
+                elif (
+                    cell_value.strip().lower() == "schwab checking"
+                    and schwab_balance is not None
+                ):
                     selected_sheet[row_idx, 3].set_value(schwab_balance)
                     matched = True
-                # Update Venmo balance
-                elif cell_value.strip().lower().startswith("venmo"):
+                # Update Venmo balance (only if we loaded Venmo data)
+                elif (
+                    cell_value.strip().lower().startswith("venmo")
+                    and venmo_balance is not None
+                ):
                     selected_sheet[row_idx, 3].set_value(venmo_balance)
                     matched = True
 
@@ -646,14 +652,17 @@ def main() -> None:
         )
 
         # Find files in Downloads or fall back to file browser
-        venmo_file_path = find_latest_file_in_downloads(
-            "VenmoStatement*.csv"
-        ) or ask_for_file("Venmo transactions CSV")
+        venmo_file_path = (
+            find_latest_file_in_downloads("VenmoStatement*.csv")
+            or ask_for_file("Venmo transactions CSV")
+            or None
+        )
 
         # Find Citi files using the new function
         citi_files = find_citi_files()
         if not citi_files:
-            citi_files = [ask_for_file("Citi transactions CSV")]
+            citi_file = ask_for_file("Citi transactions CSV")
+            citi_files = [citi_file] if citi_file else []
         else:
             print(f"Found Citi files: {citi_files}")
 
@@ -666,6 +675,7 @@ def main() -> None:
             find_latest_file_in_downloads("schwab.csv")
             or find_latest_file_in_downloads("Checking_*.csv")
             or ask_for_file("Schwab transactions CSV")
+            or None
         )
 
         # Try to find Robinhood CSV by checking for the characteristic column structure
@@ -691,25 +701,30 @@ def main() -> None:
         spreadsheet_path = args.spreadsheet or get_default_spreadsheet_path()
 
         # Process Venmo transactions
-        venmo_parser = VenmoParser(
-            file_path=venmo_file_path, category_file=categories_file_path
-        )
-        venmo_parser.load_categories()
-        venmo_parser.load_transactions()
-        venmo_summary_df = venmo_parser.process_transactions()
-        venmo_balance = (
-            float(venmo_summary_df["Balance"].iloc[-1])
-            if "Balance" in venmo_summary_df.columns
-            else 0.0
-        )
+        venmo_summary_df = None
+        venmo_balance = None
+        if venmo_file_path:
+            venmo_parser = VenmoParser(
+                file_path=venmo_file_path, category_file=categories_file_path
+            )
+            venmo_parser.load_categories()
+            venmo_parser.load_transactions()
+            venmo_summary_df = venmo_parser.process_transactions()
+            venmo_balance = (
+                float(venmo_summary_df["Balance"].iloc[-1])
+                if "Balance" in venmo_summary_df.columns
+                else None
+            )
 
         # Process Citi transactions
-        citi_parser = CitiParser(
-            file_paths=citi_files, category_file=categories_file_path
-        )
-        citi_parser.load_categories()
-        citi_parser.load_transactions()
-        citi_summary_df = citi_parser.process_transactions()
+        citi_summary_df = None
+        if citi_files:
+            citi_parser = CitiParser(
+                file_paths=citi_files, category_file=categories_file_path
+            )
+            citi_parser.load_categories()
+            citi_parser.load_transactions()
+            citi_summary_df = citi_parser.process_transactions()
 
         # Process Amazon transactions
         amazon_parser = None
@@ -726,17 +741,20 @@ def main() -> None:
             amazon_summary_df = None
 
         # Process Schwab transactions
-        schwab_parser = SchwabParser(
-            file_path=schwab_file_path, category_file=categories_file_path
-        )
-        schwab_parser.load_categories()
-        schwab_parser.load_transactions()
-        schwab_summary_df = schwab_parser.process_transactions()
-        schwab_balance = (
-            float(schwab_summary_df["Balance"].iloc[-1])
-            if "Balance" in schwab_summary_df.columns
-            else 0.0
-        )
+        schwab_summary_df = None
+        schwab_balance = None
+        if schwab_file_path:
+            schwab_parser = SchwabParser(
+                file_path=schwab_file_path, category_file=categories_file_path
+            )
+            schwab_parser.load_categories()
+            schwab_parser.load_transactions()
+            schwab_summary_df = schwab_parser.process_transactions()
+            schwab_balance = (
+                float(schwab_summary_df["Balance"].iloc[-1])
+                if "Balance" in schwab_summary_df.columns
+                else None
+            )
 
         # Process Robinhood Credit Card transactions
         robinhood_summary_df = None
@@ -756,9 +774,14 @@ def main() -> None:
             schwab_summary_df,
             robinhood_summary_df,
         ]
-        combined_df = pd.concat(
-            [df for df in dataframes if df is not None]
-        ).sort_values(by=["Source", "Category", "Datetime"])
+        valid_dfs = [df for df in dataframes if df is not None]
+        if not valid_dfs:
+            print("No transaction files were loaded. Exiting.")
+            return
+
+        combined_df = pd.concat(valid_dfs).sort_values(
+            by=["Source", "Category", "Datetime"]
+        )
         print("\nCombined Transactions:")
         print(combined_df.to_string(index=False))
 

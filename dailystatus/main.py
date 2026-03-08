@@ -197,10 +197,10 @@ def append_nutrition_summary(email):
         return email
 
     # Build food log for past 7 days
-    today = datetime.date.today()
+    today_day = datetime.date.today()
     week_entries = []
     for i in range(7):
-        date = today - datetime.timedelta(days=i)
+        date = today_day - datetime.timedelta(days=i)
         date_str = date.isoformat()
         if date_str in log_data and log_data[date_str]:
             day_foods = [
