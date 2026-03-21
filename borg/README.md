@@ -58,7 +58,7 @@ If replication fails mid-transfer, simply run `./main.sh --replicate-only` to re
 
 - Source: `/home/tyler/syncthing` (hardcoded for my use case)
 - Compression: LZ4 (fast compression)
-- Excludes: Cache directories (via `--exclude-caches`)
+- Excludes: Cache directories (via `--exclude-caches`), live DB trees (Postgres, MongoDB WiredTiger under `docker/`, Pi-hole, etc.) that are root-owned or unsafe to copy while running
 
 ## Backup Schedule
 

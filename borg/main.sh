@@ -252,6 +252,7 @@ else
         # Backup multiple paths
         # Exclude .git and .github directories recursively within ~/git
         # Also exclude files that typically have permission issues
+        # docker/mongodb/data: WiredTiger files are root-owned + unsafe to copy live; use mongodump if you need DB in Borg
         # Capture both stdout and stderr - stdout has "E path" lines for skipped files
         # (Borg --list sends file listing to stdout, errors/warnings to stderr)
         "$BORG_CMD" create                         \
@@ -269,6 +270,7 @@ else
             --exclude 'sh:**/var/lib/postgresql*' \
             --exclude 'sh:**/postgres/pgdata' \
             --exclude 'sh:**/docker/immich/postgres' \
+            --exclude 'sh:**/docker/mongodb/data' \
             --exclude 'sh:**/etc-pihole/cli_pw'     \
             --exclude 'sh:**/etc-pihole/logrotate'  \
             --exclude 're:etc-pihole'               \
