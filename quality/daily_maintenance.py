@@ -683,7 +683,7 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
         return False
 
 
-def update_git_repo():
+def update_backend_repo():
     """
     Update the Git repository to the latest main branch.
     Handle uncommitted changes by stashing them and creating a backup branch.
@@ -947,7 +947,7 @@ def main():
     cab.log("Starting daily maintenance tasks")
 
     # Update Git repository to latest main branch
-    update_git_repo()
+    update_backend_repo()
 
     # Apply stow configuration
     apply_stow()
