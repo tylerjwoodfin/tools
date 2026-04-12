@@ -10,26 +10,7 @@ import subprocess
 import sys
 import os
 
-# Try to use pipx environments first (if available)
-pipx_venvs = os.path.expanduser("~/.local/share/pipx/venvs")
-CABINET_VENV = f"{pipx_venvs}/cabinet/lib/python3.12/site-packages"
-PYTHON_HELPERS_VENV = f"{pipx_venvs}/tyler-python-helpers/lib/python3.12/site-packages"
-
-# Add pipx venvs if they exist
-for venv_path in [CABINET_VENV, PYTHON_HELPERS_VENV]:
-    if os.path.exists(venv_path) and venv_path not in sys.path:
-        sys.path.insert(0, venv_path)
-
-# Fallback to local git repos if pipx venvs don't work
-cabinet_path = os.path.expanduser("~/git/cabinet/src")
-python_helpers_path = os.path.expanduser("~/git/python-helpers")
-
-for path in [cabinet_path, python_helpers_path]:
-    if path not in sys.path:
-        sys.path.insert(0, path)
-
-# Import must be after sys.path modifications
-from tyler_python_helpers import ChatGPT  # pylint: disable=import-error,wrong-import-position # type: ignore
+from tyler_python_helpers import ChatGPT
 
 # Debug mode - set to True to enable debug logging
 DEBUG = False
@@ -56,9 +37,26 @@ def clean_command(command: str) -> str:
     return cleaned
 
 
+def _safe_cwd() -> str:
+    """
+    Return a valid working directory for subprocesses.
+
+    If the current process is attached to a deleted directory, fall back to HOME
+    so shell commands still run instead of failing with getcwd() errors.
+    """
+    try:
+        return os.getcwd()
+    except FileNotFoundError:
+        fallback = os.path.expanduser("~")
+        os.chdir(fallback)
+        return fallback
+
+
 def run_command(command: str, timeout: int = 6) -> tuple[str, str]:
     """Run a command in the background and capture its output."""
     debug_print(f"Running command with {timeout}s timeout: {command}")
+    working_dir = _safe_cwd()
+    debug_print(f"Using working directory: {working_dir}")
 
     try:
         # Use subprocess.run with a timeout
@@ -71,6 +69,7 @@ def run_command(command: str, timeout: int = 6) -> tuple[str, str]:
             timeout=timeout,
             check=True,
             preexec_fn=os.setsid,  # Create new process group
+            cwd=working_dir,
         )
 
         debug_print("Command completed successfully")
