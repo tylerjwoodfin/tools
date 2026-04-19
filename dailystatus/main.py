@@ -5,9 +5,11 @@ Generate a daily status email detailing key activities, back up essential files,
 import argparse
 import os
 import re
+import shlex
 import difflib
 import datetime
 import glob
+import shutil
 import subprocess
 import textwrap
 import json
@@ -181,6 +183,65 @@ def append_food_log(email, dry_run=False):
         return email
 
 
+def _apply_foodlog_goals_response(goals_response: str) -> None:
+    """
+    Parse ChatGPT output from foodlog_goals: either the literal NO GOALS, or
+    line-separated `rmmy when, "title"` commands; run each via `remind --save`.
+    """
+    text = goals_response.strip()
+    if not text or text.upper() == "NO GOALS":
+        cab.log("No foodlog goals to apply.", level="info")
+        return
+
+    remind_exe = shutil.which("remind")
+    if not remind_exe:
+        cab.log(
+            "remind executable not found in PATH; skipping foodlog goal reminders",
+            level="error",
+        )
+        return
+
+    for raw_line in goals_response.splitlines():
+        line = raw_line.strip()
+        match = re.match(r"rmmy\s+", line, flags=re.IGNORECASE)
+        if not match:
+            continue
+        rest = line[match.end() :].strip()
+        comma = rest.find(",")
+        if comma == -1:
+            cab.log(f"Skipping invalid rmmy line (no comma): {raw_line!r}", level="warning")
+            continue
+        when = rest[:comma].strip()
+        title = rest[comma + 1 :].strip()
+        if (title.startswith('"') and title.endswith('"')) or (
+            title.startswith("'") and title.endswith("'")
+        ):
+            title = title[1:-1]
+        if not when or not title:
+            cab.log(f"Skipping empty when/title in rmmy line: {raw_line!r}", level="warning")
+            continue
+        cmd = [remind_exe, "--save", "--when", when, "--title", *title.split()]
+        try:
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            cab.log(
+                f"remind foodlog goal OK\ncommand: {shlex.join(cmd)}\n"
+                f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}",
+                level="debug",
+                tags=["dailystatus", "remind", "foodlog_goal"],
+            )
+        except subprocess.CalledProcessError as e:
+            cab.log(
+                f"remind failed for foodlog goal ({when!r}, {title!r}): {e.stderr or e}",
+                level="error",
+            )
+            cab.log(
+                f"remind foodlog goal FAILED\ncommand: {shlex.join(cmd)}\n"
+                f"stdout: {e.stdout!r}\nstderr: {e.stderr!r}",
+                level="debug",
+                tags=["dailystatus", "remind", "foodlog_goal"],
+            )
+
+
 def append_nutrition_summary(email):
     """Append a bulleted summary of nutritional quality from the past 7 days via ChatGPT."""
     log_file = os.path.expanduser("~/syncthing/log/food.json")
@@ -219,12 +280,7 @@ def append_nutrition_summary(email):
     food_log_text = "\n\n".join(week_entries)
 
     prompt = textwrap.dedent(f"""
-        You are a nutritionist. Analyze the following 7-day food log and provide a concise bulleted summary
-        of how well I ate nutritionally. Focus on: balance, variety, consistency, and any patterns or concerns.
-        Use 3-6 bullet points. Suggest suitable replacement foods as needed.
-        Point to specific examples as needed.
-        Be direct and actionable. Output no more than 6 bullet points.
-
+        {cab.get("ai", "prompts", "foodlog")}
         Food log:
         {food_log_text}
     """).strip()
@@ -232,17 +288,30 @@ def append_nutrition_summary(email):
     try:
         chatgpt = ChatGPT()
         summary = chatgpt.query(prompt)
-        # Convert markdown bullets to HTML if needed (ChatGPT may return -* or •)
-        lines = summary.strip().split("\n")
-        html_bullets = "".join(
-            f"<li>{line.lstrip('*-• ').strip().replace('**', '')}</li>"
-            for line in lines if line.strip()
+        cab.log(
+            f"ChatGPT foodlog response:\n{summary}",
+            level="debug",
+            tags=["dailystatus", "chatgpt", "foodlog"],
         )
+
+        goals_prompt_base = cab.get("ai", "prompts", "foodlog_goals")
+        if goals_prompt_base:
+            try:
+                goals_prompt = f"{goals_prompt_base}\n\n{summary}"
+                goals_response = chatgpt.query(goals_prompt)
+                cab.log(
+                    f"ChatGPT foodlog_goals response:\n{goals_response}",
+                    level="debug",
+                    tags=["dailystatus", "chatgpt", "foodlog_goals"],
+                )
+                _apply_foodlog_goals_response(goals_response)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                cab.log(f"ChatGPT foodlog goals or remind step failed: {e}", level="error")
+
+        # foodlog prompt asks for HTML: opening sentence, then <h3> + <ul><li> sections.
         return email + textwrap.dedent(f"""
-            <h3>Nutrition Summary (Past 7 Days):</h3>
-            <ul>
-            {html_bullets}
-            </ul>
+            <h3>Weekly Nutrition Summary:</h3>
+            {summary.strip()}
             <br>
         """)
     except Exception as e:  # pylint: disable=broad-exception-caught
@@ -431,6 +500,9 @@ def send_status_email(
     elif is_warnings:
         email_subject += " - Check Warnings"
 
+    if today.weekday() == 5:  # Saturday
+        email_subject = f"🍎 {email_subject}"
+
     if dry_run:
         plain = html_to_plain_text(email)
         print(f"Subject: {email_subject}\n")
@@ -478,8 +550,9 @@ if __name__ == "__main__":
     # check if food has been logged today
     status_email = append_food_log(status_email, dry_run=args.dry_run)
 
-    # add nutrition summary for past 7 days
-    status_email = append_nutrition_summary(status_email)
+    # weekly nutrition summary (Saturdays only)
+    if today.weekday() == 5:
+        status_email = append_nutrition_summary(status_email)
 
     # add syncthing conflict check
     status_email = append_syncthing_conflict_check(status_email)
