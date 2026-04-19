@@ -217,6 +217,38 @@ else
             fi
         fi
 
+        # Export Authentik database (bind-mounted PG data is root-owned; unsafe to copy live)
+        AUTHENTIK_DIR="$HOME/git/docker/authentik"
+        AUTHENTIK_BACKUP_DIR="$AUTHENTIK_DIR/database-backup"
+        if [ -d "$AUTHENTIK_DIR" ] && command -v docker >/dev/null 2>&1; then
+            mkdir -p "$AUTHENTIK_BACKUP_DIR"
+            if docker ps --format '{{.Names}}' 2>/dev/null | grep -q authentik_postgresql; then
+                if docker exec -t authentik_postgresql sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$AUTHENTIK_BACKUP_DIR/authentik-database.sql" 2>/dev/null; then
+                    debug "Authentik database dumped to database-backup/"
+                else
+                    warning "Failed to dump Authentik database"
+                fi
+            else
+                debug "Authentik postgres not running, skipping database dump"
+            fi
+        fi
+
+        # Export Miniflux database (same rationale as Authentik)
+        MINIFLUX_DIR="$HOME/git/docker/miniflux"
+        MINIFLUX_BACKUP_DIR="$MINIFLUX_DIR/database-backup"
+        if [ -d "$MINIFLUX_DIR" ] && command -v docker >/dev/null 2>&1; then
+            mkdir -p "$MINIFLUX_BACKUP_DIR"
+            if docker ps --format '{{.Names}}' 2>/dev/null | grep -q miniflux-db; then
+                if docker exec -t miniflux-db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$MINIFLUX_BACKUP_DIR/miniflux-database.sql" 2>/dev/null; then
+                    debug "Miniflux database dumped to database-backup/"
+                else
+                    warning "Failed to dump Miniflux database"
+                fi
+            else
+                debug "Miniflux db not running, skipping database dump"
+            fi
+        fi
+
         # Export Taiga Docker data for backup (DB, media, static)
         # Data is normally in named volumes - we export to a dir under git so it gets backed up
         TAIGA_DIR="$HOME/git/docker/taiga-docker"
@@ -270,6 +302,9 @@ else
             --exclude 'sh:**/var/lib/postgresql*' \
             --exclude 'sh:**/postgres/pgdata' \
             --exclude 'sh:**/docker/immich/postgres' \
+            --exclude 'sh:**/docker/authentik/postgresql' \
+            --exclude 'sh:**/docker/authentik/redis' \
+            --exclude 'sh:**/docker/miniflux/postgres' \
             --exclude 'sh:**/docker/mongodb/data' \
             --exclude 'sh:**/etc-pihole/cli_pw'     \
             --exclude 'sh:**/etc-pihole/logrotate'  \
@@ -372,7 +407,7 @@ else
         rm -f "$CRONTAB_TMP" "$BORG_ERROR_TMP"
 
         # Clean up exports (were captured in backup)
-        for _dir in "${TAIGA_BACKUP_DIR:-}" "${IMMICH_BACKUP_DIR:-}" "${AFFINE_BACKUP_DIR:-}"; do
+        for _dir in "${TAIGA_BACKUP_DIR:-}" "${IMMICH_BACKUP_DIR:-}" "${AFFINE_BACKUP_DIR:-}" "${AUTHENTIK_BACKUP_DIR:-}" "${MINIFLUX_BACKUP_DIR:-}"; do
             [ -d "$_dir" ] && rm -rf "$_dir"
         done
     fi
