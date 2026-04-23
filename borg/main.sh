@@ -179,6 +179,7 @@ else
         }
         
         # Check and add paths that exist
+        # (Dawarich: pg_dump from crontab → ~/syncthing/... is included when Syncthing is backed up; not exported here.)
         add_backup_path "$HOME/syncthing"
         add_backup_path "$HOME/git"
         add_backup_path "$HOME/.zshrc"
@@ -273,6 +274,71 @@ else
             fi
         fi
 
+        # Export MongoDB (WiredTiger live files under data/ are excluded from Borg; unsafe to copy hot)
+        MONGODB_DIR="$HOME/git/docker/mongodb"
+        MONGODB_BACKUP_DIR="$MONGODB_DIR/database-backup"
+        if [ -d "$MONGODB_DIR" ] && command -v docker >/dev/null 2>&1; then
+            mkdir -p "$MONGODB_BACKUP_DIR"
+            if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^mongodb$'; then
+                if docker exec -t mongodb mongodump --archive 2>/dev/null | gzip -c > "$MONGODB_BACKUP_DIR/mongodump.archive.gz"; then
+                    debug "MongoDB archive dumped to database-backup/"
+                else
+                    warning "Failed to dump MongoDB (mongodump)"
+                fi
+            else
+                debug "MongoDB not running, skipping mongodump"
+            fi
+        fi
+
+        # Hot SQLite snapshot for Vaultwarden (avoids baking an inconsistent live db from Borg)
+        VAULTWARDEN_DIR="$HOME/git/docker/vaultwarden"
+        VAULTWARDEN_BACKUP_DIR="$VAULTWARDEN_DIR/database-backup"
+        if [ -d "$VAULTWARDEN_DIR" ] && [ -f "$VAULTWARDEN_DIR/data/db.sqlite3" ] && command -v docker >/dev/null 2>&1; then
+            mkdir -p "$VAULTWARDEN_BACKUP_DIR"
+            if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^vaultwarden$'; then
+                if command -v sqlite3 >/dev/null 2>&1; then
+                    if ! sqlite3 "$VAULTWARDEN_DIR/data/db.sqlite3" ".backup $VAULTWARDEN_BACKUP_DIR/vaultwarden-snapshot.db" 2>/dev/null; then
+                        warning "Failed sqlite3 .backup for Vaultwarden (host)"
+                    else
+                        debug "Vaultwarden SQLite snapshot written to database-backup/"
+                    fi
+                else
+                    if ! docker run --rm \
+                        -v "$VAULTWARDEN_DIR/data:/data:ro" \
+                        -v "$VAULTWARDEN_BACKUP_DIR:/out" \
+                        alpine:3.20 sh -c "apk add -q sqlite && sqlite3 /data/db.sqlite3 '.backup /out/vaultwarden-snapshot.db'" 2>/dev/null; then
+                        warning "Failed sqlite3 .backup for Vaultwarden (alpine container)"
+                    else
+                        debug "Vaultwarden SQLite snapshot written to database-backup/ (alpine)"
+                    fi
+                fi
+            else
+                debug "Vaultwarden not running, skipping SQLite snapshot"
+            fi
+        fi
+
+        # Pi-hole: full config trees as tar (live etc-pihole is excluded from Borg; avoids permission/FTL lock issues)
+        # etc-pihole may contain root-only files (e.g. cli_pw, logrotate); GNU tar can still archive the rest
+        PIHOLE_TAR_FLAGS=""
+        if tar --version 2>/dev/null | grep -q 'GNU tar'; then
+            PIHOLE_TAR_FLAGS='--ignore-failed-read'
+        fi
+        for PIHOLE_STACK_DIR in "$HOME/git/docker/pihole/cloud" "$HOME/git/docker/pihole/rainbow"; do
+            if [ -d "$PIHOLE_STACK_DIR" ]; then
+                PIHOLE_TAR_LIST=""
+                [ -d "$PIHOLE_STACK_DIR/etc-pihole" ] && PIHOLE_TAR_LIST=etc-pihole
+                [ -d "$PIHOLE_STACK_DIR/etc-dnsmasq.d" ] && PIHOLE_TAR_LIST="${PIHOLE_TAR_LIST:+$PIHOLE_TAR_LIST }etc-dnsmasq.d"
+                if [ -n "$PIHOLE_TAR_LIST" ]; then
+                    mkdir -p "$PIHOLE_STACK_DIR/pihole-backup"
+                    if tar -C "$PIHOLE_STACK_DIR" $PIHOLE_TAR_FLAGS -czf "$PIHOLE_STACK_DIR/pihole-backup/pihole-etc.tar.gz" $PIHOLE_TAR_LIST; then
+                        debug "Pi-hole archive: $PIHOLE_STACK_DIR/pihole-backup/pihole-etc.tar.gz"
+                    else
+                        warning "Failed to tar Pi-hole config under $PIHOLE_STACK_DIR"
+                    fi
+                fi
+            fi
+        done
+
         # Always add crontab backup (only if file exists, is readable, and has content)
         # Check that file has content (not just empty from failed crontab -l)
         # Back up the temp directory; Borg will store it with the temp dir path,
@@ -284,7 +350,8 @@ else
         # Backup multiple paths
         # Exclude .git and .github directories recursively within ~/git
         # Also exclude files that typically have permission issues
-        # docker/mongodb/data: WiredTiger files are root-owned + unsafe to copy live; use mongodump if you need DB in Borg
+        # docker/mongodb/data: WiredTiger live files; use mongodump in database-backup/ instead
+        # docker/vaultwarden/data db.sqlite* : use hot snapshot in database-backup/ instead
         # Capture both stdout and stderr - stdout has "E path" lines for skipped files
         # (Borg --list sends file listing to stdout, errors/warnings to stderr)
         "$BORG_CMD" create                         \
@@ -306,6 +373,9 @@ else
             --exclude 'sh:**/docker/authentik/redis' \
             --exclude 'sh:**/docker/miniflux/postgres' \
             --exclude 'sh:**/docker/mongodb/data' \
+            --exclude 'sh:**/docker/vaultwarden/data/db.sqlite3' \
+            --exclude 'sh:**/docker/vaultwarden/data/db.sqlite3-wal' \
+            --exclude 'sh:**/docker/vaultwarden/data/db.sqlite3-shm' \
             --exclude 'sh:**/etc-pihole/cli_pw'     \
             --exclude 'sh:**/etc-pihole/logrotate'  \
             --exclude 're:etc-pihole'               \
@@ -407,7 +477,10 @@ else
         rm -f "$CRONTAB_TMP" "$BORG_ERROR_TMP"
 
         # Clean up exports (were captured in backup)
-        for _dir in "${TAIGA_BACKUP_DIR:-}" "${IMMICH_BACKUP_DIR:-}" "${AFFINE_BACKUP_DIR:-}" "${AUTHENTIK_BACKUP_DIR:-}" "${MINIFLUX_BACKUP_DIR:-}"; do
+        for _dir in "${TAIGA_BACKUP_DIR:-}" "${IMMICH_BACKUP_DIR:-}" "${AFFINE_BACKUP_DIR:-}" "${AUTHENTIK_BACKUP_DIR:-}" "${MINIFLUX_BACKUP_DIR:-}" \
+            "${MONGODB_BACKUP_DIR:-}" "${VAULTWARDEN_BACKUP_DIR:-}" \
+            "$HOME/git/docker/pihole/cloud/pihole-backup" \
+            "$HOME/git/docker/pihole/rainbow/pihole-backup"; do
             [ -d "$_dir" ] && rm -rf "$_dir"
         done
     fi
