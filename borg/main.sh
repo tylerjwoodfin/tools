@@ -620,6 +620,18 @@ fi
 
 debug "About to check if should replicate: global_exit=${global_exit}"
 if [ ${global_exit} -eq 0 ]; then
+    # Verify local repository before replicating; avoids copying corruption offsite
+    # (Sundays may already have run borg check --verify-data; this is a quick structural check.)
+    info "Running borg check before offsite replication"
+    "$BORG_CMD" check
+    pre_replicate_check_exit=$?
+    if [ ${pre_replicate_check_exit} -ne 0 ]; then
+        error "Pre-replication borg check failed; skipping rsync to rainbow"
+        global_exit=${pre_replicate_check_exit}
+    fi
+fi
+
+if [ ${global_exit} -eq 0 ]; then
     info "Replicating Borg repo to rainbow"
 
     # Convert ssh:// URI to rsync format if needed
