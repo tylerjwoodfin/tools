@@ -731,7 +731,7 @@ def update_backend_repo():
         backup_branch = None
         if result.stdout.strip():
             cab.log(
-                "Uncommitted changes detected, creating backup branch", level="warning"
+                "Uncommitted changes detected in ~/git/backend, creating backup branch", level="warning"
             )
 
             # Get current branch name
