@@ -282,7 +282,8 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
                             else https_url
                         )
                         cab.log(
-                            "Converted SSH to oauth2 HTTPS (smart HTTP on Cabinet ssh_tunnel_hosts)",
+                            "Converted SSH to oauth2 HTTPS "
+                            "(smart HTTP via Cabinet ssh_tunnel_hosts)",
                             level="info",
                         )
 
@@ -306,7 +307,8 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
                         else https_url
                     )
                     cab.log(
-                        f"Converted SSH to oauth2 HTTPS ({_get_gitea_https_tunnel_host(cab)}): {log_url}",
+                        f"Converted SSH to oauth2 HTTPS "
+                        f"({_get_gitea_https_tunnel_host(cab)}): {log_url}",
                         level="info",
                     )
 
@@ -356,7 +358,8 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
                         else https_url
                     )
                     cab.log(
-                        f"Converted git@ URL to oauth2 HTTPS ({_get_gitea_https_tunnel_host(cab)}): {log_url}",
+                        f"Converted git@ URL to oauth2 HTTPS "
+                        f"({_get_gitea_https_tunnel_host(cab)}): {log_url}",
                         level="info",
                     )
 
@@ -399,9 +402,8 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
                 host = url_parts[0]
                 path = url_parts[1]
 
-                # If origin is already PAT-in-HTTPS on a non-canonical HTTPS host: leave it alone.
-                # Converting oauth2 HTTPS to SSH when ports.gitea is set breaks fetch when :443 works
-                # but SSH is filtered.
+                # If PAT-in-HTTPS is on non-canonical host: leave it alone. Rewriting oauth2 HTTPS
+                # to SSH when ports.gitea is set breaks fetch when :443 works but SSH is filtered.
                 if (
                     "oauth2:" in current_url
                     and not _host_matches_gitea_https_tunnel(cab, host)
@@ -799,7 +801,9 @@ def update_backend_repo():
         backup_branch = None
         if result.stdout.strip():
             cab.log(
-                "Uncommitted changes detected in ~/git/backend, creating backup branch", level="warning"
+                "Uncommitted changes detected in ~/git/backend; "
+                "creating backup branch",
+                level="warning",
             )
 
             # Get current branch name
