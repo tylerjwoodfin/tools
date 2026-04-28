@@ -134,6 +134,36 @@ def _get_git_token(cab):
     )
 
 
+def _get_gitea_https_tunnel_host(cab):
+    """Gitea HTTPS web/clone hostname: keys.gitea.https_host or GITEA_HTTPS_HOST."""
+    v = cab.get("keys", "gitea", "https_host") or os.environ.get("GITEA_HTTPS_HOST")
+    return (v or "").strip()
+
+
+def _gitea_ssh_smart_http_hosts(cab):
+    """
+    SSH entry hostnames where smart-HTTPS on :443 is preferred over ssh:// (same DNS name).
+    keys.gitea.ssh_tunnel_hosts or comma-separated GITEA_SSH_TUNNEL_HOSTS.
+    """
+    raw = cab.get("keys", "gitea", "ssh_tunnel_hosts") or os.environ.get(
+        "GITEA_SSH_TUNNEL_HOSTS", ""
+    )
+    return frozenset(x.strip().lower() for x in raw.split(",") if x.strip())
+
+
+def _host_matches_gitea_https_tunnel(cab, host: str) -> bool:
+    """True if host is the canonical Gitea HTTPS tunnel hostname from Cabinet/env."""
+    h = _get_gitea_https_tunnel_host(cab)
+    return bool(h) and host.strip().lower() == h.lower()
+
+
+def _ssh_clone_host_matches_smart_https_list(cab, host: str) -> bool:
+    """True if SSH URL host is configured as smart-HTTPS-capable clone host."""
+    if not host:
+        return False
+    return host.strip().lower() in _gitea_ssh_smart_http_hosts(cab)
+
+
 def _configure_https_credentials(cab, host, git_token):
     """Configure git credential helper and write credentials file."""
     # Configure credential helper for HTTPS if not already configured
@@ -233,8 +263,34 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
                 host = match.group(1)
                 path = match.group(2)
 
-                # If host is git.tyler.cloud (behind Cloudflare Tunnel), convert to HTTPS
-                if host == "git.tyler.cloud":
+                # ssh_tunnel_hosts DNS often serves Git smart-HTTPS on :443 while SSH is on
+                # another port; roaming networks often block SSH. Prefer oauth2 HTTPS on that
+                # same hostname (keys.gitea.ssh_tunnel_hosts).
+                if _ssh_clone_host_matches_smart_https_list(cab, host):
+                    git_token = _get_git_token(cab)
+                    if git_token:
+                        https_url = _convert_to_https_url(cab, host, path, git_token)
+                        subprocess.run(
+                            ["git", "remote", "set-url", remote_name, https_url],
+                            capture_output=True,
+                            text=True,
+                            check=True,
+                        )
+                        log_url = (
+                            https_url.rsplit("@", maxsplit=1)[-1]
+                            if "@" in https_url
+                            else https_url
+                        )
+                        cab.log(
+                            "Converted SSH to oauth2 HTTPS (smart HTTP on Cabinet ssh_tunnel_hosts)",
+                            level="info",
+                        )
+
+                        _configure_https_credentials(cab, host, git_token)
+                        return True
+
+                # Canonical Gitea HTTPS hostname (tunnel) — SSH not exposed the same way
+                if _host_matches_gitea_https_tunnel(cab, host):
                     git_token = _get_git_token(cab)
                     https_url = _convert_to_https_url(cab, host, path, git_token)
 
@@ -250,7 +306,7 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
                         else https_url
                     )
                     cab.log(
-                        f"Converted SSH to HTTPS for Cloudflare Tunnel host: {log_url}",
+                        f"Converted SSH to oauth2 HTTPS ({_get_gitea_https_tunnel_host(cab)}): {log_url}",
                         level="info",
                     )
 
@@ -284,8 +340,7 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
                 host = match.group(1)
                 path = match.group(2)
 
-                # If host is git.tyler.cloud, convert to HTTPS
-                if host == "git.tyler.cloud":
+                if _host_matches_gitea_https_tunnel(cab, host):
                     git_token = _get_git_token(cab)
                     https_url = _convert_to_https_url(cab, host, path, git_token)
 
@@ -301,7 +356,7 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
                         else https_url
                     )
                     cab.log(
-                        f"Converted git@ URL to HTTPS for Cloudflare Tunnel host: {log_url}",
+                        f"Converted git@ URL to oauth2 HTTPS ({_get_gitea_https_tunnel_host(cab)}): {log_url}",
                         level="info",
                     )
 
@@ -344,9 +399,22 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
                 host = url_parts[0]
                 path = url_parts[1]
 
-                # Check if host is behind Cloudflare Tunnel (SSH won't work)
-                # git.tyler.cloud uses Cloudflare Tunnel which only supports HTTP/HTTPS
-                if host == "git.tyler.cloud":
+                # If origin is already PAT-in-HTTPS on a non-canonical HTTPS host: leave it alone.
+                # Converting oauth2 HTTPS to SSH when ports.gitea is set breaks fetch when :443 works
+                # but SSH is filtered.
+                if (
+                    "oauth2:" in current_url
+                    and not _host_matches_gitea_https_tunnel(cab, host)
+                    and "@" in current_url
+                ):
+                    cab.log(
+                        "Keeping oauth2 HTTPS remote as-is (not rewriting to SSH)",
+                        level="debug",
+                    )
+                    return True
+
+                # Canonical Gitea HTTPS hostname from Cabinet — normalize oauth2 URL/token
+                if _host_matches_gitea_https_tunnel(cab, host):
                     # Check if token is already in URL
                     if "@" in current_url and "oauth2:" in current_url:
                         # Token already embedded, keep as-is
