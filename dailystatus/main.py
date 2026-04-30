@@ -19,12 +19,9 @@ from pathlib import Path
 import cabinet
 from tyler_python_helpers import ChatGPT
 
-# pylint: disable=invalid-name
-
 # initialize cabinet for configuration and mail for notifications
 cab = cabinet.Cabinet()
 mail = cabinet.Mail()
-
 
 def run_service_check():
     """Run the service check script and log any issues"""
@@ -393,26 +390,14 @@ def append_syncthing_conflict_check(email):
     return email + "<br>".join(html_diffs)
 
 
-def analyze_logs(today, log_path_today, email):  # pylint: disable=redefined-outer-name
-    """append daily log analysis"""
-    daily_log_file = (
-        cab.get_file_as_array(
-            f"LOG_DAILY_{today}.log", file_path=log_path_today
-        )
-        or []
-    )
-
-    daily_log_issues = [
-        line
-        for line in daily_log_file
-        if "ERROR" in line or "WARN" in line or "CRITICAL" in line
-    ]
+def analyze_logs(email):
+    """Append warning/error/critical log lines from the last 24h via ``cab.log_query_issues()``."""
+    daily_log_issues = cab.log_query_issues()
     is_warnings = any("WARN" in issue for issue in daily_log_issues)
     is_errors = any(
         "ERROR" in issue or "CRITICAL" in issue for issue in daily_log_issues
     )
 
-    # Check if the only error is the food log error
     error_lines = [
         line for line in daily_log_issues if "ERROR" in line or "CRITICAL" in line
     ]
@@ -424,7 +409,7 @@ def analyze_logs(today, log_path_today, email):  # pylint: disable=redefined-out
         daily_log_filtered = "<br>".join(daily_log_issues)
         email += textwrap.dedent(
             f"""
-            <h3>Warning/Error/Critical Log:</h3>
+            <h3>Warning/Error/Critical Log (24h):</h3>
             <pre style="font-family: monospace; white-space: pre-wrap;">{daily_log_filtered}</pre>
             <br>
             """
@@ -560,9 +545,9 @@ if __name__ == "__main__":
     # add spotify info
     status_email = append_spotify_info(today, log_path_today, status_email)
 
-    # analyze logs
+    # analyze logs (24h via cab.log_query when Mongo enabled, else log files)
     status_email, has_warnings, has_errors, is_only_food_log_error = analyze_logs(
-        today, log_path_today, status_email
+        status_email
     )
 
     # append weather info
