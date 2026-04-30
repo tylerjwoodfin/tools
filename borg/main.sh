@@ -339,6 +339,28 @@ else
             fi
         done
 
+        # Uptime Kuma (MariaDB mode): live files under data/mariadb change during Borg (rc 1).
+        # Dump via container socket; exclude hot datadir (rest of ./data e.g. SQLite/kuma.db still backed up).
+        UPTIME_KUMA_DIR="$HOME/git/docker/uptime-kuma"
+        UPTIME_KUMA_BACKUP_DIR="$UPTIME_KUMA_DIR/database-backup"
+        if [ -d "$UPTIME_KUMA_DIR/data/mariadb" ] && command -v docker >/dev/null 2>&1; then
+            mkdir -p "$UPTIME_KUMA_BACKUP_DIR"
+            KUMA_C=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E 'uptime-kuma' | head -n1)
+            if [ -n "$KUMA_C" ]; then
+                KUMA_SQL_TMP="$UPTIME_KUMA_BACKUP_DIR/.uptime-kuma-mariadb-inflight.$$"
+                if docker exec "$KUMA_C" mariadb-dump -S /app/data/run/mariadb.sock --single-transaction kuma > "$KUMA_SQL_TMP" 2>/dev/null && [ -s "$KUMA_SQL_TMP" ]; then
+                    gzip -c "$KUMA_SQL_TMP" > "$UPTIME_KUMA_BACKUP_DIR/uptime-kuma-mariadb.sql.gz"
+                    rm -f "$KUMA_SQL_TMP"
+                    debug "Uptime Kuma MariaDB dumped to database-backup/"
+                else
+                    rm -f "$KUMA_SQL_TMP" "$UPTIME_KUMA_BACKUP_DIR/uptime-kuma-mariadb.sql.gz"
+                    warning "Failed to dump Uptime Kuma MariaDB"
+                fi
+            else
+                debug "Uptime Kuma container not running, skipping MariaDB dump"
+            fi
+        fi
+
         # Always add crontab backup (only if file exists, is readable, and has content)
         # Check that file has content (not just empty from failed crontab -l)
         # Back up the temp directory; Borg will store it with the temp dir path,
@@ -351,6 +373,7 @@ else
         # Exclude .git and .github directories recursively within ~/git
         # Also exclude files that typically have permission issues
         # docker/mongodb/data: WiredTiger live files; use mongodump in database-backup/ instead
+        # docker/uptime-kuma/data/mariadb: live MariaDB; use mariadb-dump in database-backup/ instead
         # docker/vaultwarden/data db.sqlite* : use hot snapshot in database-backup/ instead
         # Capture both stdout and stderr - stdout has "E path" lines for skipped files
         # (Borg --list sends file listing to stdout, errors/warnings to stderr)
@@ -373,6 +396,7 @@ else
             --exclude 'sh:**/docker/authentik/redis' \
             --exclude 'sh:**/docker/miniflux/postgres' \
             --exclude 'sh:**/docker/mongodb/data' \
+            --exclude 'sh:**/docker/uptime-kuma/data/mariadb' \
             --exclude 'sh:**/docker/vaultwarden/data/db.sqlite3' \
             --exclude 'sh:**/docker/vaultwarden/data/db.sqlite3-wal' \
             --exclude 'sh:**/docker/vaultwarden/data/db.sqlite3-shm' \
@@ -389,53 +413,81 @@ else
         
         # Borg exit codes: 0=success, 1=warning (some files skipped), 2=fatal error
         if [ $backup_exit -eq 1 ]; then
-            warning "Borg backup completed with warnings (some files were skipped)"
+            warning "Borg backup completed with warnings (rc 1)"
             if [ -s "$BORG_ERROR_TMP" ]; then
-                # Extract "E path" lines - Borg uses E = error (file could not be read)
-                # Support both "E /path" and " E /path" (some Borg versions use leading space)
+                WARN_LOG_DIR="$HOME/.cabinet/log/borg-errors"
+                mkdir -p "$WARN_LOG_DIR"
+                WARN_LOG_FILE="$WARN_LOG_DIR/borg-warning-$(date +%Y%m%d-%H%M%S).log"
+                cp "$BORG_ERROR_TMP" "$WARN_LOG_FILE"
+                warning "Full Borg transcript: $WARN_LOG_FILE"
+
                 skipped_files=$(grep -E '^[[:space:]]*E[[:space:]]+' "$BORG_ERROR_TMP" | sed 's/^[[:space:]]*E[[:space:]]*//' | sort -u)
-                # Extract other warning/error messages (exclude M/A/E file listing, normal borg output)
-                # Include "terminating with warning" - it's the primary reason for exit 1 when no E lines exist
-                actual_warnings=$(grep -v -E '^[[:space:]]*[MAE][[:space:]]' "$BORG_ERROR_TMP" | grep -v '^Creating archive' | grep -v '^Repository:' | grep -v '^Archive name:' | grep -v '^Archive fingerprint:' | grep -v '^Time (' | grep -v '^Duration:' | grep -v '^Number of files:' | grep -v '^Utilization' | grep -v '^Original size' | grep -v '^This archive:' | grep -v '^All archives:' | grep -v '^Unique chunks' | grep -v '^Chunk index:' | grep -v '^---' | grep -v '^$' | grep -E '(stat:|No such file|Error|error|failed|Failed|Permission denied|warning|Warning|terminating|skipped|could not)' | sort -u)
-                
+                changed_during=$(grep -F 'file changed while we backed it up' "$BORG_ERROR_TMP" | sort -u)
+                # Diagnostics not covered above (exclude M/A/E file inventory and summary footer)
+                actual_warnings=$(
+                    grep -v -E '^[[:space:]]*[MAE][[:space:]]' "$BORG_ERROR_TMP" |
+                    grep -v '^Creating archive' |
+                    grep -v '^Repository:' |
+                    grep -v '^Archive name:' |
+                    grep -v '^Archive fingerprint:' |
+                    grep -v '^Time (' |
+                    grep -v '^Duration:' |
+                    grep -v '^Number of files:' |
+                    grep -v '^Utilization' |
+                    grep -v '^Original size' |
+                    grep -v '^This archive:' |
+                    grep -v '^All archives:' |
+                    grep -v '^Unique chunks' |
+                    grep -v '^Chunk index:' |
+                    grep -v '^---' |
+                    grep -v '^$' |
+                    grep -vF 'file changed while we backed it up' |
+                    grep -iE '(stat:|No such file|\berror\b|failed|Permission denied|[Ww]arning|terminating|skipped|could not|unchanged file|lstat|OSError|read error|unsupported file type|not supported:|\bI/O error\b|Input/output error)' |
+                    sort -u
+                )
+
                 if [ -n "$skipped_files" ]; then
-                    warning "Skipped files (could not be read):"
-                    echo "$skipped_files" | head -20 | while IFS= read -r line; do
+                    warning "Paths Borg could not read (omitted from archive):"
+                    echo "$skipped_files" | head -50 | while IFS= read -r line; do
                         warning "  $line"
                     done
-                    skipped_count=$(echo "$skipped_files" | wc -l | tr -d ' ')
-                    if [ "$skipped_count" -gt 20 ]; then
-                        warning "  ... and $((skipped_count - 20)) more skipped file(s)"
+                    skipped_count=$(echo "$skipped_files" | grep -c . 2>/dev/null || echo 0)
+                    case "$skipped_count" in ''|*[!0-9]*) skipped_count=0 ;; esac
+                    if [ "$skipped_count" -gt 50 ]; then
+                        warning "  ... and $((skipped_count - 50)) more path(s) — see transcript"
+                    fi
+                fi
+                if [ -n "$changed_during" ]; then
+                    warning "Files changed while Borg read them (data may be internally inconsistent in the archive):"
+                    echo "$changed_during" | head -50 | while IFS= read -r line; do
+                        warning "  $line"
+                    done
+                    changed_count=$(echo "$changed_during" | grep -c . 2>/dev/null || echo 0)
+                    case "$changed_count" in ''|*[!0-9]*) changed_count=0 ;; esac
+                    if [ "$changed_count" -gt 50 ]; then
+                        warning "  ... and $((changed_count - 50)) more — see transcript"
                     fi
                 fi
                 if [ -n "$actual_warnings" ]; then
-                    warning "Borg warning details:"
-                    echo "$actual_warnings" | head -10 | while IFS= read -r line; do
+                    warning "Other Borg messages:"
+                    echo "$actual_warnings" | head -30 | while IFS= read -r line; do
                         warning "  $line"
                     done
-                    warning_count=$(echo "$actual_warnings" | wc -l | tr -d ' ')
-                    if [ "$warning_count" -gt 10 ]; then
-                        warning "  ... and $((warning_count - 10)) more warning(s)"
+                    warning_count=$(echo "$actual_warnings" | grep -c . 2>/dev/null || echo 0)
+                    case "$warning_count" in ''|*[!0-9]*) warning_count=0 ;; esac
+                    if [ "$warning_count" -gt 30 ]; then
+                        warning "  ... and $((warning_count - 30)) more — see transcript"
                     fi
                 fi
-                # If we found nothing useful, extract any relevant lines and save full output for debugging
-                if [ -z "$skipped_files" ] && [ -z "$actual_warnings" ]; then
-                    # Last resort: show lines that might explain the warning
-                    hint_lines=$(grep -iE '(warning|error|skip|terminat|could not|permission denied|failed)' "$BORG_ERROR_TMP" | head -5)
+                if [ -z "$skipped_files" ] && [ -z "$changed_during" ] && [ -z "$actual_warnings" ]; then
+                    hint_lines=$(grep -iE '(warning|error|skip|terminat|could not|permission denied|failed|file changed)' "$BORG_ERROR_TMP" | head -20)
                     if [ -n "$hint_lines" ]; then
-                        warning "Borg output (no structured details parsed):"
+                        warning "Unclassified Borg lines (grep fallback):"
                         echo "$hint_lines" | while IFS= read -r line; do
                             warning "  $line"
                         done
-                    fi
-                    WARN_LOG_DIR="$HOME/.cabinet/log/borg-errors"
-                    mkdir -p "$WARN_LOG_DIR"
-                    WARN_LOG_FILE="$WARN_LOG_DIR/borg-warning-$(date +%Y%m%d-%H%M%S).log"
-                    cp "$BORG_ERROR_TMP" "$WARN_LOG_FILE"
-                    if [ -n "$hint_lines" ]; then
-                        warning "Full Borg output saved to: $WARN_LOG_FILE"
                     else
-                        warning "Full Borg output saved to: $WARN_LOG_FILE (no parseable details found)"
+                        warning "No specific lines parsed; inspect transcript at $WARN_LOG_FILE"
                     fi
                 fi
             fi
@@ -478,7 +530,7 @@ else
 
         # Clean up exports (were captured in backup)
         for _dir in "${TAIGA_BACKUP_DIR:-}" "${IMMICH_BACKUP_DIR:-}" "${AFFINE_BACKUP_DIR:-}" "${AUTHENTIK_BACKUP_DIR:-}" "${MINIFLUX_BACKUP_DIR:-}" \
-            "${MONGODB_BACKUP_DIR:-}" "${VAULTWARDEN_BACKUP_DIR:-}" \
+            "${MONGODB_BACKUP_DIR:-}" "${VAULTWARDEN_BACKUP_DIR:-}" "${UPTIME_KUMA_BACKUP_DIR:-}" \
             "$HOME/git/docker/pihole/cloud/pihole-backup" \
             "$HOME/git/docker/pihole/rainbow/pihole-backup"; do
             [ -d "$_dir" ] && rm -rf "$_dir"
