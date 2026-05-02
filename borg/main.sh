@@ -186,6 +186,37 @@ else
         add_backup_path "$HOME/.config"
         add_backup_path "$HOME/.affine"
 
+        # Cloudflared (systemd e.g. cloudflared-setup/cloudflared@*.service): tunnel JSON + cert.pem
+        # live under /etc/cloudflared and are usually root-readable only. Stage into the same temp
+        # tree as crontab so one trap removes it; Borg stores paths under the temp dirname.
+        # Narrow NOPASSWD: install tools/borg/install-stage-cloudflared-sudo.sh (helper in /usr/local/sbin).
+        CLOUDFLARED_STAGED="$CRONTAB_TMP_DIR/etc-cloudflared"
+        if [ -d /etc/cloudflared ]; then
+            mkdir -p "$CLOUDFLARED_STAGED" || CLOUDFLARED_STAGED=""
+            if [ -n "$CLOUDFLARED_STAGED" ]; then
+                _cf_ok=false
+                if cp -a /etc/cloudflared/. "$CLOUDFLARED_STAGED/" 2>/dev/null \
+                    && [ -n "$(ls -A "$CLOUDFLARED_STAGED" 2>/dev/null)" ]; then
+                    _cf_ok=true
+                elif command -v sudo >/dev/null 2>&1 \
+                    && [ -x /usr/local/sbin/borg-stage-cloudflared ] \
+                    && sudo -n /usr/local/sbin/borg-stage-cloudflared "$CLOUDFLARED_STAGED" \
+                    && [ -n "$(ls -A "$CLOUDFLARED_STAGED" 2>/dev/null)" ]; then
+                    _cf_ok=true
+                fi
+                if [ "$_cf_ok" = true ]; then
+                    add_backup_path "$CLOUDFLARED_STAGED"
+                    debug "Staged /etc/cloudflared for Borg backup"
+                else
+                    rm -rf "$CLOUDFLARED_STAGED" 2>/dev/null
+                    warning "Could not copy /etc/cloudflared; tunnel credentials missing from archive."
+                    warning "Install NOPASS sudo helper once: sudo sh $HOME/git/tools/borg/install-stage-cloudflared-sudo.sh"
+                fi
+            fi
+        else
+            debug "Skipping /etc/cloudflared (does not exist)"
+        fi
+
         # Export Immich database for backup (pg_dump - postgres data dir has restrictive perms)
         IMMICH_DIR="$HOME/git/docker/immich"
         IMMICH_BACKUP_DIR="$IMMICH_DIR/database-backup"
@@ -377,6 +408,7 @@ else
         # docker/vaultwarden/data db.sqlite* : use hot snapshot in database-backup/ instead
         # Capture both stdout and stderr - stdout has "E path" lines for skipped files
         # (Borg --list sends file listing to stdout, errors/warnings to stderr)
+        # Staged paths: crontab temp dir may include etc-cloudflared (copy of /etc/cloudflared).
         "$BORG_CMD" create                         \
             --verbose                       \
             --filter AME                    \
