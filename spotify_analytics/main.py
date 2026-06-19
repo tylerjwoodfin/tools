@@ -2077,7 +2077,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 if not self._check_port_available(redirect_port):
                     self.cab.log(
                         f"SPOTIFY - Reauthorization failed: port {redirect_port} is still in use. "
-                        f"Stop the conflicting process or run: lsof -ti:{redirect_port} | xargs kill",
+                        f"Stop the conflicting process or run: "
+                        f"lsof -ti:{redirect_port} | xargs kill",
                         level="error",
                     )
                     return False
