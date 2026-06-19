@@ -15,7 +15,7 @@ import subprocess
 import socket
 import argparse
 from dataclasses import dataclass, asdict
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from statistics import mean
 import logging
 from pathlib import Path
@@ -24,9 +24,16 @@ from collections import Counter
 import re
 
 import spotipy
-from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth
+from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth, SpotifyOAuthError
 from cabinet import Cabinet
 from tyler_python_helpers import ChatGPT
+
+
+REAUTHORIZE_MESSAGE = "Cannot authorize Spotify; reauthorize using main.py --reauthorize"
+
+
+class SpotifyReauthorizationRequired(Exception):
+    """Raised when Spotify OAuth tokens are invalid and the user must reauthorize."""
 
 
 @dataclass
@@ -98,6 +105,7 @@ class SpotifyAnalyzer:
         self._playlists_cache: Optional[List[str]] = None
         self._oauth_client: Optional[spotipy.Spotify] = None
         self._oauth_port: Optional[int] = None
+        self._oauth_headless: bool = False
         self._chatgpt: Optional[ChatGPT] = None
         self._genre_cache: Dict[str, str] = {}  # Cache spotify_url -> genre
         self._pending_classifications: List[Tuple[Track, str]] = []  # Tracks needing classification
@@ -615,7 +623,11 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         for attempt in range(max_retries):
             try:
                 return api_func()
+            except SpotifyReauthorizationRequired:
+                raise
             except Exception as e:  # pylint: disable=broad-except
+                if self._is_invalid_grant_error(e):
+                    self._handle_invalid_grant()
                 error_str = str(e)
 
                 if attempt < max_retries - 1:
@@ -677,6 +689,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             oauth_client = None
             try:
                 oauth_client = self._initialize_oauth_client()
+            except SpotifyReauthorizationRequired:
+                raise
             except Exception as e:
                 self.cab.log(
                     f"SPOTIFY - Failed to initialize OAuth client for duplicate "
@@ -1112,6 +1126,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 operation_name=f"Add track to '{playlist_name}'",
             )
             return True
+        except SpotifyReauthorizationRequired:
+            raise
         except Exception as e:
             self.cab.log(
                 f"SPOTIFY - Failed to add track {track_url} to {playlist_name}: {str(e)}",
@@ -1149,6 +1165,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 operation_name=f"Remove track from '{playlist_name}'",
             )
             return True
+        except SpotifyReauthorizationRequired:
+            raise
         except Exception as e:
             self.cab.log(
                 f"SPOTIFY - Failed to remove track {track_url} from {playlist_name}: {str(e)}",
@@ -1696,90 +1714,300 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             )
             return False
 
-    def _initialize_oauth_client(self) -> spotipy.Spotify:
-        """Initialize Spotify client with OAuth authentication for playlist modifications."""
-        try:
-            client_id = self.cab.get("spotipy", "client_id")
-            client_secret = self.cab.get("spotipy", "client_secret")
-            username = self.cab.get("spotipy", "username")
+    @staticmethod
+    def _is_invalid_grant_error(exc: Exception) -> bool:
+        """Return True if the exception indicates an expired or revoked refresh token."""
+        if isinstance(exc, SpotifyReauthorizationRequired):
+            return True
+        error_str = str(exc).lower()
+        return "invalid_grant" in error_str or (
+            isinstance(exc, SpotifyOAuthError) and "invalid_grant" in error_str
+        )
 
-            if not client_id:
-                raise ValueError("Spotify client_id is not set in cabinet")
-            if not client_secret:
-                raise ValueError("Spotify client_secret is not set in cabinet")
-            if not username:
-                raise ValueError("Spotify username is not set in cabinet")
+    def _is_headless_environment(self) -> bool:
+        """Return True when OAuth must use manual URL paste instead of a local browser."""
+        headless_env = os.environ.get("SPOTIPY_HEADLESS", "").lower()
+        if headless_env in ("1", "true", "yes"):
+            return True
+        if headless_env in ("0", "false", "no"):
+            return False
 
-            # Set environment variables for spotipy
-            # Try common redirect URI formats - user should match one in their dashboard
-            # Most common: http://127.0.0.1:8888 or http://127.0.0.1:8888/callback
-            redirect_uri = os.environ.get("SPOTIPY_REDIRECT_URI", "http://127.0.0.1:8888")
+        open_browser_env = os.environ.get("SPOTIPY_OPEN_BROWSER", "").lower()
+        if open_browser_env in ("0", "false", "no"):
+            return True
+        if open_browser_env in ("1", "true", "yes"):
+            return False
 
-            # Extract port from redirect URI
-            port_match = re.search(r":(\d+)", redirect_uri)
-            redirect_port = int(port_match.group(1)) if port_match else 8888
-            self._oauth_port = redirect_port
+        if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+            return False
 
-            # Use cache file based on username (spotipy convention)
-            # Use absolute path so it works in cron jobs
-            # (which run from different working directory)
-            # This matches create_playlist_by_year.py so they share the same OAuth token
-            # Store cache in script directory for consistency
-            script_dir = Path(__file__).parent.absolute()
-            cache_path = str(script_dir / f".cache-{username}")
-            cache_file = Path(cache_path)
+        if os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_TTY"):
+            return True
 
-            # Check if cache file exists and appears valid
-            # If we have a cached token, spotipy shouldn't need to start a server
-            has_cache = cache_file.exists() and cache_file.stat().st_size > 0
+        if not sys.stdin.isatty():
+            return True
 
-            # Check if port is in use - kill stale processes if needed
-            if not self._check_port_available(redirect_port):
-                self.cab.log(
-                    f"SPOTIFY - Port {redirect_port} is already in use. "
-                    "Attempting to kill stale spotify_analytics processes...",
-                    level="info",
-                )
-                killed = self._kill_processes_on_port(redirect_port)
-                if killed:
-                    self.cab.log(
-                        f"SPOTIFY - Killed stale processes. Port {redirect_port} "
-                        f"should now be available.",
-                        level="info",
-                    )
-                else:
-                    self.cab.log(
-                        f"SPOTIFY - Could not kill processes on port {redirect_port}. "
-                        "If OAuth fails, manually kill processes with: "
-                        f"lsof -ti:{redirect_port} | xargs kill",
-                        level="warning",
-                    )
+        return False
 
-            os.environ["SPOTIPY_CLIENT_ID"] = client_id
-            os.environ["SPOTIPY_CLIENT_SECRET"] = client_secret
-            os.environ["SPOTIPY_REDIRECT_URI"] = redirect_uri
+    def _should_open_browser(self) -> bool:
+        """Return True when spotipy should launch a browser or local redirect server."""
+        if self._oauth_headless:
+            return False
+        return not self._is_headless_environment()
 
-            # OAuth scope required for playlist modification
-            scope = "playlist-modify-public playlist-modify-private"
+    def _require_interactive_terminal(self, action: str) -> bool:
+        """Return False and log when stdin is unavailable for headless OAuth paste."""
+        if sys.stdin.isatty():
+            return True
 
-            # Only open browser if we don't have a cached token
-            # If we have a cache, spotipy will use it and won't need to start a server
-            open_browser = not has_cache
+        self.cab.log(
+            f"SPOTIFY - {action} requires an interactive terminal to paste the redirect URL. "
+            "SSH into the server and run: main.py --reauthorize",
+            level="error",
+        )
+        return False
 
-            auth_manager = SpotifyOAuth(
-                scope=scope,
-                redirect_uri=redirect_uri,
-                client_id=client_id,
-                client_secret=client_secret,
-                cache_path=cache_path,
-                open_browser=open_browser,  # Only open browser if no cached token exists
-                show_dialog=False,  # Don't force re-auth if token is valid
+    def _log_headless_auth_instructions(self, auth_url: str) -> None:
+        """Log instructions for completing OAuth on a headless server."""
+        self.cab.log(
+            "SPOTIFY - Headless authorization: open this URL in your browser:",
+            level="info",
+        )
+        self.cab.log(auth_url, level="info")
+        self.cab.log(
+            "SPOTIFY - After authorizing, your browser will redirect to "
+            f"{os.environ.get('SPOTIPY_REDIRECT_URI', 'http://127.0.0.1:8888')} "
+            "and may show a connection error. Copy the full URL from your browser "
+            "address bar and paste it at the prompt below.",
+            level="info",
+        )
+        if sys.stdout.isatty():
+            print(
+                f"\nOpen this URL in your browser:\n{auth_url}\n\n"
+                "After authorizing, paste the full redirect URL below "
+                "(the page may not load — that is expected).\n"
             )
 
-            oauth_client = spotipy.Spotify(auth_manager=auth_manager)
+    def _prompt_for_redirect_url(self, auth_manager: SpotifyOAuth) -> str:
+        """Prompt the user to paste the redirect URL after browser authorization."""
+        auth_url = auth_manager.get_authorize_url()
+        self._log_headless_auth_instructions(auth_url)
+
+        if sys.stdout.isatty():
+            print(
+                "\nPaste the full redirect URL from your browser: ",
+                end="",
+                flush=True,
+            )
+
+        response = sys.stdin.readline().strip()
+        if not response:
+            raise SpotifyOAuthError("No redirect URL provided")
+        return response
+
+    def _obtain_oauth_access_token(
+        self,
+        auth_manager: SpotifyOAuth,
+        *,
+        check_cache: bool = True,
+    ) -> str:
+        """Obtain an OAuth access token, using manual URL paste when headless."""
+        auth_manager.open_browser = self._should_open_browser()
+
+        if check_cache:
+            cached = auth_manager.cache_handler.get_cached_token()
+            token_info = auth_manager.validate_token(cached)
+            if token_info is not None:
+                return token_info["access_token"]
+
+        if auth_manager.open_browser:
+            token = auth_manager.get_access_token(as_dict=False, check_cache=False)
+            if not token:
+                raise SpotifyOAuthError("No access token returned from Spotify OAuth")
+            return token
+
+        redirect_url = self._prompt_for_redirect_url(auth_manager)
+        try:
+            code = auth_manager.parse_response_code(redirect_url)
+        except SpotifyOAuthError as e:
+            raise SpotifyOAuthError(
+                "Invalid redirect URL. Paste the full URL from your browser address bar, "
+                f"including the 'code' parameter. {e}"
+            ) from e
+
+        token = auth_manager.get_access_token(code=code, check_cache=False)
+        if not token:
+            raise SpotifyOAuthError("No access token returned from Spotify OAuth")
+        return token
+
+    def _get_oauth_config(self) -> Dict[str, Any]:
+        """Load OAuth settings from cabinet and derive cache/port paths."""
+        client_id = self.cab.get("spotipy", "client_id")
+        client_secret = self.cab.get("spotipy", "client_secret")
+        username = self.cab.get("spotipy", "username")
+
+        if not client_id:
+            raise ValueError("Spotify client_id is not set in cabinet")
+        if not client_secret:
+            raise ValueError("Spotify client_secret is not set in cabinet")
+        if not username:
+            raise ValueError("Spotify username is not set in cabinet")
+
+        redirect_uri = os.environ.get("SPOTIPY_REDIRECT_URI", "http://127.0.0.1:8888")
+        port_match = re.search(r":(\d+)", redirect_uri)
+        redirect_port = int(port_match.group(1)) if port_match else 8888
+
+        script_dir = Path(__file__).parent.absolute()
+        cache_path = str(script_dir / f".cache-{username}")
+
+        return {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "username": username,
+            "redirect_uri": redirect_uri,
+            "redirect_port": redirect_port,
+            "cache_path": cache_path,
+            "scope": "playlist-modify-public playlist-modify-private",
+        }
+
+    def _set_oauth_env(self, config: Dict[str, Any]) -> None:
+        """Set spotipy environment variables from OAuth config."""
+        os.environ["SPOTIPY_CLIENT_ID"] = config["client_id"]
+        os.environ["SPOTIPY_CLIENT_SECRET"] = config["client_secret"]
+        os.environ["SPOTIPY_REDIRECT_URI"] = config["redirect_uri"]
+
+    def _oauth_cache_exists(self, cache_path: str) -> bool:
+        """Return True if the OAuth cache file exists and is non-empty."""
+        cache_file = Path(cache_path)
+        return cache_file.exists() and cache_file.stat().st_size > 0
+
+    def _discard_oauth_cache(self, cache_path: str) -> None:
+        """Remove the OAuth token cache file if it exists."""
+        cache_file = Path(cache_path)
+        if not cache_file.exists():
+            return
+        try:
+            cache_file.unlink()
+            self.cab.log(f"SPOTIFY - Discarded OAuth cache at {cache_path}", level="info")
+        except OSError as e:
+            self.cab.log(
+                f"SPOTIFY - Failed to discard OAuth cache at {cache_path}: {e}",
+                level="warning",
+            )
+
+    def _handle_invalid_grant(self) -> None:
+        """Discard stale OAuth tokens and require interactive reauthorization."""
+        config = self._get_oauth_config()
+        self._discard_oauth_cache(config["cache_path"])
+        self._oauth_client = None
+        self.cab.log(REAUTHORIZE_MESSAGE, level="error")
+        raise SpotifyReauthorizationRequired(REAUTHORIZE_MESSAGE)
+
+    def _prepare_oauth_port(self, redirect_port: int) -> None:
+        """Ensure the OAuth redirect port is available, killing stale processes if needed."""
+        self._oauth_port = redirect_port
+
+        if self._check_port_available(redirect_port):
+            return
+
+        self.cab.log(
+            f"SPOTIFY - Port {redirect_port} is already in use. "
+            "Attempting to kill stale spotify_analytics processes...",
+            level="info",
+        )
+        killed = self._kill_processes_on_port(redirect_port)
+        if killed:
+            self.cab.log(
+                f"SPOTIFY - Killed stale processes. Port {redirect_port} should now be available.",
+                level="info",
+            )
+            return
+
+        self.cab.log(
+            f"SPOTIFY - Could not kill processes on port {redirect_port}. "
+            "If OAuth fails, manually kill processes with: "
+            f"lsof -ti:{redirect_port} | xargs kill",
+            level="warning",
+        )
+
+    def _create_oauth_auth_manager(
+        self,
+        config: Dict[str, Any],
+        *,
+        open_browser: bool,
+        show_dialog: bool,
+    ) -> SpotifyOAuth:
+        """Create a SpotifyOAuth manager with the given browser behavior."""
+        return SpotifyOAuth(
+            scope=config["scope"],
+            redirect_uri=config["redirect_uri"],
+            client_id=config["client_id"],
+            client_secret=config["client_secret"],
+            cache_path=config["cache_path"],
+            open_browser=open_browser,
+            show_dialog=show_dialog,
+        )
+
+    def _validate_oauth_session(
+        self,
+        auth_manager: SpotifyOAuth,
+        *,
+        check_cache: bool = True,
+    ) -> spotipy.Spotify:
+        """Obtain or refresh an access token and return an authenticated Spotify client."""
+        try:
+            token = self._obtain_oauth_access_token(auth_manager, check_cache=check_cache)
+        except Exception as e:  # pylint: disable=broad-except
+            if self._is_invalid_grant_error(e):
+                self._handle_invalid_grant()
+            raise
+
+        if not token:
+            raise SpotifyOAuthError("No access token returned from Spotify OAuth")
+
+        oauth_client = spotipy.Spotify(auth_manager=auth_manager)
+        try:
+            oauth_client.current_user()
+        except Exception as e:  # pylint: disable=broad-except
+            if self._is_invalid_grant_error(e):
+                self._handle_invalid_grant()
+            raise
+
+        return oauth_client
+
+    def _initialize_oauth_client(self) -> spotipy.Spotify:
+        """Initialize Spotify client with OAuth authentication for playlist modifications."""
+        if self._oauth_client is not None:
+            return self._oauth_client
+
+        redirect_port = 8888
+        try:
+            config = self._get_oauth_config()
+            redirect_port = config["redirect_port"]
+            has_cache = self._oauth_cache_exists(config["cache_path"])
+            needs_browser_auth = not has_cache and self._should_open_browser()
+
+            if needs_browser_auth and not self._require_interactive_terminal(
+                "OAuth authorization"
+            ):
+                raise SpotifyReauthorizationRequired(REAUTHORIZE_MESSAGE)
+
+            if self._should_open_browser():
+                self._prepare_oauth_port(redirect_port)
+
+            self._set_oauth_env(config)
+
+            auth_manager = self._create_oauth_auth_manager(
+                config,
+                open_browser=needs_browser_auth,
+                show_dialog=False,
+            )
+            oauth_client = self._validate_oauth_session(auth_manager)
             self._oauth_client = oauth_client
             return oauth_client
 
+        except SpotifyReauthorizationRequired:
+            raise
         except OSError as e:
             error_str = str(e)
             error_code = getattr(e, "errno", None)
@@ -1812,8 +2040,108 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 )
             raise
         except Exception as e:
+            if self._is_invalid_grant_error(e):
+                self._handle_invalid_grant()
             self.cab.log(f"SPOTIFY - Failed to initialize OAuth client: {str(e)}", level="error")
             raise
+
+    def reauthorize(self) -> bool:
+        """Discard cached OAuth tokens and complete a fresh interactive authorization flow."""
+        self._oauth_client = None
+
+        try:
+            config = self._get_oauth_config()
+        except ValueError as e:
+            self.cab.log(f"SPOTIFY - Reauthorization failed: {e}", level="error")
+            return False
+
+        cache_path = config["cache_path"]
+        redirect_port = config["redirect_port"]
+
+        self.cab.log("SPOTIFY - Starting Spotify reauthorization flow", level="info")
+        self.cab.log(
+            f"SPOTIFY - Using redirect URI {config['redirect_uri']} "
+            f"(must match Spotify app settings)",
+            level="info",
+        )
+        self._discard_oauth_cache(cache_path)
+
+        if not self._require_interactive_terminal("Reauthorization"):
+            return False
+
+        try:
+            use_browser = self._should_open_browser()
+
+            if use_browser:
+                self._prepare_oauth_port(redirect_port)
+                if not self._check_port_available(redirect_port):
+                    self.cab.log(
+                        f"SPOTIFY - Reauthorization failed: port {redirect_port} is still in use. "
+                        f"Stop the conflicting process or run: lsof -ti:{redirect_port} | xargs kill",
+                        level="error",
+                    )
+                    return False
+
+            self._set_oauth_env(config)
+            auth_manager = self._create_oauth_auth_manager(
+                config,
+                open_browser=use_browser,
+                show_dialog=True,
+            )
+
+            if use_browser:
+                self.cab.log(
+                    "SPOTIFY - Opening browser for Spotify sign-in. "
+                    "Complete authorization in the browser window.",
+                    level="info",
+                )
+            else:
+                self.cab.log(
+                    "SPOTIFY - Running headless reauthorization "
+                    "(manual URL paste required)",
+                    level="info",
+                )
+
+            oauth_client = self._validate_oauth_session(auth_manager, check_cache=False)
+            user = oauth_client.current_user()
+            display_name = user.get("display_name") or config["username"]
+            self._oauth_client = oauth_client
+            self.cab.log(f"SPOTIFY - Reauthorization successful for {display_name}", level="info")
+            return True
+
+        except SpotifyReauthorizationRequired:
+            return False
+        except OSError as e:
+            error_str = str(e)
+            error_code = getattr(e, "errno", None)
+            if (
+                "Address already in use" in error_str
+                or "98" in error_str
+                or error_code == errno.EADDRINUSE
+            ):
+                self.cab.log(
+                    f"SPOTIFY - Reauthorization failed: port {redirect_port} is in use ({e})",
+                    level="error",
+                )
+            else:
+                self.cab.log(f"SPOTIFY - Reauthorization failed: {e}", level="error")
+            self._discard_oauth_cache(cache_path)
+            return False
+        except SpotifyOAuthError as e:
+            self._discard_oauth_cache(cache_path)
+            if self._is_invalid_grant_error(e):
+                self.cab.log(REAUTHORIZE_MESSAGE, level="error")
+            else:
+                self.cab.log(
+                    f"SPOTIFY - Reauthorization failed during OAuth: {e}. "
+                    "Verify redirect URI and app credentials in the Spotify dashboard.",
+                    level="error",
+                )
+            return False
+        except Exception as e:  # pylint: disable=broad-except
+            self._discard_oauth_cache(cache_path)
+            self.cab.log(f"SPOTIFY - Reauthorization failed: {e}", level="error")
+            return False
 
     def _extract_track_id(self, url: str) -> Optional[str]:
         """Extract track ID from Spotify URL."""
@@ -1926,6 +2254,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             )
             return True
 
+        except SpotifyReauthorizationRequired:
+            raise
         except Exception as e:
             self.cab.log(
                 f"SPOTIFY - Failed to update Last 25 Added playlist: {str(e)}",
@@ -1970,6 +2300,23 @@ def main():
     """Main entry point for the script."""
     parser = argparse.ArgumentParser(description="Spotify playlist analysis and backup tool")
     parser.add_argument(
+        "--reauthorize",
+        action="store_true",
+        help=(
+            "Discard cached Spotify OAuth tokens and complete a fresh browser sign-in "
+            "(required when refresh tokens expire or are revoked). "
+            "On headless servers, prints an authorization URL to paste in your browser."
+        ),
+    )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help=(
+            "Force headless OAuth: print the authorization URL and paste the redirect URL "
+            "instead of opening a local browser (also auto-detected over SSH)"
+        ),
+    )
+    parser.add_argument(
         "--update-last-25-only",
         action="store_true",
         help="Only update the 'Last 25 Added' playlist (loads tracks from existing JSON)",
@@ -2000,8 +2347,26 @@ def main():
 
     cab = Cabinet()
     analyzer = SpotifyAnalyzer(cab)
+    analyzer._oauth_headless = args.headless  # pylint: disable=protected-access
 
     try:
+        if args.reauthorize:
+            other_modes = [
+                args.update_last_25_only,
+                args.genres_only,
+                bool(args.reclassify_genre),
+            ]
+            if any(other_modes):
+                cab.log(
+                    "SPOTIFY - --reauthorize cannot be combined with other modes",
+                    level="error",
+                )
+                sys.exit(1)
+
+            if not analyzer.reauthorize():
+                sys.exit(1)
+            sys.exit(0)
+
         playlist_update_success = False
         if args.reclassify_genre:
             # Reclassify tracks with a specific genre
@@ -2120,6 +2485,8 @@ def main():
 
             # Commit updated data after validation
             analyzer.commit_updated_data()
+    except SpotifyReauthorizationRequired:
+        sys.exit(1)
     except Exception as e:
         logging.error("Analysis failed: %s", str(e))
         cab.log(f"SPOTIFY - Analysis failed: {str(e)}", level="error")

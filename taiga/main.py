@@ -25,7 +25,8 @@ redirected to an HTML login flow and JSON parsing will fail. In that case set
 ``TAIGA_API_ROOT`` (or cabinet ``taiga.api_root``) to a URL that reaches
 **taiga-back** directly from the machine running this script (often the Docker
 bridge IP on port 8000, e.g. ``http://172.25.0.10:8000/api/v1`` — get the IP with
-``docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <taiga-back-container>``).
+``docker inspect -f
+'{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <taiga-back-container>``).
 
 By default the script targets project slug ``tjw`` and places the story in the
 **New** column (display name or slug ``new``). Use ``--status`` for another column.
@@ -149,7 +150,9 @@ def obtain_bearer_token(api_root: str, username: str, password: str) -> str:
 
     content_type = (r.headers.get("Content-Type") or "").lower()
     looks_like_html = text.lstrip().lower().startswith("<!") or "<html" in text[:200].lower()
-    if looks_like_html or ("json" not in content_type and text and not text.lstrip().startswith("{")):
+    if looks_like_html or (
+        "json" not in content_type and text and not text.lstrip().startswith("{")
+    ):
         raise RuntimeError(
             "Taiga /auth did not return JSON (got HTML or another format). "
             "This usually means requests are hitting a reverse proxy login page "
@@ -264,7 +267,8 @@ def resolve_kanban_status_id(
             if _status_matches_selector(row, status_selector):
                 return int(row["id"]), str(row["name"])
         choices = ", ".join(
-            f"{r.get('name')} ({r.get('slug')})" for r in sorted(active, key=lambda x: x.get("order", 0))
+            f"{r.get('name')} ({r.get('slug')})"
+            for r in sorted(active, key=lambda x: x.get("order", 0))
         )
         raise RuntimeError(
             f"No Kanban status matches {status_selector!r}. Available: {choices}"
@@ -277,7 +281,8 @@ def resolve_kanban_status_id(
             return int(row["id"]), str(row["name"])
 
     choices = ", ".join(
-        f"{r.get('name')} ({r.get('slug')})" for r in sorted(active, key=lambda x: x.get("order", 0))
+        f"{r.get('name')} ({r.get('slug')})"
+        for r in sorted(active, key=lambda x: x.get("order", 0))
     )
     raise RuntimeError(
         f"No 'New' status found. Set --status, or add a column in Taiga. "
@@ -417,4 +422,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
