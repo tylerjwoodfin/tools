@@ -18,7 +18,10 @@ Environment variables (optional)::
     TAIGA_API_ROOT   — full API base, e.g. http://172.30.0.10:8000/api/v1 (see below)
     TAIGA_USERNAME   — login username or email
     TAIGA_PASSWORD   — login password
-    TAIGA_AUTH_TOKEN — if set, used as Bearer token; username/password ignored
+    TAIGA_AUTH_TOKEN — if set, used as API token; username/password ignored.
+                      JWT login tokens use ``Bearer`` auth; Taiga application tokens
+                      (non-expiring, from ``external_apps.ApplicationToken``) use
+                      ``Application`` auth and are preferred for automation.
 
 If your public URL sits behind Authentik (or similar), ``POST /api/v1/auth`` may be
 redirected to an HTML login flow and JSON parsing will fail. In that case set
@@ -50,7 +53,24 @@ except ImportError:
     Cabinet = None  # type: ignore[misc, assignment]
 
 DEFAULT_PROJECT_SLUG = "tjw"
+DEFAULT_BASE_URL = "https://taiga.tyler.cloud"
 REQUEST_TIMEOUT = 45
+
+
+def public_base_url(cfg: dict[str, str]) -> str:
+    """Return the Taiga web UI origin for links (not the API root)."""
+    return (cfg.get("base_url") or "").strip().rstrip("/") or DEFAULT_BASE_URL
+
+
+def format_created_message(project_slug: str, ref: int, base_url: str) -> str:
+    """Success line: green ``{slug}-{ref}`` and a clickable story URL."""
+    label = f"{project_slug}-{ref}".lower()
+    url = f"{base_url.rstrip('/')}/project/{project_slug}/us/{ref}"
+    if sys.stdout.isatty():
+        green, reset = "\033[32m", "\033[0m"
+        link = f"\033]8;;{url}\033\\{url}\033]8;;\033\\"
+        return f"Created {green}{label}{reset}: {link}"
+    return f"Created {label}: {url}"
 
 
 def api_v1_root(base_url: str) -> str:
@@ -175,8 +195,9 @@ def obtain_bearer_token(api_root: str, username: str, password: str) -> str:
 
 def auth_headers(bearer: str) -> dict[str, str]:
     """Build default headers for authenticated Taiga API requests."""
+    scheme = "Bearer" if bearer.count(".") == 2 else "Application"
     return {
-        "Authorization": f"Bearer {bearer}",
+        "Authorization": f"{scheme} {bearer}",
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
@@ -392,7 +413,7 @@ def main(argv: list[str] | None = None) -> int:
         project = fetch_project_by_slug(api_root, bearer, args.project_slug)
         project_id = int(project["id"])
         statuses = fetch_userstory_statuses(api_root, bearer, project_id)
-        status_id, status_name = resolve_kanban_status_id(statuses, args.status)
+        status_id, _ = resolve_kanban_status_id(statuses, args.status)
 
         created = create_user_story(
             api_root,
@@ -407,11 +428,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     ref = created.get("ref")
-    sid = created.get("id")
-    print(
-        f"Created user story id={sid} ref=#{ref} in column {status_name!r} "
-        f"(project slug={args.project_slug})."
-    )
+    if ref is None:
+        print("User story created but response omitted ref.", file=sys.stderr)
+        return 1
+    print(format_created_message(args.project_slug, int(ref), public_base_url(cfg)))
     return 0
 
 
