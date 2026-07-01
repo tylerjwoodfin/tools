@@ -281,6 +281,22 @@ else
             fi
         fi
 
+        # Export Sure (sure.am) database (Postgres lives in a named Docker volume)
+        SURE_DIR="$HOME/git/docker/sure.am"
+        SURE_BACKUP_DIR="$SURE_DIR/database-backup"
+        if [ -d "$SURE_DIR" ] && command -v docker >/dev/null 2>&1; then
+            mkdir -p "$SURE_BACKUP_DIR"
+            if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^sure-db$'; then
+                if docker exec -t sure-db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$SURE_BACKUP_DIR/sure-database.sql" 2>/dev/null; then
+                    debug "Sure database dumped to database-backup/"
+                else
+                    warning "Failed to dump Sure database"
+                fi
+            else
+                debug "Sure postgres not running, skipping database dump"
+            fi
+        fi
+
         # Export Taiga Docker data for backup (DB, media, static)
         # Data is normally in named volumes - we export to a dir under git so it gets backed up
         TAIGA_DIR="$HOME/git/docker/taiga-docker"
@@ -562,7 +578,7 @@ else
 
         # Clean up exports (were captured in backup)
         for _dir in "${TAIGA_BACKUP_DIR:-}" "${IMMICH_BACKUP_DIR:-}" "${AFFINE_BACKUP_DIR:-}" "${AUTHENTIK_BACKUP_DIR:-}" "${MINIFLUX_BACKUP_DIR:-}" \
-            "${MONGODB_BACKUP_DIR:-}" "${VAULTWARDEN_BACKUP_DIR:-}" "${UPTIME_KUMA_BACKUP_DIR:-}" \
+            "${SURE_BACKUP_DIR:-}" "${MONGODB_BACKUP_DIR:-}" "${VAULTWARDEN_BACKUP_DIR:-}" "${UPTIME_KUMA_BACKUP_DIR:-}" \
             "$HOME/git/docker/pihole/cloud/pihole-backup" \
             "$HOME/git/docker/pihole/rainbow/pihole-backup"; do
             [ -d "$_dir" ] && rm -rf "$_dir"
