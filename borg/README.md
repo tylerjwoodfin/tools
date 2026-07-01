@@ -59,6 +59,7 @@ If replication fails mid-transfer, simply run `./main.sh --replicate-only` to re
 - Source: `/home/tyler/syncthing` (hardcoded for my use case)
 - Compression: LZ4 (fast compression)
 - Excludes: Cache directories (via `--exclude-caches`), live DB trees (Postgres, MongoDB WiredTiger under `docker/`, Pi-hole, etc.) that are root-owned or unsafe to copy while running
+- **Database exports** (via `pg_dump` / etc. into `database-backup/` under each stack, then removed after the archive is created): Immich, Affine, Authentik, Miniflux, Sure (sure.am), Taiga, MongoDB, Vaultwarden, Uptime Kuma; Pi-hole config is tarballed separately
 
 ## Backup Schedule
 
