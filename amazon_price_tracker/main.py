@@ -12,6 +12,21 @@ from cabinet import Cabinet, Mail
 
 cabinet = Cabinet()
 
+AMAZON_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/131.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+}
+
 class AmazonTrackerItem(TypedDict):
     """
     The required data type in Cabinet. See README.md for more information.
@@ -25,32 +40,74 @@ class AmazonTrackerData(TypedDict):
     """
     items: List[AmazonTrackerItem]
 
-def get_page_content(url: str) -> Optional[str]:
+def extract_asin(url: str) -> Optional[str]:
+    """
+    extracts the ASIN from an amazon product url
+
+    :param url: the url of the amazon product page
+    :return: the ASIN if found, None otherwise
+    """
+    match = re.search(r"/(?:dp|gp/product)/([A-Z0-9]{10})", url)
+    return match.group(1) if match else None
+
+def create_amazon_session() -> requests.Session:
+    """
+    creates a requests session that can fetch amazon product pages
+
+    :return: a warmed-up requests session
+    """
+    session = requests.Session()
+    session.headers.update(AMAZON_HEADERS)
+    session.get("https://www.amazon.com/", timeout=10)
+    return session
+
+def get_page_content(url: str, session: requests.Session) -> Optional[str]:
     """
     retrieves the html content of a given url
 
     :param url: the url of the amazon product page
+    :param session: a warmed-up requests session
     :return: the html content if successful, None otherwise
     """
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "TE": "Trailers"
-    }
+    asin = extract_asin(url)
+    product_url = f"https://www.amazon.com/dp/{asin}" if asin else url
+
     try:
-        response = requests.get(url, headers=headers, timeout=10)
+        response = session.get(product_url, timeout=10)
         response.raise_for_status()
-        return response.text
+        html_content = response.text
+        if len(html_content) < 20000 and "captcha" in html_content.lower():
+            cabinet.log(f"Amazon returned a captcha page for {product_url}", level="warn")
+            return None
+        return html_content
     except requests.RequestException as e:
-        print(f"Error fetching the page content: {e}")
+        cabinet.log(f"Error fetching the page content for {product_url}: {e}", level="warn")
         return None
+
+def parse_price_text(price_text: str) -> Optional[float]:
+    """
+    parses a price string into a float
+
+    :param price_text: raw price text from the page
+    :return: the price as a float if found, None otherwise
+    """
+    price_text = re.sub(r"[^\d.,-]", "", price_text.strip())
+    if not price_text:
+        return None
+    if "-" in price_text:
+        price_text = price_text.split("-")[0]
+
+    if "," in price_text and "." in price_text:
+        price_text = price_text.replace(",", "")
+    elif "," in price_text:
+        price_text = price_text.replace(",", ".")
+
+    try:
+        price = float(price_text)
+    except ValueError:
+        return None
+
+    return price if price > 0 else None
 
 def parse_price(html_content: str) -> Optional[float]:
     """
@@ -79,42 +136,33 @@ def parse_price(html_content: str) -> Optional[float]:
 
     for selector in price_selectors:
         try:
-            element = soup.select_one(selector)
-            if element:
-                # Extract price text and clean it
-                price_text = element.get_text().strip()
-                # Remove currency symbols and commas, handle ranges
-                price_text = re.sub(r'[^\d.,]', '', price_text)
-                if '-' in price_text:
-                    # If price range, take the lower price
-                    price_text = price_text.split('-')[0]
-
-                # Handle different decimal separators
-                if ',' in price_text and '.' in price_text:
-                    # Format like 1,234.56
-                    price_text = price_text.replace(',', '')
-                elif ',' in price_text:
-                    # Format like 1234,56
-                    price_text = price_text.replace(',', '.')
-
-                price = float(price_text)
-                if price > 0:
+            for element in soup.select(selector):
+                price = parse_price_text(element.get_text())
+                if price is not None and price >= 10:
                     return price
-        except (ValueError, AttributeError) as e:
+        except AttributeError as e:
             cabinet.log(f"Error parsing price: {e}", level="warn")
             continue
+
+    json_price_patterns = [
+        r'"priceAmount"\s*:\s*([0-9.]+)',
+        r'"displayPrice"\s*:\s*"\$?([0-9.]+)"',
+    ]
+    for pattern in json_price_patterns:
+        match = re.search(pattern, html_content)
+        if match:
+            price = parse_price_text(match.group(1))
+            if price is not None and price >= 10:
+                return price
 
     # Try finding any price-like text in the page
     if price is None:
         price_pattern = r'\$\s*(\d+(?:,\d{3})*(?:\.\d{2})?)'
         matches = re.findall(price_pattern, html_content)
-        if matches:
-            try:
-                price = float(matches[0].replace(',', ''))
-                if price > 0:
-                    return price
-            except ValueError:
-                pass
+        for match in matches:
+            price = parse_price_text(match)
+            if price is not None and price >= 10:
+                return price
 
     cabinet.log("Could not find the price element", level="warn")
     return None
@@ -137,6 +185,8 @@ def main() -> None:
         cabinet.log("No Amazon URLs set. Exiting.")
         return
 
+    session = create_amazon_session()
+
     for item in amazon_urls:
         url: str | None = item.get("url")
         price_threshold: int | None = item.get("price_threshold")
@@ -145,7 +195,7 @@ def main() -> None:
             cabinet.log(f"Missing price or url in amazon_tracker: {item}")
             continue
 
-        html_content = get_page_content(url)
+        html_content = get_page_content(url, session)
         if not html_content:
             continue
 
