@@ -105,7 +105,7 @@ def main():
 
     # Check Docker containers only on `cloud` (home server)
     if device_name == "cloud":
-        docker_services = {"immich": "immich", "dawarich": "dawarich"}
+        docker_services = {"immich": "immich", "dawarich": "dawarich", "rustdesk_hbbs": "hbbs", "rustdesk_hbbr": "hbbr"}
 
         for service_name, container_name in docker_services.items():
             if check_docker_container(container_name):

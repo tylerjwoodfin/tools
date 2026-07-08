@@ -56,10 +56,18 @@ If replication fails mid-transfer, simply run `./main.sh --replicate-only` to re
 
 ## What Gets Backed Up
 
-- Source: `/home/tyler/syncthing` (hardcoded for my use case)
-- Compression: LZ4 (fast compression)
-- Excludes: Cache directories (via `--exclude-caches`), live DB trees (Postgres, MongoDB WiredTiger under `docker/`, Pi-hole, etc.) that are root-owned or unsafe to copy while running
-- **Database exports** (via `pg_dump` / etc. into `database-backup/` under each stack, then removed after the archive is created): Immich, Affine, Authentik, Miniflux, Sure (sure.am), Taiga, MongoDB, Vaultwarden, Uptime Kuma; Pi-hole config is tarballed separately
+See **[docs/archive-contents.md](docs/archive-contents.md)** for the full inventory and **[docs/README.md](docs/README.md)** for disaster-recovery guides.
+
+Summary:
+
+- `$HOME/syncthing`, `$HOME/git` (no `.git`), `$HOME/.config`, `$HOME/.zshrc`, `$HOME/.affine`
+- Staged per run: crontab, `/etc/cloudflared`, `/root/.config/rustdesk`
+- Pre-export DB/config snapshots under `~/git/docker/*/database-backup`, `taiga-backup`, `pihole-backup`
+- Compression: LZ4; exclusions for live DB trees and caches — details in `main.sh` and docs
+
+## Disaster recovery
+
+**[docs/](docs/)** — step-by-step restore for AI/operators (no secrets in repo).
 
 ## Backup Schedule
 

@@ -217,6 +217,31 @@ else
             debug "Skipping /etc/cloudflared (does not exist)"
         fi
 
+        # RustDesk systemd service config (root); tyler ~/.config/rustdesk is in ~/.config above.
+        RUSTDESK_ROOT_STAGED="$CRONTAB_TMP_DIR/root-config-rustdesk"
+        if [ -d /root/.config/rustdesk ]; then
+            mkdir -p "$RUSTDESK_ROOT_STAGED" || RUSTDESK_ROOT_STAGED=""
+            if [ -n "$RUSTDESK_ROOT_STAGED" ]; then
+                _rd_ok=false
+                if command -v sudo >/dev/null 2>&1 \
+                    && [ -x /usr/local/sbin/borg-stage-rustdesk-root ] \
+                    && sudo -n /usr/local/sbin/borg-stage-rustdesk-root "$RUSTDESK_ROOT_STAGED" \
+                    && [ -n "$(ls -A "$RUSTDESK_ROOT_STAGED" 2>/dev/null)" ]; then
+                    _rd_ok=true
+                fi
+                if [ "$_rd_ok" = true ]; then
+                    add_backup_path "$RUSTDESK_ROOT_STAGED"
+                    debug "Staged /root/.config/rustdesk for Borg backup"
+                else
+                    rm -rf "$RUSTDESK_ROOT_STAGED" 2>/dev/null
+                    warning "Could not stage /root/.config/rustdesk; RustDesk service config missing from archive."
+                    warning "Install NOPASS sudo helper once: sudo sh $HOME/git/tools/borg/install-stage-cloudflared-sudo.sh"
+                fi
+            fi
+        else
+            debug "Skipping /root/.config/rustdesk (does not exist)"
+        fi
+
         # Export Immich database for backup (pg_dump - postgres data dir has restrictive perms)
         IMMICH_DIR="$HOME/git/docker/immich"
         IMMICH_BACKUP_DIR="$IMMICH_DIR/database-backup"
@@ -278,22 +303,6 @@ else
                 fi
             else
                 debug "Miniflux db not running, skipping database dump"
-            fi
-        fi
-
-        # Export Sure (sure.am) database (Postgres lives in a named Docker volume)
-        SURE_DIR="$HOME/git/docker/sure.am"
-        SURE_BACKUP_DIR="$SURE_DIR/database-backup"
-        if [ -d "$SURE_DIR" ] && command -v docker >/dev/null 2>&1; then
-            mkdir -p "$SURE_BACKUP_DIR"
-            if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^sure-db$'; then
-                if docker exec -t sure-db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$SURE_BACKUP_DIR/sure-database.sql" 2>/dev/null; then
-                    debug "Sure database dumped to database-backup/"
-                else
-                    warning "Failed to dump Sure database"
-                fi
-            else
-                debug "Sure postgres not running, skipping database dump"
             fi
         fi
 
@@ -364,6 +373,33 @@ else
             fi
         fi
 
+        # Hot SQLite snapshot for RustDesk hbbs (peer registry; keys id_ed25519* still copied from data/)
+        RUSTDESK_DIR="$HOME/git/docker/rustdesk"
+        RUSTDESK_BACKUP_DIR="$RUSTDESK_DIR/database-backup"
+        if [ -f "$RUSTDESK_DIR/data/db_v2.sqlite3" ]; then
+            mkdir -p "$RUSTDESK_BACKUP_DIR"
+            if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^hbbs$'; then
+                if command -v sqlite3 >/dev/null 2>&1; then
+                    if ! sqlite3 "$RUSTDESK_DIR/data/db_v2.sqlite3" ".backup $RUSTDESK_BACKUP_DIR/hbbs-snapshot.db" 2>/dev/null; then
+                        warning "Failed sqlite3 .backup for RustDesk hbbs (host)"
+                    else
+                        debug "RustDesk hbbs SQLite snapshot written to database-backup/"
+                    fi
+                else
+                    if ! docker run --rm \
+                        -v "$RUSTDESK_DIR/data:/data:ro" \
+                        -v "$RUSTDESK_BACKUP_DIR:/out" \
+                        alpine:3.20 sh -c "apk add -q sqlite && sqlite3 /data/db_v2.sqlite3 '.backup /out/hbbs-snapshot.db'" 2>/dev/null; then
+                        warning "Failed sqlite3 .backup for RustDesk hbbs (alpine container)"
+                    else
+                        debug "RustDesk hbbs SQLite snapshot written to database-backup/ (alpine)"
+                    fi
+                fi
+            else
+                debug "RustDesk hbbs not running, skipping SQLite snapshot"
+            fi
+        fi
+
         # Pi-hole: full config trees as tar (live etc-pihole is excluded from Borg; avoids permission/FTL lock issues)
         # etc-pihole may contain root-only files (e.g. cli_pw, logrotate); GNU tar can still archive the rest
         PIHOLE_TAR_FLAGS=""
@@ -422,9 +458,10 @@ else
         # docker/mongodb/data: WiredTiger live files; use mongodump in database-backup/ instead
         # docker/uptime-kuma/data/mariadb: live MariaDB; use mariadb-dump in database-backup/ instead
         # docker/vaultwarden/data db.sqlite* : use hot snapshot in database-backup/ instead
+        # docker/rustdesk/data db_v2.sqlite3* : use hot snapshot in database-backup/ instead
         # Capture both stdout and stderr - stdout has "E path" lines for skipped files
         # (Borg --list sends file listing to stdout, errors/warnings to stderr)
-        # Staged paths: crontab temp dir may include etc-cloudflared (copy of /etc/cloudflared).
+        # Staged paths: crontab temp dir may include etc-cloudflared, root-config-rustdesk.
         "$BORG_CMD" create                         \
             --verbose                       \
             --filter AME                    \
@@ -448,6 +485,9 @@ else
             --exclude 'sh:**/docker/vaultwarden/data/db.sqlite3' \
             --exclude 'sh:**/docker/vaultwarden/data/db.sqlite3-wal' \
             --exclude 'sh:**/docker/vaultwarden/data/db.sqlite3-shm' \
+            --exclude 'sh:**/docker/rustdesk/data/db_v2.sqlite3' \
+            --exclude 'sh:**/docker/rustdesk/data/db_v2.sqlite3-wal' \
+            --exclude 'sh:**/docker/rustdesk/data/db_v2.sqlite3-shm' \
             --exclude 'sh:**/etc-pihole/cli_pw'     \
             --exclude 'sh:**/etc-pihole/logrotate'  \
             --exclude 're:etc-pihole'               \
@@ -578,7 +618,7 @@ else
 
         # Clean up exports (were captured in backup)
         for _dir in "${TAIGA_BACKUP_DIR:-}" "${IMMICH_BACKUP_DIR:-}" "${AFFINE_BACKUP_DIR:-}" "${AUTHENTIK_BACKUP_DIR:-}" "${MINIFLUX_BACKUP_DIR:-}" \
-            "${SURE_BACKUP_DIR:-}" "${MONGODB_BACKUP_DIR:-}" "${VAULTWARDEN_BACKUP_DIR:-}" "${UPTIME_KUMA_BACKUP_DIR:-}" \
+            "${MONGODB_BACKUP_DIR:-}" "${VAULTWARDEN_BACKUP_DIR:-}" "${RUSTDESK_BACKUP_DIR:-}" "${UPTIME_KUMA_BACKUP_DIR:-}" \
             "$HOME/git/docker/pihole/cloud/pihole-backup" \
             "$HOME/git/docker/pihole/rainbow/pihole-backup"; do
             [ -d "$_dir" ] && rm -rf "$_dir"
