@@ -1,0 +1,37 @@
+#!/bin/sh
+# Stages /root/.config/rustdesk into a caller-owned directory for Borg backups.
+# Invoked via: sudo -n /usr/local/sbin/borg-stage-rustdesk-root DEST
+# DEST must resolve to .../tmp.*/root-config-rustdesk under /tmp or /var/tmp only.
+
+set -e
+
+if [ "$#" -ne 1 ] || [ -z "$1" ]; then
+    echo "usage: borg-stage-rustdesk-root dest_dir" >&2
+    exit 1
+fi
+
+if ! command -v readlink >/dev/null 2>&1; then
+    echo "borg-stage-rustdesk-root: readlink not found" >&2
+    exit 1
+fi
+
+dest="$(readlink -nf "$1" 2>/dev/null || true)"
+case "$dest" in
+/tmp/tmp.*/root-config-rustdesk | /var/tmp/tmp.*/root-config-rustdesk) ;;
+*)
+    echo "borg-stage-rustdesk-root: refusing dest (not .../tmp.*/root-config-rustdesk under /tmp or /var/tmp): $1" >&2
+    exit 1
+    ;;
+esac
+
+if [ ! -d /root/.config/rustdesk ]; then
+    echo "borg-stage-rustdesk-root: /root/.config/rustdesk not found" >&2
+    exit 1
+fi
+
+mkdir -p "$dest"
+/bin/cp -a /root/.config/rustdesk/. "$dest/"
+if [ -n "$SUDO_UID" ]; then
+    _gid="${SUDO_GID:-$(getent passwd "$SUDO_UID" | cut -d: -f4)}"
+    chown -R "$SUDO_UID:${_gid}" "$dest"
+fi

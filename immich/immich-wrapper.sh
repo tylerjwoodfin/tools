@@ -15,5 +15,5 @@ export PATH="/usr/local/bin:/usr/bin:/bin:$HOME/.nvm/versions/node/v20.18.0/bin:
 # use nvm to set Node version
 nvm use 20
 
-# call immich
-/usr/local/bin/immich "$@"
+# call immich (installed via npm under nvm)
+immich "$@"

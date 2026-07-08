@@ -1,7 +1,8 @@
 #!/bin/sh
-# One-time setup: installs borg-stage-cloudflared under /usr/local/sbin and adds
+# One-time setup: installs Borg staging helpers under /usr/local/sbin and adds
 # NOPASSWD sudo for the invoking user only (for cron/non-inter Borg backups).
 #
+# Helpers: borg-stage-cloudflared, borg-stage-rustdesk-root
 # Run: sudo sh install-stage-cloudflared-sudo.sh
 
 set -e
@@ -12,12 +13,19 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 _here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-_src="$_here/borg-stage-cloudflared"
-_dst="/usr/local/sbin/borg-stage-cloudflared"
+_cf_src="$_here/borg-stage-cloudflared"
+_cf_dst="/usr/local/sbin/borg-stage-cloudflared"
+_rd_src="$_here/borg-stage-rustdesk-root"
+_rd_dst="/usr/local/sbin/borg-stage-rustdesk-root"
 _sudoers="/etc/sudoers.d/borg-stage-cloudflared"
 
-if [ ! -f "$_src" ]; then
-    echo "Missing $_src (run from tools/borg/)" >&2
+if [ ! -f "$_cf_src" ]; then
+    echo "Missing $_cf_src (run from tools/borg/)" >&2
+    exit 1
+fi
+
+if [ ! -f "$_rd_src" ]; then
+    echo "Missing $_rd_src (run from tools/borg/)" >&2
     exit 1
 fi
 
@@ -30,12 +38,15 @@ if [ -z "$TARGET_USER" ]; then
     exit 1
 fi
 
-install -o root -g root -m 0755 "$_src" "$_dst"
+install -o root -g root -m 0755 "$_cf_src" "$_cf_dst"
+install -o root -g root -m 0755 "$_rd_src" "$_rd_dst"
 
 umask 077
 {
     printf 'Defaults!/usr/local/sbin/borg-stage-cloudflared !requiretty\n'
+    printf 'Defaults!/usr/local/sbin/borg-stage-rustdesk-root !requiretty\n'
     printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/borg-stage-cloudflared\n' "$TARGET_USER"
+    printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/borg-stage-rustdesk-root\n' "$TARGET_USER"
 } >"$_sudoers.$$"
 mv "$_sudoers.$$" "$_sudoers"
 chmod 0440 "$_sudoers"
@@ -44,5 +55,5 @@ if command -v visudo >/dev/null 2>&1; then
     visudo -c -f "$_sudoers" >/dev/null
 fi
 
-echo "Installed $_dst and $_sudoers for user '$TARGET_USER'."
-echo "Next Borg backup should log: Staged /etc/cloudflared for Borg backup"
+echo "Installed $_cf_dst, $_rd_dst, and $_sudoers for user '$TARGET_USER'."
+echo "Next Borg backup should log staged /etc/cloudflared and /root/.config/rustdesk"
