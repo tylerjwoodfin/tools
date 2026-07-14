@@ -1,0 +1,18 @@
+[Unit]
+Description=Move Syncthing video-to-cloud drops into the video library
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/tyler/git/tools/video_to_cloud/main.py
+Restart=always
+RestartSec=5
+User=tyler
+Environment=HOME=/home/tyler
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/tyler/.local/bin
+StandardOutput=append:/home/tyler/syncthing/log/video-to-cloud.log
+StandardError=append:/home/tyler/syncthing/log/video-to-cloud.log
+
+[Install]
+WantedBy=multi-user.target
