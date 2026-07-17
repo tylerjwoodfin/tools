@@ -418,8 +418,23 @@ def analyze_logs(email):
     return email, is_warnings, is_errors, only_food_log_error
 
 
+def _parse_spotify_last_success(value) -> datetime.datetime | None:
+    """Parse spotipy.last_success (YYYY-MM-DD HH:mm). Returns None if missing/invalid."""
+    if not value:
+        return None
+    try:
+        return datetime.datetime.strptime(str(value), "%Y-%m-%d %H:%M")
+    except (TypeError, ValueError):
+        return None
+
+
 def append_spotify_info(today, log_path_today, email):  # pylint: disable=redefined-outer-name
-    """append spotify issues and stats"""
+    """append spotify issues and stats
+
+    Returns:
+        tuple: (email_html, last_success_stale) where last_success_stale is True when
+        spotipy.last_success is missing or older than 24 hours.
+    """
     # Read from daily log and filter for SPOTIFY entries
     daily_log = (
         cab.get_file_as_array(
@@ -430,28 +445,49 @@ def append_spotify_info(today, log_path_today, email):  # pylint: disable=redefi
     spotify_log = [line for line in daily_log if "SPOTIFY" in line]
     spotify_stats = cab.get("spotipy") or {}
 
-    spotify_issues = "No Data"
+    issue_lines = []
     if spotify_log:
-        issues = [
+        issue_lines.extend(
             log
             for log in spotify_log
             if "WARNING" in log or "ERROR" in log or "CRITICAL" in log
-        ]
-        if issues:
-            spotify_issues = "<br>".join(issues)
-            email += f"<h3>Spotify Issues:</h3>{spotify_issues}<br><br>"
+        )
+
+    last_success_raw = spotify_stats.get("last_success")
+    last_success_dt = _parse_spotify_last_success(last_success_raw)
+    last_success_stale = False
+    if last_success_dt is None:
+        last_success_stale = True
+        issue_lines.append(
+            "SPOTIFY - last_success missing or invalid "
+            f"(value={last_success_raw!r})"
+        )
+    else:
+        age = datetime.datetime.now() - last_success_dt
+        if age > datetime.timedelta(hours=24):
+            last_success_stale = True
+            hours = age.total_seconds() / 3600
+            issue_lines.append(
+                f"SPOTIFY - last_success stale ({last_success_raw}, "
+                f"{hours:.0f}h ago; expected within 24h)"
+            )
+
+    if issue_lines:
+        email += f"<h3>Spotify Issues:</h3>{'<br>'.join(issue_lines)}<br><br>"
 
     total_tracks = spotify_stats.get("total_tracks", "No Data")
     average_year = spotify_stats.get("average_year", "No Data")
+    last_success_display = last_success_raw or "No Data"
 
     email += f"""
     <h3>Spotify Stats:</h3>
     <ul><b>Song Count:</b> {total_tracks}</ul>
     <ul><b>Average Year:</b> {average_year}</ul>
+    <ul><b>Last Success:</b> {last_success_display}</ul>
     <br>
     """
 
-    return email
+    return email, last_success_stale
 
 
 def append_weather_info(email):
@@ -543,12 +579,19 @@ if __name__ == "__main__":
     status_email = append_syncthing_conflict_check(status_email)
 
     # add spotify info
-    status_email = append_spotify_info(today, log_path_today, status_email)
+    status_email, spotify_last_success_stale = append_spotify_info(
+        today, log_path_today, status_email
+    )
 
     # analyze logs (24h via cab.log_query when Mongo enabled, else log files)
     status_email, has_warnings, has_errors, is_only_food_log_error = analyze_logs(
         status_email
     )
+
+    if spotify_last_success_stale:
+        has_errors = True
+        # Stale Spotify success is not a food-log-only failure
+        is_only_food_log_error = False
 
     # append weather info
     status_email = append_weather_info(status_email)
