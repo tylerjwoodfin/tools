@@ -24,7 +24,7 @@ from collections import Counter
 import re
 
 import spotipy
-from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth, SpotifyOAuthError
+from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth, SpotifyOauthError
 from cabinet import Cabinet
 from tyler_python_helpers import ChatGPT
 
@@ -1721,7 +1721,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             return True
         error_str = str(exc).lower()
         return "invalid_grant" in error_str or (
-            isinstance(exc, SpotifyOAuthError) and "invalid_grant" in error_str
+            isinstance(exc, SpotifyOauthError) and "invalid_grant" in error_str
         )
 
     def _is_headless_environment(self) -> bool:
@@ -1802,7 +1802,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
 
         response = sys.stdin.readline().strip()
         if not response:
-            raise SpotifyOAuthError("No redirect URL provided")
+            raise SpotifyOauthError("No redirect URL provided")
         return response
 
     def _obtain_oauth_access_token(
@@ -1823,21 +1823,21 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         if auth_manager.open_browser:
             token = auth_manager.get_access_token(as_dict=False, check_cache=False)
             if not token:
-                raise SpotifyOAuthError("No access token returned from Spotify OAuth")
+                raise SpotifyOauthError("No access token returned from Spotify OAuth")
             return token
 
         redirect_url = self._prompt_for_redirect_url(auth_manager)
         try:
             code = auth_manager.parse_response_code(redirect_url)
-        except SpotifyOAuthError as e:
-            raise SpotifyOAuthError(
+        except SpotifyOauthError as e:
+            raise SpotifyOauthError(
                 "Invalid redirect URL. Paste the full URL from your browser address bar, "
                 f"including the 'code' parameter. {e}"
             ) from e
 
         token = auth_manager.get_access_token(code=code, check_cache=False)
         if not token:
-            raise SpotifyOAuthError("No access token returned from Spotify OAuth")
+            raise SpotifyOauthError("No access token returned from Spotify OAuth")
         return token
 
     def _get_oauth_config(self) -> Dict[str, Any]:
@@ -1963,7 +1963,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             raise
 
         if not token:
-            raise SpotifyOAuthError("No access token returned from Spotify OAuth")
+            raise SpotifyOauthError("No access token returned from Spotify OAuth")
 
         oauth_client = spotipy.Spotify(auth_manager=auth_manager)
         try:
@@ -2128,7 +2128,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 self.cab.log(f"SPOTIFY - Reauthorization failed: {e}", level="error")
             self._discard_oauth_cache(cache_path)
             return False
-        except SpotifyOAuthError as e:
+        except SpotifyOauthError as e:
             self._discard_oauth_cache(cache_path)
             if self._is_invalid_grant_error(e):
                 self.cab.log(REAUTHORIZE_MESSAGE, level="error")
@@ -2151,6 +2151,17 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         # Match pattern: https://open.spotify.com/track/TRACK_ID
         match = re.search(r"track/([a-zA-Z0-9]+)", url)
         return match.group(1) if match else None
+
+    def _record_last_success(self) -> str:
+        """Record successful Last 25 Added update timestamp in cabinet.
+
+        Returns:
+            The timestamp string written to spotipy.last_success (YYYY-MM-DD HH:mm).
+        """
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        self.cab.put("spotipy", "last_success", timestamp)
+        self.cab.log(f"SPOTIFY - Recorded last_success={timestamp}")
+        return timestamp
 
     def update_last_25_added_playlist(self):
         """Update the 'Last 25 Added' playlist with the 25 most recently added tracks.
@@ -2253,6 +2264,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             self.cab.log(
                 f"SPOTIFY - Successfully updated '{playlist_name}' with {len(track_ids)} tracks"
             )
+            self._record_last_success()
             return True
 
         except SpotifyReauthorizationRequired:
