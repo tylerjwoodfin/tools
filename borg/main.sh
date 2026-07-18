@@ -459,6 +459,8 @@ else
         # docker/uptime-kuma/data/mariadb: live MariaDB; use mariadb-dump in database-backup/ instead
         # docker/vaultwarden/data db.sqlite* : use hot snapshot in database-backup/ instead
         # docker/rustdesk/data db_v2.sqlite3* : use hot snapshot in database-backup/ instead
+        # docker/rustdesk/data/.config : root:root 0600 (hbbs); causes Borg rc 1 / skipped
+        #   rainbow replicate. Service config is staged from /root/.config/rustdesk instead.
         # Capture both stdout and stderr - stdout has "E path" lines for skipped files
         # (Borg --list sends file listing to stdout, errors/warnings to stderr)
         # Staged paths: crontab temp dir may include etc-cloudflared, root-config-rustdesk.
@@ -488,6 +490,7 @@ else
             --exclude 'sh:**/docker/rustdesk/data/db_v2.sqlite3' \
             --exclude 'sh:**/docker/rustdesk/data/db_v2.sqlite3-wal' \
             --exclude 'sh:**/docker/rustdesk/data/db_v2.sqlite3-shm' \
+            --exclude 'sh:**/docker/rustdesk/data/.config' \
             --exclude 'sh:**/etc-pihole/cli_pw'     \
             --exclude 'sh:**/etc-pihole/logrotate'  \
             --exclude 're:etc-pihole'               \
@@ -758,8 +761,10 @@ else
     fi
 fi
 
+# Replicate on success or Borg warnings (rc 1 = archive OK, some paths skipped).
+# Only skip offsite rsync on hard failures (rc >= 2).
 debug "About to check if should replicate: global_exit=${global_exit}"
-if [ ${global_exit} -eq 0 ]; then
+if [ ${global_exit} -le 1 ]; then
     # Verify local repository before replicating; avoids copying corruption offsite
     # (Sundays may already have run borg check --verify-data; this is a quick structural check.)
     info "Running borg check before offsite replication"
@@ -771,7 +776,7 @@ if [ ${global_exit} -eq 0 ]; then
     fi
 fi
 
-if [ ${global_exit} -eq 0 ]; then
+if [ ${global_exit} -le 1 ]; then
     info "Replicating Borg repo to rainbow"
 
     # Convert ssh:// URI to rsync format if needed
