@@ -85,6 +85,10 @@ def resolve_api_root(cfg: dict[str, str]) -> str:
 
     Prefers ``cfg["api_root"]`` (full ``…/api/v1``) when set; otherwise derives
     ``{base_url}/api/v1``.
+
+    Note: Docker bridge IPs go stale. For a *reachable* root (with probe +
+    discovery of ``taiga-docker-taiga-back-1``), use
+    ``ticket.resolve_working_api_root`` from ``ticket.py`` in this directory.
     """
     direct = (cfg.get("api_root") or "").strip().rstrip("/")
     if direct:
@@ -393,28 +397,44 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     cfg = load_taiga_config()
 
-    api_root = resolve_api_root(cfg)
-    if not api_root:
-        print(
-            "Set TAIGA_BASE_URL (site origin) and/or TAIGA_API_ROOT (full …/api/v1), "
-            "or cabinet taiga.base_url / taiga.api_root.",
-            file=sys.stderr,
-        )
-        return 1
-
     try:
-        if cfg.get("auth_token"):
-            bearer = cfg["auth_token"]
-        elif cfg["username"] and cfg["password"]:
-            bearer = obtain_bearer_token(api_root, cfg["username"], cfg["password"])
-        else:
+        # Prefer ticket.py discovery so stale Docker bridge IPs self-heal.
+        from ticket import resolve_working_api_root, _bearer_from_cfg, discover_taiga_back_api_root
+
+        hint = resolve_api_root(cfg) or discover_taiga_back_api_root() or ""
+        bearer = _bearer_from_cfg(cfg, hint)
+        api_root = resolve_working_api_root(
+            cfg, bearer, project_slug=args.project_slug
+        )
+    except ImportError:
+        api_root = resolve_api_root(cfg)
+        if not api_root:
             print(
-                "Provide TAIGA_AUTH_TOKEN or both TAIGA_USERNAME and TAIGA_PASSWORD "
-                "(or cabinet taiga.auth_token / username / password).",
+                "Set TAIGA_BASE_URL (site origin) and/or TAIGA_API_ROOT (full …/api/v1), "
+                "or cabinet taiga.base_url / taiga.api_root.",
                 file=sys.stderr,
             )
             return 1
+        try:
+            if cfg.get("auth_token"):
+                bearer = cfg["auth_token"]
+            elif cfg["username"] and cfg["password"]:
+                bearer = obtain_bearer_token(api_root, cfg["username"], cfg["password"])
+            else:
+                print(
+                    "Provide TAIGA_AUTH_TOKEN or both TAIGA_USERNAME and TAIGA_PASSWORD "
+                    "(or cabinet taiga.auth_token / username / password).",
+                    file=sys.stderr,
+                )
+                return 1
+        except RuntimeError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
+    try:
         project = fetch_project_by_slug(api_root, bearer, args.project_slug)
         project_id = int(project["id"])
         statuses = fetch_userstory_statuses(api_root, bearer, project_id)

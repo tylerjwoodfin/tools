@@ -9,5 +9,9 @@
 ## Life-ops MCP
 - [`lifeops-mcp/`](lifeops-mcp/) — stdio MCP server exposing Cabinet, RemindMail, foodlog, milestone, and Immich search to Cursor.
 
+## Taiga / GitHub agent helpers
+- [`taiga/ticket.py`](taiga/ticket.py) — fetch/finish TJW tickets for Cursor (`get`, `finish`, `resolve-api`); auto-heals stale Docker `api_root`.
+- [`github/ensure_gh_auth.py`](github/ensure_gh_auth.py) — sync Cabinet `backloggist.github_token` into `gh` auth.
+
 ## See Other READMEs
 - Most folders contain a README that you should check out for more specific information. Happy coding!
