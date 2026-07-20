@@ -5,9 +5,17 @@ Provides recurrent tasks for GitHub repositories.
 ## Setup
 ```
 gh auth login
+# or sync the Cabinet PAT used by Cursor agents:
+python3 ensure_gh_auth.py
 ```
 
 ## Scripts
+
+### ensure_gh_auth.py
+Writes Cabinet `backloggist.github_token` into `~/.config/gh/hosts.yml` so `gh` works without interactive login.
+```bash
+python3 ensure_gh_auth.py
+```
 
 ### new_repo.py
 Creates a new GitHub repository with standard configuration.
