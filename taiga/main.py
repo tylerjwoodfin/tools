@@ -26,10 +26,10 @@ Environment variables (optional)::
 If your public URL sits behind Authentik (or similar), ``POST /api/v1/auth`` may be
 redirected to an HTML login flow and JSON parsing will fail. In that case set
 ``TAIGA_API_ROOT`` (or cabinet ``taiga.api_root``) to a URL that reaches
-**taiga-back** directly from the machine running this script (often the Docker
-bridge IP on port 8000, e.g. ``http://172.25.0.10:8000/api/v1`` — get the IP with
-``docker inspect -f
-'{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <taiga-back-container>``).
+**taiga-back** directly from the machine running this script. Prefer the
+loopback publish ``http://127.0.0.1:8000/api/v1`` (see taiga-docker compose).
+Docker bridge IPs (``172.25.0.*``) go stale after reboot; ``ticket.py`` discovers
+the live container IP and rewrites Cabinet automatically when needed.
 
 By default the script targets project slug ``tjw`` and places the story in the
 **New** column (display name or slug ``new``). Use ``--status`` for another column.

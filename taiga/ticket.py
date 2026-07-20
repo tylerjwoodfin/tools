@@ -37,7 +37,11 @@ from main import (  # noqa: E402
 
 DEFAULT_PROJECT_SLUG = "tjw"
 TAIGA_BACK_CONTAINER = "taiga-docker-taiga-back-1"
+# Published by taiga-docker (host loopback only); stable across container recreates.
+LOCALHOST_API_ROOT = "http://127.0.0.1:8000/api/v1"
 PROBE_PATH = "/projects/by_slug"
+# Fail fast on stale Docker bridge IPs (connection refused).
+PROBE_TIMEOUT = (1.5, 5)
 
 
 @dataclass
@@ -98,7 +102,7 @@ def _probe_api_root(api_root: str, bearer: str, project_slug: str) -> bool:
             f"{api_root.rstrip('/')}{PROBE_PATH}",
             params={"slug": project_slug},
             headers=auth_headers(bearer),
-            timeout=8,
+            timeout=PROBE_TIMEOUT,
         )
     except requests.RequestException:
         return False
@@ -115,6 +119,31 @@ def _persist_api_root(api_root: str) -> None:
         pass
 
 
+def _api_root_candidates(cfg: dict[str, str]) -> list[str]:
+    """
+    Ordered API roots to try after reboot / container recreate.
+
+    Prefer loopback (stable publish) and live Docker inspect over a Cabinet
+    bridge IP, which goes stale when the compose network is recreated.
+    """
+    candidates: list[str] = []
+
+    def add(root: Optional[str]) -> None:
+        if not root:
+            return
+        normalized = root.rstrip("/")
+        if normalized not in candidates:
+            candidates.append(normalized)
+
+    add(LOCALHOST_API_ROOT)
+    add(discover_taiga_back_api_root())
+    add(resolve_api_root(cfg) or None)
+    base = (cfg.get("base_url") or "").strip().rstrip("/")
+    if base:
+        add(f"{base}/api/v1")
+    return candidates
+
+
 def resolve_working_api_root(
     cfg: dict[str, str],
     bearer: str,
@@ -124,22 +153,12 @@ def resolve_working_api_root(
     """
     Return a reachable Taiga API root.
 
-    Tries configured ``api_root``, then Docker-discovered taiga-back, then
-    ``{base_url}/api/v1``. Persists a working Docker/discovered root to Cabinet
-    when it differs from the stored value.
+    Tries localhost publish, Docker-discovered taiga-back, configured
+    ``api_root``, then ``{base_url}/api/v1``. Persists a working root to
+    Cabinet when it differs from the stored value.
     """
-    candidates: list[str] = []
-    configured = resolve_api_root(cfg)
-    if configured:
-        candidates.append(configured.rstrip("/"))
-    discovered = discover_taiga_back_api_root()
-    if discovered and discovered not in candidates:
-        candidates.append(discovered)
-    base = (cfg.get("base_url") or "").strip().rstrip("/")
-    if base:
-        derived = f"{base}/api/v1"
-        if derived not in candidates:
-            candidates.append(derived)
+    configured = (resolve_api_root(cfg) or "").rstrip("/")
+    candidates = _api_root_candidates(cfg)
 
     if not candidates:
         raise RuntimeError(
@@ -150,9 +169,7 @@ def resolve_working_api_root(
     last_error = ""
     for root in candidates:
         if _probe_api_root(root, bearer, project_slug):
-            if persist and configured and root != configured.rstrip("/"):
-                _persist_api_root(root)
-            elif persist and not configured:
+            if persist and root != configured:
                 _persist_api_root(root)
             return root
         last_error = f"unreachable or unauthorized: {root}"
@@ -161,7 +178,8 @@ def resolve_working_api_root(
         "Could not reach Taiga API. Tried: "
         + ", ".join(candidates)
         + f". Last error: {last_error}. "
-        f"Check that {TAIGA_BACK_CONTAINER} is running (`docker ps`)."
+        f"Check that {TAIGA_BACK_CONTAINER} is running (`docker ps`) and "
+        "publishes 127.0.0.1:8000."
     )
 
 
