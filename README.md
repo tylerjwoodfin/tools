@@ -6,5 +6,8 @@
 ## Recommended: Cabinet
 - If you intend to run any of this in any meaningful way, you'll need [cabinet](https://pypi.org/project/cabinet/), my utility for storing and managing variables across projects.
 
+## Life-ops MCP
+- [`lifeops-mcp/`](lifeops-mcp/) — stdio MCP server exposing Cabinet, RemindMail, foodlog, milestone, and Immich search to Cursor.
+
 ## See Other READMEs
 - Most folders contain a README that you should check out for more specific information. Happy coding!
