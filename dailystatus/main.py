@@ -180,11 +180,147 @@ def append_food_log(email, dry_run=False):
         return email
 
 
-def _apply_foodlog_goals_response(goals_response: str) -> None:
+# English month names for goal date parsing (locale-independent).
+_MONTH_NAME_TO_NUM = {
+    "january": 1,
+    "jan": 1,
+    "february": 2,
+    "feb": 2,
+    "march": 3,
+    "mar": 3,
+    "april": 4,
+    "apr": 4,
+    "may": 5,
+    "june": 6,
+    "jun": 6,
+    "july": 7,
+    "jul": 7,
+    "august": 8,
+    "aug": 8,
+    "september": 9,
+    "sep": 9,
+    "sept": 9,
+    "october": 10,
+    "oct": 10,
+    "november": 11,
+    "nov": 11,
+    "december": 12,
+    "dec": 12,
+}
+
+_MONTH_DAY_RE = re.compile(
+    r"(?i)^\s*("
+    r"january|february|march|april|may|june|july|august|"
+    r"september|october|november|december|"
+    r"jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec"
+    r")\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s*(\d{4}))?\s*$"
+)
+_ISO_DATE_RE = re.compile(r"^\s*(\d{4})-(\d{1,2})-(\d{1,2})\s*$")
+_MDY_SLASH_RE = re.compile(r"^\s*(\d{1,2})/(\d{1,2})(?:/(\d{4}))?\s*$")
+
+# Health goals are for "next week"; reject remind roll-forwards like april→next year.
+_FOODLOG_GOAL_MAX_DAYS_AHEAD = 14
+
+
+def _next_week_date_context(today: datetime.date | None = None) -> str:
+    """
+    Explicit calendar bounds so ChatGPT does not copy stale example months
+    (e.g. April) that remind would roll into the following year.
+    """
+    today = today or datetime.date.today()
+    start = today + datetime.timedelta(days=1)
+    end = today + datetime.timedelta(days=7)
+    return (
+        f"Today is {today.strftime('%A, %B')} {today.day}, {today.year} "
+        f"({today.isoformat()}). "
+        f'"Next week" means {start.isoformat()} through {end.isoformat()}. '
+        "All goal dates MUST fall in that range. Prefer ISO dates YYYY-MM-DD. "
+        "Do not copy example months (e.g. April) unless they fall in that range."
+    )
+
+
+def _parse_goal_calendar_date(
+    when: str, today: datetime.date
+) -> datetime.date | None:
+    """
+    Parse a concrete calendar date from a foodlog goal `when` string.
+
+    Month/day without a year uses ``today.year``, then rolls forward one year if
+    that date is already past (same rule remind uses). Returns None if ``when``
+    is relative language (tomorrow, in 2 days, monday, …) or unparseable.
+    """
+    text = when.strip()
+    if match := _ISO_DATE_RE.match(text):
+        try:
+            return datetime.date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        except ValueError:
+            return None
+
+    if match := _MDY_SLASH_RE.match(text):
+        month, day = int(match.group(1)), int(match.group(2))
+        year = int(match.group(3)) if match.group(3) else today.year
+        try:
+            proposed = datetime.date(year, month, day)
+        except ValueError:
+            return None
+        if match.group(3) is None and proposed < today:
+            proposed = datetime.date(proposed.year + 1, month, day)
+        return proposed
+
+    if match := _MONTH_DAY_RE.match(text):
+        month_word = match.group(1).lower().rstrip(".")
+        month = _MONTH_NAME_TO_NUM.get(month_word)
+        if month is None:
+            return None
+        day = int(match.group(2))
+        year = int(match.group(3)) if match.group(3) else today.year
+        try:
+            proposed = datetime.date(year, month, day)
+        except ValueError:
+            return None
+        if match.group(3) is None and proposed < today:
+            proposed = datetime.date(proposed.year + 1, month, day)
+        return proposed
+
+    return None
+
+
+def _normalize_foodlog_goal_when(
+    when: str,
+    today: datetime.date | None = None,
+    max_days_ahead: int = _FOODLOG_GOAL_MAX_DAYS_AHEAD,
+) -> str | None:
+    """
+    Return a ``--when`` value safe for near-term health goals, or None to skip.
+
+    Absolute calendar dates more than ``max_days_ahead`` days out (typical when
+    ChatGPT copies April examples and remind rolls them to next year) are
+    rejected. Relative phrases are passed through unchanged.
+    """
+    today = today or datetime.date.today()
+    text = when.strip()
+    if not text:
+        return None
+
+    parsed = _parse_goal_calendar_date(text, today)
+    if parsed is None:
+        # Relative / weekday / day-of-month language — leave for remind.
+        return text
+
+    delta_days = (parsed - today).days
+    if delta_days < 0 or delta_days > max_days_ahead:
+        return None
+    return parsed.isoformat()
+
+
+def _apply_foodlog_goals_response(
+    goals_response: str, today: datetime.date | None = None
+) -> None:
     """
     Parse ChatGPT output from foodlog_goals: either the literal NO GOALS, or
     line-separated `rmmy when, "title"` commands; run each via `remind --save`.
     """
+    today = today or datetime.date.today()
     text = goals_response.strip()
     if not text or text.upper() == "NO GOALS":
         cab.log("No foodlog goals to apply.", level="info")
@@ -217,7 +353,16 @@ def _apply_foodlog_goals_response(goals_response: str) -> None:
         if not when or not title:
             cab.log(f"Skipping empty when/title in rmmy line: {raw_line!r}", level="warning")
             continue
-        cmd = [remind_exe, "--save", "--when", when, "--title", *title.split()]
+        normalized_when = _normalize_foodlog_goal_when(when, today=today)
+        if normalized_when is None:
+            cab.log(
+                f"Skipping foodlog goal with out-of-range date {when!r} "
+                f"(expected within {_FOODLOG_GOAL_MAX_DAYS_AHEAD} days of {today.isoformat()})",
+                level="warning",
+                tags=["dailystatus", "remind", "foodlog_goal"],
+            )
+            continue
+        cmd = [remind_exe, "--save", "--when", normalized_when, "--title", *title.split()]
         try:
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
             cab.log(
@@ -228,7 +373,8 @@ def _apply_foodlog_goals_response(goals_response: str) -> None:
             )
         except subprocess.CalledProcessError as e:
             cab.log(
-                f"remind failed for foodlog goal ({when!r}, {title!r}): {e.stderr or e}",
+                f"remind failed for foodlog goal ({normalized_when!r}, {title!r}): "
+                f"{e.stderr or e}",
                 level="error",
             )
             cab.log(
@@ -275,9 +421,13 @@ def append_nutrition_summary(email):
         return email
 
     food_log_text = "\n\n".join(week_entries)
+    date_context = _next_week_date_context(today_day)
 
     prompt = textwrap.dedent(f"""
         {cab.get("ai", "prompts", "foodlog")}
+
+        {date_context}
+
         Food log:
         {food_log_text}
     """).strip()
@@ -294,14 +444,16 @@ def append_nutrition_summary(email):
         goals_prompt_base = cab.get("ai", "prompts", "foodlog_goals")
         if goals_prompt_base:
             try:
-                goals_prompt = f"{goals_prompt_base}\n\n{summary}"
+                goals_prompt = (
+                    f"{goals_prompt_base}\n\n{date_context}\n\n{summary}"
+                )
                 goals_response = chatgpt.query(goals_prompt)
                 cab.log(
                     f"ChatGPT foodlog_goals response:\n{goals_response}",
                     level="debug",
                     tags=["dailystatus", "chatgpt", "foodlog_goals"],
                 )
-                _apply_foodlog_goals_response(goals_response)
+                _apply_foodlog_goals_response(goals_response, today=today_day)
             except Exception as e:  # pylint: disable=broad-exception-caught
                 cab.log(f"ChatGPT foodlog goals or remind step failed: {e}", level="error")
 
