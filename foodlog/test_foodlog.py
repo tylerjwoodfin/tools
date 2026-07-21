@@ -1,13 +1,13 @@
-"""Tests for foodlog 2.0 helpers (TJW-245)."""
+"""Tests for foodlog 2.0 helpers and Mongo store (TJW-245)."""
 
 import datetime
 import json
-import tempfile
 import unittest
-from pathlib import Path
 from unittest import mock
 
 import main as foodlog
+from store import FoodlogStore, day_total_calories, is_submitted_value
+from pymongo import MongoClient
 
 
 class FoodlogHelpersTests(unittest.TestCase):
@@ -16,21 +16,13 @@ class FoodlogHelpersTests(unittest.TestCase):
             {"food": "apple", "calories": 50},
             {"food": "weird", "calories": {"calories": 100}},
         ]
-        self.assertEqual(foodlog.day_total_calories(entries), 150)
+        self.assertEqual(day_total_calories(entries), 150)
 
     def test_is_day_submitted_bool_and_dict(self):
-        self.assertFalse(foodlog.is_day_submitted("2026-07-20", {}))
-        self.assertTrue(foodlog.is_day_submitted("2026-07-20", {"2026-07-20": True}))
-        self.assertTrue(
-            foodlog.is_day_submitted(
-                "2026-07-20", {"2026-07-20": {"submitted": True}}
-            )
-        )
-        self.assertFalse(
-            foodlog.is_day_submitted(
-                "2026-07-20", {"2026-07-20": {"submitted": False}}
-            )
-        )
+        self.assertFalse(is_submitted_value(None))
+        self.assertTrue(is_submitted_value(True))
+        self.assertTrue(is_submitted_value({"submitted": True}))
+        self.assertFalse(is_submitted_value({"submitted": False}))
 
     def test_build_daily_grafana_event(self):
         event = foodlog.build_daily_grafana_event(
@@ -63,20 +55,11 @@ class FoodlogHelpersTests(unittest.TestCase):
         payload = json.loads(stream["values"][0][1])
         self.assertEqual(payload["total_calories"], 100)
 
-    def test_mark_day_submitted_writes_flat_file(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            submitted_path = Path(tmp) / "food_submitted.json"
-            with mock.patch.object(foodlog, "FOOD_SUBMITTED_FILE", str(submitted_path)):
-                with mock.patch.object(foodlog, "LOG_DIR", tmp):
-                    day = foodlog.mark_day_submitted("2026-07-20")
-            self.assertEqual(day, "2026-07-20")
-            data = json.loads(submitted_path.read_text(encoding="utf-8"))
-            self.assertTrue(data["2026-07-20"]["submitted"])
-            self.assertIn("submitted_at", data["2026-07-20"])
-
     def test_push_event_to_loki_noop_without_url(self):
         with mock.patch.object(foodlog, "_loki_base_url", return_value=None):
-            self.assertFalse(foodlog.push_event_to_loki({"type": "daily", "date": "2026-07-20"}))
+            self.assertFalse(
+                foodlog.push_event_to_loki({"type": "daily", "date": "2026-07-20"})
+            )
 
     def test_push_event_to_loki_posts(self):
         class FakeResp:
@@ -102,6 +85,47 @@ class FoodlogHelpersTests(unittest.TestCase):
         req = urlopen.call_args[0][0]
         self.assertEqual(req.full_url, "http://loki.example:3100/loki/api/v1/push")
         self.assertEqual(req.get_method(), "POST")
+
+
+class FoodlogStoreMongoTests(unittest.TestCase):
+    """Integration tests against local Mongo (skips if unavailable)."""
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            client = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=2000)
+            client.admin.command("ping")
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            raise unittest.SkipTest(f"MongoDB not available: {exc}") from exc
+        cls.client = client
+        cls.db_name = "foodlog_test_tjw245"
+
+    def setUp(self):
+        self.client.drop_database(self.db_name)
+        self.store = FoodlogStore(client=self.client, db_name=self.db_name)
+
+    def tearDown(self):
+        self.client.drop_database(self.db_name)
+
+    def test_append_submit_and_totals(self):
+        self.store.append_entry("2026-07-20", "Huel", 400)
+        self.store.append_entry("2026-07-20", "apple", 50)
+        doc = self.store.get_day("2026-07-20")
+        self.assertEqual(doc["total_calories"], 450)
+        self.assertEqual(doc["entry_count"], 2)
+        self.assertFalse(doc["submitted"])
+        self.store.mark_submitted("2026-07-20")
+        self.assertTrue(self.store.is_day_submitted("2026-07-20"))
+
+    def test_import_from_maps(self):
+        n = self.store.replace_all_from_maps(
+            {"2026-07-19": [{"food": "tea", "calories": 5}]},
+            {"tea": {"calories": 5, "type": "healthy"}},
+            {"2026-07-19": {"submitted": True, "submitted_at": "x"}},
+        )
+        self.assertEqual(n, 1)
+        self.assertTrue(self.store.is_day_submitted("2026-07-19"))
+        self.assertEqual(self.store.get_lookup()["tea"]["type"], "healthy")
 
 
 if __name__ == "__main__":

@@ -1,16 +1,16 @@
 # Food Log
 
-A simple command-line tool for logging food entries and tracking calories. The tool automatically classifies foods as healthy or junk and provides a visual summary of your eating habits. Daily totals sync to the existing Grafana/Loki stack so you can spot patterns over time.
+A simple command-line tool for logging food entries and tracking calories. Data lives in a dedicated **MongoDB database `foodlog`** on the same server as Cabinet (peer to the `cabinet` DB). Grafana charts the `days` collection directly; optional Loki snapshots remain for log-style views.
 
 ## Features
 
-- Log food entries with calorie counts
+- Log food entries with calorie counts (MongoDB source of truth)
 - Automatic food classification (healthy vs junk)
 - Visual summary of daily calorie intake with healthy/junk breakdown
 - Food lookup database to remember calorie counts
 - AI-powered calorie suggestions for unknown foods
 - `foodlog submit` to mark the day done (skips the dailystatus reminder email)
-- Grafana sync via Cabinet `logging.loki_url` (updates as you log)
+- Grafana: MongoDB datasource + Foodlog dashboard; optional Loki sync
 
 ## Usage
 
@@ -24,19 +24,10 @@ Example:
 foodlog "chicken salad" 540
 ```
 
-Each log (and undo) updates `food.json` and pushes that day's total to Loki so Grafana charts stay current.
-
 ### Multiple Entries
-You can log multiple food entries in a single command using `//` as a separator. Each side of `//` is treated as a separate command:
-
 ```bash
-# Log two foods with their own calorie counts
 foodlog "apple" 50 // "banana" 60
-
-# Mix and match with lookup
 foodlog "apple" // "banana" 60 // "cookies"
-
-# Use with --yesterday (only applies to the command it's associated with)
 foodlog "apple" 50 // "banana" 60 --yesterday
 ```
 
@@ -52,67 +43,69 @@ foodlog submit
 foodlog --submit
 ```
 
-Daily status sends the “log food” reminder only if today has **not** been submitted. Logging food alone does not clear the reminder.
+Daily status sends the “log food” reminder only if today has **not** been submitted.
 
-### Sync history to Grafana
+### Migrate legacy flat files → Mongo
+```bash
+foodlog --migrate
+```
+
+On first use, if the `foodlog` DB is empty, flat files under Cabinet’s log path are imported automatically.
+
+### Sync snapshots to Loki (optional)
 ```bash
 foodlog --sync-grafana
 ```
-
-Backfills every day in `food.json` to Loki (uses Cabinet `logging.loki_url`).
 
 ### View Summary
 ```bash
 foodlog --summary
 ```
-The summary view shows:
-- Food entries for the past 7 days
-- Total calories and percentage of healthy vs junk food
-- Visual bar graph where:
-  - Bar length represents total calories (shorter = fewer calories)
-  - Green portion represents healthy calories
-  - Red portion represents junk calories
 
 ### Edit Food Log
 ```bash
 foodlog --edit
 ```
+Exports days to a temp JSON, opens your Cabinet editor, then re-imports into Mongo.
 
 ### Log to Yesterday
 ```bash
-# in case you forgot yesterday!
 foodlog "chicken salad" 500 --yesterday
 ```
 
 ## Data Storage
 
-Flat files under Cabinet `path -> cabinet -> log` (fallback `~/.cabinet/log`):
+**MongoDB** (same URI as Cabinet `mongodb_connection_string`, database name `foodlog`):
 
-- `food.json` — entries keyed by ISO date (unchanged structure)
-- `food_lookup.json` — remembered calorie counts / classifications
-- `food_submitted.json` — days marked with `foodlog submit`
+| Collection | Contents |
+|------------|----------|
+| `days` | One document per ISO date: `entries[]`, `total_calories`, `submitted`, `date_time` |
+| `lookup` | Food name → calories / healthy\|junk type |
+
+Legacy flat files (migration only): `food.json`, `food_lookup.json`, `food_submitted.json` under Cabinet `path -> cabinet -> log`.
 
 ## Grafana
 
-Uses the existing Grafana app (Loki datasource). Foodlog pushes `job=foodlog` daily snapshots when `logging.loki_url` is set in Cabinet config. Example LogQL:
+The Loki stack provisions:
 
-```logql
-{job="foodlog", type="daily"} | json | unwrap total_calories
-```
+1. **Foodlog MongoDB** datasource (`haohanyang-mongodb-datasource`) → database `foodlog`
+2. **Foodlog** dashboard (Mongo time series of `total_calories`)
+
+OSS Grafana cannot use Grafana’s Enterprise Mongo plugin; the community plugin is installed via compose.
 
 ## Configuration
 
-The tool uses:
-- [Cabinet](https://www.github.com/tylerjwoodfin/cabinet).
-  - You can set:
-    - `foodlog -> calorie_target`: Your daily calorie target (default: 1750)
-    - `keys -> openai`: Your OpenAI API key for AI-powered features
-    - `logging -> loki_url`: Loki base URL for Grafana sync (same as Cabinet logs)
-- [tyler-python-helpers](https://github.com/tylerjwoodfin/python-helpers)
-  - `pipx install tyler-python-helpers`
+- [Cabinet](https://www.github.com/tylerjwoodfin/cabinet)
+  - `foodlog -> calorie_target` (default 1750)
+  - `mongodb_connection_string` / `mongodb_enabled` (shared Mongo server)
+  - `logging -> loki_url` (optional Loki sync)
+  - `keys -> openai` for AI features
+- Override URI with env `FOODLOG_MONGO_URI` if needed
+- [tyler-python-helpers](https://github.com/tylerjwoodfin/python-helpers) — `pipx install tyler-python-helpers`
+- `pymongo` (same as Cabinet)
 
 ## Notes
 
-- The tool automatically classifies foods as healthy or junk based on common nutritional knowledge
-- For new foods, you can use the 'ai' option to get calorie suggestions from ChatGPT
-- The summary view's bar graph scales based on your highest calorie day, making it easy to compare daily intake
+- Foods are classified as healthy or junk for the summary view
+- Use `ai` at the calorie prompt for ChatGPT suggestions
+- Summary bar graph scales to your highest calorie day in the window

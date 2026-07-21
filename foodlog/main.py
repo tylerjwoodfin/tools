@@ -7,25 +7,56 @@ import sys
 import os
 import datetime
 import socket
+import tempfile
 import urllib.error
 import urllib.request
 from tyler_python_helpers import ChatGPT
 from prompt_toolkit import print_formatted_text, HTML
 from cabinet import Cabinet
 
+from store import (
+    day_total_calories,
+    get_store,
+    normalize_calories,
+)
+
 cabinet = Cabinet()
 chatgpt = ChatGPT()
 
-# define file paths
+# Legacy flat-file paths (used for one-time Mongo migration / optional export)
 LOG_DIR = cabinet.get("path", "cabinet", "log") or os.path.expanduser("~/.cabinet/log")
 FOOD_LOG_FILE = os.path.join(LOG_DIR, "food.json")
 FOOD_LOOKUP_FILE = os.path.join(LOG_DIR, "food_lookup.json")
 FOOD_SUBMITTED_FILE = os.path.join(LOG_DIR, "food_submitted.json")
 
+_MIGRATED = False
+
 
 def ensure_log_directory() -> None:
-    """create log directory if it doesn't exist."""
+    """create log directory if it doesn't exist (legacy export / edit temp)."""
     os.makedirs(LOG_DIR, exist_ok=True)
+
+
+def _ensure_migrated() -> None:
+    """Import flat files into Mongo once if the foodlog DB is empty."""
+    global _MIGRATED  # pylint: disable=global-statement
+    if _MIGRATED:
+        return
+    store = get_store()
+    imported = store.migrate_from_json_files(
+        FOOD_LOG_FILE,
+        FOOD_LOOKUP_FILE,
+        FOOD_SUBMITTED_FILE,
+        only_if_empty=True,
+    )
+    if imported:
+        print_formatted_text(
+            HTML(
+                f"<green>Migrated</green> <yellow>{imported}</yellow> day(s) "
+                "from flat files into MongoDB database <yellow>foodlog</yellow>."
+            )
+        )
+    _MIGRATED = True
 
 
 def load_json(file_path: str) -> dict:
@@ -42,31 +73,15 @@ def save_json(file_path: str, data: dict) -> None:
         json.dump(data, f, indent=4)
 
 
-def _normalize_calories(calories) -> int:
-    """Coerce calorie values (int, numeric str, or nested dict) to int."""
-    if isinstance(calories, dict):
-        return int(calories.get("calories", 0) or 0)
-    if isinstance(calories, str) and calories.isnumeric():
-        return int(calories)
-    return int(calories)
-
-
-def day_total_calories(entries: list) -> int:
-    """Sum calorie counts for a list of food log entries."""
-    total = 0
-    for entry in entries:
-        total += _normalize_calories(entry.get("calories", 0))
-    return total
-
-
 def is_day_submitted(day: str, submitted_data: dict | None = None) -> bool:
     """Return True if ``foodlog submit`` has been run for ``day`` (ISO date)."""
-    if submitted_data is None:
-        submitted_data = load_json(FOOD_SUBMITTED_FILE)
-    value = submitted_data.get(day)
-    if isinstance(value, dict):
-        return bool(value.get("submitted"))
-    return bool(value)
+    if submitted_data is not None:
+        value = submitted_data.get(day)
+        if isinstance(value, dict):
+            return bool(value.get("submitted"))
+        return bool(value)
+    _ensure_migrated()
+    return get_store().is_day_submitted(day)
 
 
 def mark_day_submitted(day: str | None = None) -> str:
@@ -75,15 +90,8 @@ def mark_day_submitted(day: str | None = None) -> str:
 
     Returns the ISO date that was marked.
     """
-    ensure_log_directory()
-    day = day or datetime.date.today().isoformat()
-    submitted_data = load_json(FOOD_SUBMITTED_FILE)
-    submitted_data[day] = {
-        "submitted": True,
-        "submitted_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
-    }
-    save_json(FOOD_SUBMITTED_FILE, submitted_data)
-    return day
+    _ensure_migrated()
+    return get_store().mark_submitted(day)
 
 
 def _loki_base_url() -> str | None:
@@ -110,7 +118,7 @@ def build_daily_grafana_event(
         "foods": [
             {
                 "food": e.get("food", "unknown"),
-                "calories": _normalize_calories(e.get("calories", 0)),
+                "calories": normalize_calories(e.get("calories", 0)),
             }
             for e in entries
         ],
@@ -173,23 +181,25 @@ def push_event_to_loki(event: dict, loki_url: str | None = None) -> bool:
 
 
 def sync_day_to_grafana(day: str | None = None, log_data: dict | None = None) -> bool:
-    """Push one day's totals from flat-file food.json to Loki (existing Grafana)."""
+    """Push one day's totals from Mongo (or provided map) to Loki."""
+    _ensure_migrated()
     day = day or datetime.date.today().isoformat()
+    store = get_store()
     if log_data is None:
-        log_data = load_json(FOOD_LOG_FILE)
-    entries = log_data.get(day, [])
-    event = build_daily_grafana_event(
-        day,
-        entries,
-        submitted=is_day_submitted(day),
-    )
+        entries = store.get_entries(day)
+        submitted = store.is_day_submitted(day)
+    else:
+        entries = log_data.get(day, [])
+        submitted = is_day_submitted(day)
+    event = build_daily_grafana_event(day, entries, submitted=submitted)
     return push_event_to_loki(event)
 
 
 def sync_all_to_grafana(log_data: dict | None = None) -> int:
-    """Backfill all days in food.json to Loki. Returns number of successful pushes."""
+    """Backfill all days to Loki. Returns number of successful pushes."""
+    _ensure_migrated()
     if log_data is None:
-        log_data = load_json(FOOD_LOG_FILE)
+        log_data = get_store().all_days_map()
     ok = 0
     for day in sorted(log_data.keys()):
         if sync_day_to_grafana(day, log_data=log_data):
@@ -199,39 +209,29 @@ def sync_all_to_grafana(log_data: dict | None = None) -> int:
 
 def log_food(food_name: str, calories: int, is_yesterday: bool = False) -> None:
     """log food entry for today's date."""
-    ensure_log_directory()
-    log_data = load_json(FOOD_LOG_FILE)
+    _ensure_migrated()
     today = datetime.date.today().isoformat()
-
     if is_yesterday:
         today = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
 
-    if today not in log_data:
-        log_data[today] = []
-
-    calories = _normalize_calories(calories)
-
-    # Store food name in lowercase for consistency
+    calories = normalize_calories(calories)
     food_name_lower = food_name.lower()
-    log_data[today].append({"food": food_name_lower, "calories": calories})
-    save_json(FOOD_LOG_FILE, log_data)
+    get_store().append_entry(today, food_name_lower, calories)
     print_formatted_text(
         HTML(f"<green>Logged:</green> {food_name} <yellow>({calories} cal)</yellow>")
     )
-    sync_day_to_grafana(today, log_data=log_data)
+    sync_day_to_grafana(today)
 
     if globals().get("_is_last_main_call", False):
         display_daily_calories()
 
 
 def update_food_lookup(food_name: str, calories: int) -> None:
-    """update food lookup file with food and calorie information."""
-    lookup_data = load_json(FOOD_LOOKUP_FILE)
-
-    if isinstance(calories, str) and calories.isnumeric():
-        calories = int(calories)
-
-    # Store food name in lowercase for case-insensitive lookups
+    """update food lookup with food and calorie information."""
+    _ensure_migrated()
+    store = get_store()
+    lookup_data = store.get_lookup()
+    calories = normalize_calories(calories)
     food_name_lower = food_name.lower()
 
     if food_name_lower in lookup_data:
@@ -249,23 +249,19 @@ def update_food_lookup(food_name: str, calories: int) -> None:
                 )
             )
     else:
-        lookup_data[food_name_lower] = {"calories": calories, "type": "unknown"}
-
-    save_json(FOOD_LOOKUP_FILE, lookup_data)
+        store.upsert_lookup(food_name_lower, calories, food_type="unknown")
 
 
 def force_update_food_lookup(food_name: str, calories: int) -> None:
-    """force update food lookup file with new calorie information."""
-    lookup_data = load_json(FOOD_LOOKUP_FILE)
-
-    if isinstance(calories, str) and calories.isnumeric():
-        calories = int(calories)
-
-    # Store food name in lowercase for case-insensitive lookups
+    """force update food lookup with new calorie information."""
+    _ensure_migrated()
+    store = get_store()
+    lookup_data = store.get_lookup()
+    calories = normalize_calories(calories)
     food_name_lower = food_name.lower()
 
     old_calories = lookup_data.get(food_name_lower, {}).get("calories", "unknown")
-    lookup_data[food_name_lower] = {"calories": calories, "type": "unknown"}
+    store.upsert_lookup(food_name_lower, calories, food_type="unknown")
 
     print_formatted_text(
         HTML(
@@ -274,34 +270,29 @@ def force_update_food_lookup(food_name: str, calories: int) -> None:
         )
     )
 
-    save_json(FOOD_LOOKUP_FILE, lookup_data)
-
 
 def display_daily_calories(target_date: datetime.date = None) -> None:
     """display total calorie count and entries for a specific date (defaults to today)."""
-    log_data = load_json(FOOD_LOG_FILE)
+    _ensure_migrated()
+    store = get_store()
     if target_date is None:
         target_date = datetime.date.today()
 
     target_date_str = target_date.isoformat()
+    entries = store.get_entries(target_date_str)
 
-    if target_date_str in log_data:
-        # Format the date as "Food for Day, YYYY-MM-DD"
+    if entries:
         formatted_date = f"\n{target_date.strftime('%a')}, {target_date_str}"
         print_formatted_text(
             HTML(f"<underline><bold>{formatted_date}</bold></underline>")
         )
         total_calories = 0
 
-        # Find the maximum length of calories for alignment
-        for entry in log_data[target_date_str]:
+        for entry in entries:
             food = entry["food"]
-            calories = _normalize_calories(entry["calories"])
+            calories = normalize_calories(entry["calories"])
             total_calories += calories
-
-            # Pad calories to maintain consistent alignment
-            padded_calories = str(calories).ljust(4)  # Use fixed width of 4 characters
-
+            padded_calories = str(calories).ljust(4)
             print_formatted_text(HTML(f"{padded_calories}cal - <green>{food}</green>"))
 
         calorie_target = cabinet.get("foodlog", "calorie_target")
@@ -309,7 +300,6 @@ def display_daily_calories(target_date: datetime.date = None) -> None:
             cabinet.log("Calorie target not set, using 1750", level="warning")
             calorie_target = 1750
 
-        # Color-code total calories. +- 150 is green, 150-300 is yellow, over 300 is red
         if abs(total_calories - calorie_target) <= 150:
             total_color = "green"
         elif abs(total_calories - calorie_target) <= 300:
@@ -318,7 +308,7 @@ def display_daily_calories(target_date: datetime.date = None) -> None:
             total_color = "red"
 
         submitted_note = ""
-        if is_day_submitted(target_date_str):
+        if store.is_day_submitted(target_date_str):
             submitted_note = " <green>(submitted)</green>"
 
         print_formatted_text(
@@ -340,7 +330,6 @@ def display_daily_calories(target_date: datetime.date = None) -> None:
 
 def get_calories(food_name: str, lookup_data: dict) -> int:
     """get calorie count for a food item, either from lookup or user input."""
-    # Convert food name to lowercase for case-insensitive lookup
     food_name_lower = food_name.lower()
 
     if food_name_lower in lookup_data:
@@ -376,7 +365,6 @@ def query_chatgpt(food_name: str) -> str:
 def classify_food(food_names: list[str]) -> dict[str, str]:
     """Classify multiple food items as 'junk' or 'healthy' using AI."""
 
-    # Create a prompt that lists all foods and asks for classification
     food_list = "\n".join([f"- {food}" for food in food_names])
     prompt = f"""Classify each of these food items as either 'junk' or 'healthy'.
 For each item, output the food name followed by a colon and its classification.
@@ -393,7 +381,6 @@ food3: junk
 
     response = chatgpt.query(prompt)
 
-    # Parse the response into a dictionary
     classifications = {}
     for line in response.split("\n"):
         if ":" in line:
@@ -405,30 +392,33 @@ food3: junk
 
 def show_summary() -> None:
     """Display a summary of the past 7 days of food entries with AI classification."""
-    log_data = load_json(FOOD_LOG_FILE)
-    lookup_data = load_json(FOOD_LOOKUP_FILE)
+    _ensure_migrated()
+    store = get_store()
     today = datetime.date.today()
+    start = (today - datetime.timedelta(days=6)).isoformat()
+    log_data = store.list_days_between(start, today.isoformat())
+    lookup_data = store.get_lookup()
 
     print_formatted_text(
         HTML("<bold><underline>Food Summary (Last 7 Days)</underline></bold>\n")
     )
 
-    # First, collect all unique food items from the past 7 days
     all_foods = set()
-    daily_totals = {}  # Store daily totals for the bar graph
-    daily_healthy = {}  # Store daily healthy calories
-    daily_junk = {}  # Store daily junk calories
+    daily_totals = {}
+    daily_healthy = {}
+    daily_junk = {}
     for i in range(7):
         date = today - datetime.timedelta(days=i)
         date_str = date.isoformat()
         if date_str in log_data:
-            daily_totals[date] = sum(entry["calories"] for entry in log_data[date_str])
+            daily_totals[date] = sum(
+                normalize_calories(entry["calories"]) for entry in log_data[date_str]
+            )
             daily_healthy[date] = 0
             daily_junk[date] = 0
             for entry in log_data[date_str]:
                 all_foods.add(entry["food"])
 
-    # Get classifications for all foods at once
     foods_to_classify = []
     for food in all_foods:
         food_lower = food.lower()
@@ -441,15 +431,9 @@ def show_summary() -> None:
 
     if foods_to_classify:
         classifications = classify_food(foods_to_classify)
-
-        # Update the lookup file with new classifications
         for food, classification in classifications.items():
-            food_lower = food.lower()
-            if food_lower not in lookup_data:
-                lookup_data[food_lower] = {"calories": 0, "type": classification}
-            else:
-                lookup_data[food_lower]["type"] = classification
-        save_json(FOOD_LOOKUP_FILE, lookup_data)
+            store.set_lookup_type(food, classification)
+        lookup_data = store.get_lookup()
     else:
         classifications = {}
 
@@ -457,7 +441,6 @@ def show_summary() -> None:
     healthy_calories = 0
     junk_calories = 0
 
-    # Display entries in reverse chronological order
     for i in range(6, -1, -1):
         date = today - datetime.timedelta(days=i)
         date_str = date.isoformat()
@@ -469,15 +452,11 @@ def show_summary() -> None:
 
             for entry in log_data[date_str]:
                 food = entry["food"]
-                calories = entry["calories"]
+                calories = normalize_calories(entry["calories"])
                 total_calories += calories
 
-                # Get the classification from the lookup file (using lowercase)
                 food_lower = food.lower()
-                if food_lower in lookup_data:
-                    classification = lookup_data[food_lower].get("type", "unknown")
-                else:
-                    classification = "unknown"
+                classification = lookup_data.get(food_lower, {}).get("type", "unknown")
 
                 if classification == "healthy":
                     healthy_calories += calories
@@ -494,7 +473,6 @@ def show_summary() -> None:
                     )
                 )
 
-    # Print summary statistics
     print_formatted_text(HTML("\n<bold>Calorie Summary:</bold>"))
     if total_calories > 0:
         print_formatted_text(
@@ -514,30 +492,23 @@ def show_summary() -> None:
     else:
         print_formatted_text(HTML("  No calories logged in the past 7 days"))
 
-    # Add daily totals bar graph
     print_formatted_text(HTML("\n<bold>Daily Calorie Totals:</bold>"))
 
-    # Find the maximum calories for scaling the bar graph
     max_calories = max(daily_totals.values()) if daily_totals else 0
-    bar_width = 25  # Maximum width of the bar graph in characters
+    bar_width = 25
 
-    # Display bars in reverse chronological order
     for i in range(6, -1, -1):
         date = today - datetime.timedelta(days=i)
         if date in daily_totals:
             total = daily_totals[date]
             healthy = daily_healthy[date]
 
-            # Calculate the scaled bar length based on total calories
             scaled_length = (
                 int((total / max_calories) * bar_width) if max_calories > 0 else 0
             )
-
-            # Calculate the healthy/junk ratio within the scaled length
             healthy_length = int((healthy / total) * scaled_length) if total > 0 else 0
             junk_length = scaled_length - healthy_length
 
-            # Create the bar with both colors
             health_bar = (
                 f'<green>{"█" * healthy_length}</green><red>{"█" * junk_length}</red>'
             )
@@ -568,12 +539,10 @@ def main() -> None:
         display_daily_calories()
         sys.exit(0)
 
-    # Check if --yesterday is present and remove it
     if "--yesterday" in sys.argv:
         is_yesterday = True
         sys.argv.remove("--yesterday")
 
-        # If no other arguments remain, display yesterday's data
         if len(sys.argv) < 2:
             yesterday = datetime.date.today() - datetime.timedelta(days=1)
             display_daily_calories(yesterday)
@@ -587,8 +556,24 @@ def main() -> None:
         count = sync_all_to_grafana()
         print_formatted_text(
             HTML(
-                f"<green>Synced</green> <yellow>{count}</yellow> day(s) from food.json "
-                "to Grafana (Loki)."
+                f"<green>Synced</green> <yellow>{count}</yellow> day(s) from MongoDB "
+                "foodlog to Grafana (Loki)."
+            )
+        )
+        sys.exit(0)
+
+    if sys.argv[1] in ("--migrate", "migrate"):
+        store = get_store()
+        imported = store.migrate_from_json_files(
+            FOOD_LOG_FILE,
+            FOOD_LOOKUP_FILE,
+            FOOD_SUBMITTED_FILE,
+            only_if_empty=False,
+        )
+        print_formatted_text(
+            HTML(
+                f"<green>Imported</green> <yellow>{imported}</yellow> day(s) "
+                "into MongoDB database <yellow>foodlog</yellow>."
             )
         )
         sys.exit(0)
@@ -617,18 +602,13 @@ def main() -> None:
         sys.exit(0)
 
     try:
-        # Join all arguments and split by //
         full_command = " ".join(sys.argv[1:])
         if "//" in full_command:
-            # Split into separate commands and process each one
             commands = [cmd.strip() for cmd in full_command.split("//")]
             for i, cmd in enumerate(commands):
-                # Set a global flag to indicate that this is the last main call
                 globals()["_is_last_main_call"] = i == len(commands) - 1
 
-                # Create new sys.argv for each command
                 cmd_args = cmd.split()
-                # Save original sys.argv and restore it after each command
                 original_argv = sys.argv.copy()
                 sys.argv = [sys.argv[0]] + cmd_args
                 try:
@@ -637,14 +617,13 @@ def main() -> None:
                     sys.argv = original_argv
             return
 
-        # Regular single command processing
         food_name = " ".join(sys.argv[1:-1])
         calories = sys.argv[-1]
 
-        # last arg is a string -> calories not set; get from lookup
         if isinstance(calories, str) and not calories.isnumeric():
             food_name = " ".join(sys.argv[1:])
-            lookup_data = load_json(FOOD_LOOKUP_FILE)
+            _ensure_migrated()
+            lookup_data = get_store().get_lookup()
             calories = get_calories(food_name, lookup_data)
         else:
             calories = int(calories)
@@ -659,25 +638,18 @@ def main() -> None:
 
 def undo_latest_entry() -> None:
     """Remove the latest food entry from today's log."""
-    ensure_log_directory()
-    log_data = load_json(FOOD_LOG_FILE)
+    _ensure_migrated()
+    store = get_store()
     today = datetime.date.today().isoformat()
 
-    if today not in log_data or not log_data[today]:
+    removed_entry = store.pop_latest_entry(today)
+    if not removed_entry:
         print_formatted_text(HTML("<yellow>No entries to undo for today.</yellow>"))
         return
 
-    # Remove the last entry
-    removed_entry = log_data[today].pop()
     food_name = removed_entry["food"]
     calories = removed_entry["calories"]
-
-    # If no entries left for today, remove the day entirely
-    if not log_data[today]:
-        del log_data[today]
-
-    save_json(FOOD_LOG_FILE, log_data)
-    sync_day_to_grafana(today, log_data=log_data)
+    sync_day_to_grafana(today)
     print_formatted_text(
         HTML(f"<green>Removed:</green> {food_name} <yellow>({calories} cal)</yellow>")
     )
@@ -685,8 +657,33 @@ def undo_latest_entry() -> None:
 
 
 def edit_food_json() -> None:
-    """Edit the food.json file."""
-    os.system(f"{cabinet.editor} {FOOD_LOG_FILE}")
+    """Export Mongo days to a temp JSON, edit, re-import."""
+    _ensure_migrated()
+    store = get_store()
+    ensure_log_directory()
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix="-food.json",
+        delete=False,
+        encoding="utf-8",
+    ) as tmp:
+        json.dump(store.export_log_map(), tmp, indent=4)
+        tmp_path = tmp.name
+    os.system(f"{cabinet.editor} {tmp_path}")
+    try:
+        with open(tmp_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        submitted = store.export_submitted_map()
+        store.days.delete_many({})
+        store.replace_all_from_maps(data, submitted_data=submitted)
+        print_formatted_text(
+            HTML("<green>Re-imported</green> edited food log into MongoDB.")
+        )
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":
