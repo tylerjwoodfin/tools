@@ -146,37 +146,74 @@ def append_service_check_summary(email):
     return email
 
 
+def _foodlog_store():
+    """Lazy-import FoodlogStore from sibling foodlog package."""
+    foodlog_dir = os.path.join(os.path.dirname(__file__), "..", "foodlog")
+    if foodlog_dir not in sys.path:
+        sys.path.insert(0, os.path.abspath(foodlog_dir))
+    from store import get_store  # pylint: disable=import-outside-toplevel
+
+    return get_store()
+
+
+def is_foodlog_submitted(day: str, submitted_data: dict | None = None) -> bool:
+    """True when ``foodlog submit`` has marked ``day`` (ISO date)."""
+    if submitted_data is not None:
+        value = submitted_data.get(day)
+        if isinstance(value, dict):
+            return bool(value.get("submitted"))
+        return bool(value)
+    try:
+        return _foodlog_store().is_day_submitted(day)
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        cab.log(f"foodlog Mongo submitted check failed: {e}", level="error")
+        return False
+
+
 def append_food_log(email, dry_run=False):
-    """check if food has been logged today, print total calories or an error if none found."""
-    log_file = os.path.expanduser("~/syncthing/log/food.json")
+    """
+    Append today's calorie total when food was logged.
+
+    Sends the foodlog reminder email only if ``foodlog submit`` has not been
+    run for today (logging alone does not suppress the reminder).
+    """
     today_str = datetime.date.today().isoformat()
 
-    if not os.path.exists(log_file):
-        cab.log("Food log file does not exist.", level="error")
-        return email
+    if not is_foodlog_submitted(today_str):
+        if not dry_run:
+            mail.send(
+                "🍊 Log food for today!",
+                "Food log not submitted for today. "
+                "Log your food, then run `foodlog submit` when done.",
+            )
 
     try:
-        with open(log_file, "r", encoding="utf-8") as f:
-            log_data = json.load(f)
-
-        if today_str not in log_data or not log_data[today_str]:
-            if not dry_run:
-                mail.send("🍊 Log food for today!",
-                "No food logged for today. Please log your food for today.")
-            return email
-        else:
-            total_calories = sum(entry["calories"] for entry in log_data[today_str])
+        store = _foodlog_store()
+        # One-time migrate if Mongo empty but flat files exist
+        log_dir = cab.get("path", "cabinet", "log") or os.path.expanduser(
+            "~/syncthing/log"
+        )
+        store.migrate_from_json_files(
+            os.path.join(log_dir, "food.json"),
+            os.path.join(log_dir, "food_lookup.json"),
+            os.path.join(log_dir, "food_submitted.json"),
+            only_if_empty=True,
+        )
+        entries = store.get_entries(today_str)
+        if entries:
+            total_calories = sum(entry.get("calories", 0) for entry in entries)
+            submitted_note = " (submitted)" if store.is_day_submitted(today_str) else ""
             return email + textwrap.dedent(
                 f"""
             <h3>Calories Eaten Today:</h3>
             <pre style="font-family: monospace; white-space: pre-wrap;"
-            >{total_calories} calories</pre>
+            >{total_calories} calories{submitted_note}</pre>
             <br>
             """
             )
-
-    except (json.JSONDecodeError, OSError):
-        cab.log("Error reading food log file.", level="error")
+        return email
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        cab.log(f"Error reading foodlog MongoDB: {e}", level="error")
         return email
 
 
@@ -387,21 +424,16 @@ def _apply_foodlog_goals_response(
 
 def append_nutrition_summary(email):
     """Append a bulleted summary of nutritional quality from the past 7 days via ChatGPT."""
-    log_file = os.path.expanduser("~/syncthing/log/food.json")
-
-    if not os.path.exists(log_file):
-        cab.log("Food log file does not exist for nutrition summary.", level="error")
-        return email
-
     try:
-        with open(log_file, "r", encoding="utf-8") as f:
-            log_data = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        cab.log(f"Error reading food log for nutrition summary: {e}", level="error")
+        store = _foodlog_store()
+        today_day = datetime.date.today()
+        start = (today_day - datetime.timedelta(days=6)).isoformat()
+        log_data = store.list_days_between(start, today_day.isoformat())
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        cab.log(f"Error reading foodlog MongoDB for nutrition summary: {e}", level="error")
         return email
 
     # Build food log for past 7 days
-    today_day = datetime.date.today()
     week_entries = []
     for i in range(7):
         date = today_day - datetime.timedelta(days=i)
