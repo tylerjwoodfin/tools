@@ -158,9 +158,9 @@ def build_loki_push_body(event: dict, timestamp: datetime.datetime | None = None
 
 def push_event_to_loki(event: dict, loki_url: str | None = None) -> bool:
     """
-    POST a foodlog event to Loki for Grafana.
+    POST a foodlog event to Loki (optional; Grafana charts Mongo directly).
 
-    Returns True on success. No-op (False) when Loki URL is unset.
+    Returns True on success. No-op (False) when Loki URL is unset or unreachable.
     """
     base = (loki_url or _loki_base_url() or "").rstrip("/")
     if not base:
@@ -175,8 +175,11 @@ def push_event_to_loki(event: dict, loki_url: str | None = None) -> bool:
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             return 200 <= getattr(resp, "status", 200) < 300
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        cabinet.log(f"foodlog Grafana/Loki push failed: {exc}", level="warning")
+    except (urllib.error.URLError, TimeoutError, OSError, socket.gaierror) as exc:
+        cabinet.log(
+            f"foodlog optional Loki push failed (Mongo is source of truth): {exc}",
+            level="debug",
+        )
         return False
 
 
@@ -220,7 +223,6 @@ def log_food(food_name: str, calories: int, is_yesterday: bool = False) -> None:
     print_formatted_text(
         HTML(f"<green>Logged:</green> {food_name} <yellow>({calories} cal)</yellow>")
     )
-    sync_day_to_grafana(today)
 
     if globals().get("_is_last_main_call", False):
         display_daily_calories()
@@ -519,9 +521,8 @@ def show_summary() -> None:
 
 
 def submit_day(day: str | None = None) -> None:
-    """Mark the day submitted and sync the snapshot to Grafana/Loki."""
+    """Mark the day submitted (Mongo). Optional Loki sync is via --sync-grafana."""
     day = mark_day_submitted(day)
-    sync_day_to_grafana(day)
     print_formatted_text(
         HTML(
             f"<green>Submitted</green> food log for <yellow>{day}</yellow>. "
@@ -649,7 +650,6 @@ def undo_latest_entry() -> None:
 
     food_name = removed_entry["food"]
     calories = removed_entry["calories"]
-    sync_day_to_grafana(today)
     print_formatted_text(
         HTML(f"<green>Removed:</green> {food_name} <yellow>({calories} cal)</yellow>")
     )
