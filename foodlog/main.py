@@ -6,6 +6,9 @@ import json
 import sys
 import os
 import datetime
+import socket
+import urllib.error
+import urllib.request
 from tyler_python_helpers import ChatGPT
 from prompt_toolkit import print_formatted_text, HTML
 from cabinet import Cabinet
@@ -17,6 +20,7 @@ chatgpt = ChatGPT()
 LOG_DIR = cabinet.get("path", "cabinet", "log") or os.path.expanduser("~/.cabinet/log")
 FOOD_LOG_FILE = os.path.join(LOG_DIR, "food.json")
 FOOD_LOOKUP_FILE = os.path.join(LOG_DIR, "food_lookup.json")
+FOOD_SUBMITTED_FILE = os.path.join(LOG_DIR, "food_submitted.json")
 
 
 def ensure_log_directory() -> None:
@@ -38,6 +42,161 @@ def save_json(file_path: str, data: dict) -> None:
         json.dump(data, f, indent=4)
 
 
+def _normalize_calories(calories) -> int:
+    """Coerce calorie values (int, numeric str, or nested dict) to int."""
+    if isinstance(calories, dict):
+        return int(calories.get("calories", 0) or 0)
+    if isinstance(calories, str) and calories.isnumeric():
+        return int(calories)
+    return int(calories)
+
+
+def day_total_calories(entries: list) -> int:
+    """Sum calorie counts for a list of food log entries."""
+    total = 0
+    for entry in entries:
+        total += _normalize_calories(entry.get("calories", 0))
+    return total
+
+
+def is_day_submitted(day: str, submitted_data: dict | None = None) -> bool:
+    """Return True if ``foodlog submit`` has been run for ``day`` (ISO date)."""
+    if submitted_data is None:
+        submitted_data = load_json(FOOD_SUBMITTED_FILE)
+    value = submitted_data.get(day)
+    if isinstance(value, dict):
+        return bool(value.get("submitted"))
+    return bool(value)
+
+
+def mark_day_submitted(day: str | None = None) -> str:
+    """
+    Mark a day as submitted so dailystatus skips the foodlog reminder email.
+
+    Returns the ISO date that was marked.
+    """
+    ensure_log_directory()
+    day = day or datetime.date.today().isoformat()
+    submitted_data = load_json(FOOD_SUBMITTED_FILE)
+    submitted_data[day] = {
+        "submitted": True,
+        "submitted_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+    save_json(FOOD_SUBMITTED_FILE, submitted_data)
+    return day
+
+
+def _loki_base_url() -> str | None:
+    """Cabinet Loki base URL (no /push), or None if unset."""
+    url = getattr(cabinet, "logging_loki_url", "") or ""
+    url = url.strip().rstrip("/")
+    return url or None
+
+
+def build_daily_grafana_event(
+    day: str,
+    entries: list,
+    submitted: bool,
+    hostname: str | None = None,
+) -> dict:
+    """Build a structured daily snapshot for Loki / Grafana."""
+    return {
+        "type": "daily",
+        "date": day,
+        "total_calories": day_total_calories(entries),
+        "entry_count": len(entries),
+        "submitted": submitted,
+        "hostname": hostname or socket.gethostname(),
+        "foods": [
+            {
+                "food": e.get("food", "unknown"),
+                "calories": _normalize_calories(e.get("calories", 0)),
+            }
+            for e in entries
+        ],
+    }
+
+
+def build_loki_push_body(event: dict, timestamp: datetime.datetime | None = None) -> dict:
+    """Build a Loki push API body for a single foodlog event."""
+    ts = timestamp or datetime.datetime.now(datetime.timezone.utc)
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=datetime.timezone.utc)
+    # Anchor daily snapshots at noon UTC on that calendar day so charts stay stable
+    # when the day is updated throughout local logging.
+    if event.get("type") == "daily" and event.get("date"):
+        try:
+            day = datetime.date.fromisoformat(event["date"])
+            ts = datetime.datetime(
+                day.year, day.month, day.day, 12, 0, 0, tzinfo=datetime.timezone.utc
+            )
+        except ValueError:
+            pass
+    ns = str(int(ts.timestamp() * 1_000_000_000))
+    labels = {
+        "job": "foodlog",
+        "type": str(event.get("type", "daily")),
+        "hostname": str(event.get("hostname") or socket.gethostname()),
+    }
+    return {
+        "streams": [
+            {
+                "stream": labels,
+                "values": [[ns, json.dumps(event, separators=(",", ":"))]],
+            }
+        ]
+    }
+
+
+def push_event_to_loki(event: dict, loki_url: str | None = None) -> bool:
+    """
+    POST a foodlog event to Loki for Grafana.
+
+    Returns True on success. No-op (False) when Loki URL is unset.
+    """
+    base = (loki_url or _loki_base_url() or "").rstrip("/")
+    if not base:
+        return False
+    body = json.dumps(build_loki_push_body(event)).encode("utf-8")
+    req = urllib.request.Request(
+        f"{base}/loki/api/v1/push",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return 200 <= getattr(resp, "status", 200) < 300
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        cabinet.log(f"foodlog Grafana/Loki push failed: {exc}", level="warning")
+        return False
+
+
+def sync_day_to_grafana(day: str | None = None, log_data: dict | None = None) -> bool:
+    """Push one day's totals from flat-file food.json to Loki (existing Grafana)."""
+    day = day or datetime.date.today().isoformat()
+    if log_data is None:
+        log_data = load_json(FOOD_LOG_FILE)
+    entries = log_data.get(day, [])
+    event = build_daily_grafana_event(
+        day,
+        entries,
+        submitted=is_day_submitted(day),
+    )
+    return push_event_to_loki(event)
+
+
+def sync_all_to_grafana(log_data: dict | None = None) -> int:
+    """Backfill all days in food.json to Loki. Returns number of successful pushes."""
+    if log_data is None:
+        log_data = load_json(FOOD_LOG_FILE)
+    ok = 0
+    for day in sorted(log_data.keys()):
+        if sync_day_to_grafana(day, log_data=log_data):
+            ok += 1
+    return ok
+
+
 def log_food(food_name: str, calories: int, is_yesterday: bool = False) -> None:
     """log food entry for today's date."""
     ensure_log_directory()
@@ -50,11 +209,7 @@ def log_food(food_name: str, calories: int, is_yesterday: bool = False) -> None:
     if today not in log_data:
         log_data[today] = []
 
-    # Ensure calories is an integer
-    if isinstance(calories, dict):
-        calories = calories.get("calories", 0)
-    elif isinstance(calories, str) and calories.isnumeric():
-        calories = int(calories)
+    calories = _normalize_calories(calories)
 
     # Store food name in lowercase for consistency
     food_name_lower = food_name.lower()
@@ -63,6 +218,7 @@ def log_food(food_name: str, calories: int, is_yesterday: bool = False) -> None:
     print_formatted_text(
         HTML(f"<green>Logged:</green> {food_name} <yellow>({calories} cal)</yellow>")
     )
+    sync_day_to_grafana(today, log_data=log_data)
 
     if globals().get("_is_last_main_call", False):
         display_daily_calories()
@@ -140,10 +296,7 @@ def display_daily_calories(target_date: datetime.date = None) -> None:
         # Find the maximum length of calories for alignment
         for entry in log_data[target_date_str]:
             food = entry["food"]
-            calories = entry["calories"]
-            # Ensure calories is an integer
-            if isinstance(calories, dict):
-                calories = calories.get("calories", 0)
+            calories = _normalize_calories(entry["calories"])
             total_calories += calories
 
             # Pad calories to maintain consistent alignment
@@ -164,9 +317,14 @@ def display_daily_calories(target_date: datetime.date = None) -> None:
         else:
             total_color = "red"
 
+        submitted_note = ""
+        if is_day_submitted(target_date_str):
+            submitted_note = " <green>(submitted)</green>"
+
         print_formatted_text(
             HTML(
                 f"\n<bold>Total:</bold> <{total_color}>{total_calories}</{total_color}>"
+                f"{submitted_note}"
             )
         )
     else:
@@ -389,6 +547,19 @@ def show_summary() -> None:
             )
 
 
+def submit_day(day: str | None = None) -> None:
+    """Mark the day submitted and sync the snapshot to Grafana/Loki."""
+    day = mark_day_submitted(day)
+    sync_day_to_grafana(day)
+    print_formatted_text(
+        HTML(
+            f"<green>Submitted</green> food log for <yellow>{day}</yellow>. "
+            "Daily status will skip the foodlog reminder."
+        )
+    )
+    display_daily_calories(datetime.date.fromisoformat(day))
+
+
 def main() -> None:
     """parse command-line arguments and log food entry."""
     is_yesterday = False
@@ -407,6 +578,20 @@ def main() -> None:
             yesterday = datetime.date.today() - datetime.timedelta(days=1)
             display_daily_calories(yesterday)
             sys.exit(0)
+
+    if sys.argv[1] in ("submit", "--submit"):
+        submit_day()
+        sys.exit(0)
+
+    if sys.argv[1] in ("--sync-grafana", "sync-grafana"):
+        count = sync_all_to_grafana()
+        print_formatted_text(
+            HTML(
+                f"<green>Synced</green> <yellow>{count}</yellow> day(s) from food.json "
+                "to Grafana (Loki)."
+            )
+        )
+        sys.exit(0)
 
     if sys.argv[1] == "--edit":
         edit_food_json()
@@ -492,6 +677,7 @@ def undo_latest_entry() -> None:
         del log_data[today]
 
     save_json(FOOD_LOG_FILE, log_data)
+    sync_day_to_grafana(today, log_data=log_data)
     print_formatted_text(
         HTML(f"<green>Removed:</green> {food_name} <yellow>({calories} cal)</yellow>")
     )

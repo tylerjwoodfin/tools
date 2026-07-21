@@ -146,10 +146,49 @@ def append_service_check_summary(email):
     return email
 
 
+def _food_log_paths():
+    """Resolve food.json / food_submitted.json from Cabinet path config."""
+    log_dir = cab.get("path", "cabinet", "log") or os.path.expanduser("~/syncthing/log")
+    return (
+        os.path.join(log_dir, "food.json"),
+        os.path.join(log_dir, "food_submitted.json"),
+    )
+
+
+def is_foodlog_submitted(day: str, submitted_data: dict | None = None) -> bool:
+    """True when ``foodlog submit`` has marked ``day`` (ISO date)."""
+    if submitted_data is None:
+        _, submitted_file = _food_log_paths()
+        if not os.path.exists(submitted_file):
+            return False
+        try:
+            with open(submitted_file, "r", encoding="utf-8") as f:
+                submitted_data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return False
+    value = submitted_data.get(day)
+    if isinstance(value, dict):
+        return bool(value.get("submitted"))
+    return bool(value)
+
+
 def append_food_log(email, dry_run=False):
-    """check if food has been logged today, print total calories or an error if none found."""
-    log_file = os.path.expanduser("~/syncthing/log/food.json")
+    """
+    Append today's calorie total when food was logged.
+
+    Sends the foodlog reminder email only if ``foodlog submit`` has not been
+    run for today (logging alone does not suppress the reminder).
+    """
+    log_file, _submitted_file = _food_log_paths()
     today_str = datetime.date.today().isoformat()
+
+    if not is_foodlog_submitted(today_str):
+        if not dry_run:
+            mail.send(
+                "🍊 Log food for today!",
+                "Food log not submitted for today. "
+                "Log your food, then run `foodlog submit` when done.",
+            )
 
     if not os.path.exists(log_file):
         cab.log("Food log file does not exist.", level="error")
@@ -159,21 +198,18 @@ def append_food_log(email, dry_run=False):
         with open(log_file, "r", encoding="utf-8") as f:
             log_data = json.load(f)
 
-        if today_str not in log_data or not log_data[today_str]:
-            if not dry_run:
-                mail.send("🍊 Log food for today!",
-                "No food logged for today. Please log your food for today.")
-            return email
-        else:
+        if today_str in log_data and log_data[today_str]:
             total_calories = sum(entry["calories"] for entry in log_data[today_str])
+            submitted_note = " (submitted)" if is_foodlog_submitted(today_str) else ""
             return email + textwrap.dedent(
                 f"""
             <h3>Calories Eaten Today:</h3>
             <pre style="font-family: monospace; white-space: pre-wrap;"
-            >{total_calories} calories</pre>
+            >{total_calories} calories{submitted_note}</pre>
             <br>
             """
             )
+        return email
 
     except (json.JSONDecodeError, OSError):
         cab.log("Error reading food log file.", level="error")
@@ -387,7 +423,7 @@ def _apply_foodlog_goals_response(
 
 def append_nutrition_summary(email):
     """Append a bulleted summary of nutritional quality from the past 7 days via ChatGPT."""
-    log_file = os.path.expanduser("~/syncthing/log/food.json")
+    log_file = _food_log_paths()[0]
 
     if not os.path.exists(log_file):
         cab.log("Food log file does not exist for nutrition summary.", level="error")
