@@ -93,6 +93,9 @@ class SpotifyAnalyzer:
     # Smaller batches reduce token usage and improve reliability
     GENRE_BATCH_SIZE = 40
 
+    # ISO 3166-1 alpha-2 market for track relinking / is_playable checks
+    MARKET = "US"
+
     def __init__(self, cabinet: Cabinet):
         self.cab = cabinet
         self.logger = self._setup_logging()
@@ -109,6 +112,7 @@ class SpotifyAnalyzer:
         self._chatgpt: Optional[ChatGPT] = None
         self._genre_cache: Dict[str, str] = {}  # Cache spotify_url -> genre
         self._pending_classifications: List[Tuple[Track, str]] = []  # Tracks needing classification
+        self._unplayable_tracks: List[Dict[str, str]] = []
 
         # Register cleanup function to run on exit
         atexit.register(self._cleanup_oauth_port)
@@ -650,11 +654,61 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                     raise
 
     def _get_playlist(self, playlist_id: str) -> Optional[Dict]:
-        """Fetch playlist data from Spotify."""
+        """Fetch playlist data from Spotify (US market for is_playable / relinking)."""
         return self._retry_api_call(
-            lambda: self.spotify_client.playlist(playlist_id),
+            lambda: self.spotify_client.playlist(playlist_id, market=self.MARKET),
             operation_name=f"Fetch playlist {playlist_id}",
         )
+
+    def _report_unplayable_track(
+        self,
+        playlist_name: str,
+        track: Optional[Dict] = None,
+        reason: str = "unplayable",
+    ) -> None:
+        """Log and record a track that is unplayable in the configured market."""
+        if track:
+            artist = ""
+            artists = track.get("artists") or []
+            if artists:
+                artist = artists[0].get("name") or ""
+            name = track.get("name") or "(unknown)"
+            external_urls = track.get("external_urls") or {}
+            url = external_urls.get("spotify") or track.get("uri") or track.get("id") or ""
+            restrictions = track.get("restrictions") or {}
+            restriction_reason = restrictions.get("reason")
+            detail = reason
+            if restriction_reason:
+                detail = f"{reason}; restrictions.reason={restriction_reason}"
+            label = f"'{name}' by {artist}" if artist else f"'{name}'"
+            if url:
+                label = f"{label} ({url})"
+            message = (
+                f"SPOTIFY - Unplayable track in {playlist_name} "
+                f"(market={self.MARKET}): {label} [{detail}]"
+            )
+            record = {
+                "playlist": playlist_name,
+                "name": name,
+                "artist": artist,
+                "url": url,
+                "reason": detail,
+            }
+        else:
+            message = (
+                f"SPOTIFY - Unplayable track in {playlist_name} "
+                f"(market={self.MARKET}): null track entry [{reason}]"
+            )
+            record = {
+                "playlist": playlist_name,
+                "name": "",
+                "artist": "",
+                "url": "",
+                "reason": reason,
+            }
+
+        self.cab.log(message, level="warning")
+        self._unplayable_tracks.append(record)
 
     def _check_duplicates(self, tracks: List[str], playlist_name: str, playlist_id: str):
         """Check for duplicate tracks within a playlist and automatically remove them.
@@ -747,7 +801,18 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         for _, item in enumerate(tracks["items"]):
             track = item["track"]
             if not track:
+                # Spotify returns null track when the item is fully unavailable
+                self._report_unplayable_track(
+                    playlist_name, track=None, reason="null track entry"
+                )
                 continue
+
+            # market=US replaces available_markets with is_playable (track relinking).
+            # Only treat explicit False as unplayable to avoid false positives.
+            if not track.get("is_local") and track.get("is_playable") is False:
+                self._report_unplayable_track(
+                    playlist_name, track=track, reason="is_playable=false"
+                )
 
             if not track["is_local"]:
                 track_urls.append(track["external_urls"]["spotify"])
@@ -957,6 +1022,19 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
 
         # Validate and retry genres for all tracks
         self._validate_and_retry_genres()
+
+        unplayable_count = len(self._unplayable_tracks)
+        if unplayable_count:
+            self.cab.log(
+                f"SPOTIFY - Found {unplayable_count} unplayable track(s) "
+                f"in market={self.MARKET}",
+                level="warning",
+            )
+        else:
+            self.cab.log(
+                f"SPOTIFY - No unplayable tracks found in market={self.MARKET}",
+                level="info",
+            )
 
         self._save_data()
         self._update_statistics()

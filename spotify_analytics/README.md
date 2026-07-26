@@ -1,5 +1,11 @@
 # spotify-analytics
-Checks for duplicate songs, unplayable songs, and songs missing from playlists.
+Checks for duplicate songs, unplayable songs (US market via Spotify `is_playable` / track relinking), and songs missing from playlists.
+
+Unplayable detection:
+- Playlist fetches use `market=US`.
+- A track is reported when the playlist item's `track` is `null`, or when `is_playable` is explicitly `false`.
+- Empty `available_markets` alone is **not** treated as unplayable (that field is unreliable without a market).
+- Unplayable tracks are logged as warnings; they are not removed automatically.
 
 ## dependencies
 - [Spotify API access](https://stevesie.com/docs/pages/spotify-client-id-secret-developer-api)
