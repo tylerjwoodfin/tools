@@ -52,6 +52,11 @@ def storage_state_path() -> Path:
     return DEFAULT_STORAGE
 
 
+def has_saved_session() -> bool:
+    """True when a Playwright storage-state file exists."""
+    return storage_state_path().is_file()
+
+
 def playwright_ws_endpoint() -> str | None:
     """WebSocket URL for a remote Playwright server, if configured or reachable."""
     env = os.environ.get("PLAYWRIGHT_WS_ENDPOINT", "").strip()
@@ -280,38 +285,51 @@ def save_storage(context: BrowserContext) -> Path:
     return path
 
 
-def connect_or_launch(playwright: Any) -> tuple[Browser, str]:
+def connect_or_launch(playwright: Any, *, force_local: bool = False) -> tuple[Browser, str]:
     """
     Prefer Docker/remote Playwright server; otherwise launch local Chromium.
     Returns (browser, mode) where mode is 'remote' or 'local'.
     """
-    ws = playwright_ws_endpoint()
-    if ws:
-        cue(f"Connecting to Playwright server at {ws}")
-        browser = playwright.chromium.connect(ws)
-        return browser, "remote"
-    cue("No Playwright server — launching local Chromium")
-    browser = playwright.chromium.launch(headless=want_headless())
+    if not force_local:
+        ws = playwright_ws_endpoint()
+        if ws:
+            cue(f"Connecting to Playwright server at {ws}")
+            browser = playwright.chromium.connect(ws)
+            return browser, "remote"
+    cue("Launching local Chromium")
+    browser = playwright.chromium.launch(headless=False if force_local else want_headless())
     return browser, "local"
 
 
 def run_login() -> int:
-    """Open Amazon so the user can sign in; save storage state."""
+    """Open Amazon in local headed Chromium so the user can sign in; save storage state."""
+    print(
+        "\nPlaywright does not use your Firefox cookies.\n"
+        "A separate Chromium window will open — sign in there once.\n"
+        f"Session will be saved to {storage_state_path()}.\n"
+    )
     with sync_playwright() as playwright:
-        browser, mode = connect_or_launch(playwright)
+        # Always local + headed so 2FA is possible (Docker server is headless).
+        browser, _mode = connect_or_launch(playwright, force_local=True)
         try:
-            if mode == "remote":
-                cue(
-                    "Remote Playwright is usually headless. Prefer local Chromium "
-                    "for first login (stop docker/playwright or unset playwright_ws)."
-                )
             context = open_context(browser, headed_hint=True)
             page = context.new_page()
             cue("Opening Amazon sign-in…")
-            page.goto("https://www.amazon.com/ap/signin", wait_until="domcontentloaded")
+            page.goto("https://www.amazon.com/", wait_until="domcontentloaded")
+            page.wait_for_timeout(1000)
+            sign_in = page.query_selector("#nav-link-accountList") or page.query_selector(
+                "a[href*='/ap/signin']"
+            )
+            if sign_in:
+                sign_in.click()
+            else:
+                page.goto(
+                    "https://www.amazon.com/ap/signin",
+                    wait_until="domcontentloaded",
+                )
             print(
-                "\nSign in to Amazon in the browser window (complete 2FA if prompted).\n"
-                "When your account homepage/account menu is visible, return here.\n"
+                "\nSign in to Amazon in the Chromium window (complete 2FA if prompted).\n"
+                "When you see your name / Account & Lists in the header, return here.\n"
             )
             if not confirm("Save this browser session now?", default_no=False):
                 cue("Aborted — session not saved.")
@@ -321,6 +339,29 @@ def run_login() -> int:
         finally:
             browser.close()
     return 0
+
+
+def diagnose_missing_buybox(page: Page) -> str:
+    """Explain why Add to Cart / Buy Now might be missing."""
+    url = page.url
+    try:
+        body = page.inner_text("body")[:4000].lower()
+    except Exception:  # pylint: disable=broad-exception-caught
+        body = ""
+    if "robot" in body or "captcha" in body or "validatecaptcha" in url.lower():
+        return "Amazon showed a captcha/robot check — try amazon --login, then retry."
+    if "sign in" in body and ("password" in body or "email" in body):
+        return "Amazon is asking you to sign in — run: amazon --login"
+    if page.query_selector("#buybox-see-all-buying-options-announce") or page.query_selector(
+        "a[href*='offer-listing']"
+    ):
+        return "This listing has no 1-click buy box (see all buying options)."
+    if not has_saved_session():
+        return (
+            "No Playwright session saved. Firefox login does not count — "
+            "run: amazon --login"
+        )
+    return "Buy box not found (page layout/captcha?). Try amazon --login and retry."
 
 
 def dismiss_noise(page: Page) -> None:
@@ -348,6 +389,16 @@ def add_to_cart_and_checkout(page: Page, product: ProductCandidate, *, dry_run: 
     page.wait_for_timeout(1500)
     dismiss_noise(page)
 
+    add = None
+    buy_now = None
+    try:
+        page.wait_for_selector(
+            "#add-to-cart-button, input#add-to-cart-button, "
+            "#buy-now-button, input#buy-now-button",
+            timeout=8000,
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
     add = page.query_selector("#add-to-cart-button") or page.query_selector(
         "input#add-to-cart-button"
     )
@@ -356,7 +407,10 @@ def add_to_cart_and_checkout(page: Page, product: ProductCandidate, *, dry_run: 
     )
 
     if dry_run:
-        cue("Dry run — stopping before cart/checkout.")
+        if not add and not buy_now:
+            cue(f"Dry run note: {diagnose_missing_buybox(page)}")
+        else:
+            cue("Dry run — buy box visible; stopping before cart/checkout.")
         return 0
 
     if buy_now and buy_now.is_enabled():
@@ -378,7 +432,7 @@ def add_to_cart_and_checkout(page: Page, product: ProductCandidate, *, dry_run: 
         cue("Proceeding to checkout…")
         checkout.click()
     else:
-        cue("No Add to Cart / Buy Now button found — are you signed in?")
+        cue(diagnose_missing_buybox(page))
         return 1
 
     page.wait_for_timeout(2500)
@@ -451,6 +505,14 @@ def run_order(description: str, *, dry_run: bool, auto_yes: bool) -> int:
     if not description.strip():
         print("Usage: amazon <product description>", file=sys.stderr)
         return 2
+
+    if not dry_run and not has_saved_session():
+        cue(
+            "No Playwright Amazon session yet. Your Firefox login is separate — "
+            "Playwright uses its own Chromium cookies."
+        )
+        cue("Run once: amazon --login")
+        return 1
 
     with sync_playwright() as playwright:
         browser, _mode = connect_or_launch(playwright)

@@ -22,13 +22,17 @@ Default WebSocket: `ws://127.0.0.1:9311/` (override with env
 
 ### Amazon login (once)
 
+Firefox/Chrome logins on your desktop are **not** shared with Playwright.
+
 ```bash
 amazon --login
 ```
 
-Sign in in the opened browser (2FA if needed). Session is saved to
+Opens a **local headed Chromium** window (not the Docker server). Sign in
+there (2FA if needed). Session is saved to
 `~/.local/share/amazon-order/storage_state.json` (override with Cabinet
-`amazon` → `storage_state`).
+`amazon` → `storage_state`). Later `amazon …` runs reuse that file even when
+talking to the Docker Playwright server.
 
 ## Usage
 
