@@ -13,5 +13,8 @@
 - [`taiga/ticket.py`](taiga/ticket.py) — fetch/finish TJW tickets for Cursor (`get`, `finish`, `resolve-api`); prefers `http://127.0.0.1:8000/api/v1` and auto-heals stale Docker bridge `api_root` after reboot.
 - [`github/ensure_gh_auth.py`](github/ensure_gh_auth.py) — sync Cabinet `backloggist.github_token` into `gh` auth.
 
+## Amazon order (Playwright)
+- [`amazon/`](amazon/) — `amazon <description>` searches Amazon, uses ChatGPT to pick a match, confirms, and places the order. Optional browser server: `~/git/docker/playwright`.
+
 ## See Other READMEs
 - Most folders contain a README that you should check out for more specific information. Happy coding!
