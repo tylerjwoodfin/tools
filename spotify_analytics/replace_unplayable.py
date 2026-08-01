@@ -123,6 +123,31 @@ def playlist_name_to_id(cab: Cabinet) -> Dict[str, str]:
     return mapping
 
 
+def primary_playlist_name(cab: Cabinet) -> str:
+    """First configured spotipy playlist label (Tyler Radio in the usual setup)."""
+    for entry in cab.get("spotipy", "playlists") or []:
+        if isinstance(entry, str) and "," in entry:
+            return entry.split(",", 1)[1].strip() or "Tyler Radio"
+    return "Tyler Radio"
+
+
+def filter_by_playlist(
+    rows: List[Dict[str, Any]],
+    playlist: Optional[str],
+) -> List[Dict[str, Any]]:
+    """Keep rows that appear on ``playlist``. None / empty = no filter."""
+    if not playlist:
+        return rows
+    wanted = playlist.strip().lower()
+    return [
+        row
+        for row in rows
+        if any(
+            (p or "").strip().lower() == wanted for p in (row.get("playlists") or [])
+        )
+    ]
+
+
 def spotify_client_credentials(cab: Cabinet) -> spotipy.Spotify:
     client_id = cab.get("spotipy", "client_id")
     client_secret = cab.get("spotipy", "client_secret")
@@ -551,6 +576,22 @@ def main() -> int:
         help=f"Path to {DEFAULT_UNPLAYABLE} (default: Cabinet path.log)",
     )
     parser.add_argument(
+        "--playlist",
+        type=str,
+        default=None,
+        metavar="NAME",
+        help=(
+            "Only process tracks that appear on this playlist "
+            "(default: first Cabinet spotipy playlist, usually Tyler Radio). "
+            "Pass empty string --playlist '' for all playlists."
+        ),
+    )
+    parser.add_argument(
+        "--all-playlists",
+        action="store_true",
+        help="Process every unplayable track (including Removed-only). Overrides --playlist.",
+    )
+    parser.add_argument(
         "--mp3",
         default="mp3",
         help="mp3 helper on PATH or path to docker/music-stack/scripts/mp3",
@@ -617,6 +658,22 @@ def main() -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
+    if args.all_playlists:
+        playlist_filter: Optional[str] = None
+    elif args.playlist is not None:
+        playlist_filter = args.playlist.strip() or None
+    else:
+        playlist_filter = primary_playlist_name(cab)
+
+    before = len(rows)
+    rows = filter_by_playlist(rows, playlist_filter)
+    if playlist_filter:
+        print(
+            f"Playlist filter: {playlist_filter!r} "
+            f"({len(rows)}/{before} unplayable track(s))",
+            file=sys.stderr,
+        )
+
     if args.limit and args.limit > 0:
         rows = rows[: args.limit]
 
@@ -637,7 +694,11 @@ def main() -> int:
             print(f"ERROR: Spotify OAuth required for --update-spotify: {exc}", file=sys.stderr)
             return 1
 
-    print(f"Processing {len(rows)} unplayable track(s) from {path}", file=sys.stderr)
+    scope = playlist_filter or "all playlists"
+    print(
+        f"Processing {len(rows)} unplayable track(s) from {path} ({scope})",
+        file=sys.stderr,
+    )
     counts = {"ok": 0, "skip": 0, "fail": 0}
     for i, row in enumerate(rows, 1):
         label = f"{row.get('name') or '?'} — {row.get('artist') or '?'}"

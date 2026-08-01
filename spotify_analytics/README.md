@@ -20,7 +20,7 @@ python3 identify_unplayable.py --live --write ~/syncthing/log/spotify\ unplayabl
 Replace with local YouTube audio (Phase 2 — prefers duration-matched uploads, not long music videos):
 
 ```bash
-# Preview selection only (no download)
+# Preview selection only (no download) — Tyler Radio only by default
 python3 replace_unplayable.py --dry-run --limit 5
 
 # Download into ~/syncthing/music via music-stack `mp3` (beets/Navidrome path)
@@ -28,9 +28,13 @@ python3 replace_unplayable.py --limit 3 --yes
 
 # After download, also remove greyed-out Spotify URIs from playlists
 python3 replace_unplayable.py --limit 3 --yes --update-spotify
+
+# Include Removed / other playlists (not just Tyler Radio)
+python3 replace_unplayable.py --all-playlists --dry-run --limit 5
 ```
 
 Matching rules:
+- **Default scope: Tyler Radio only** (first Cabinet `spotipy.playlists` entry). Use `--all-playlists` or `--playlist NAME` to change.
 - Skip placeholder titles/artists (`(unknown)`, `N/A`, empty, etc.)
 - YouTube hit must include the Spotify artist in the video title or channel
 - Prefer closest duration within ±15s (`--tolerance`), penalize clean/censored/live/cover/karaoke
