@@ -8,7 +8,7 @@ Unplayable detection:
 - Unplayable tracks are logged as warnings; they are not removed automatically.
 - The daily run also writes a deduped list to `spotify unplayable.json` next to `spotify songs.json` (under Cabinet `path.log`).
 
-List / refresh unplayable tracks (Phase 1 of auto-replace with local copies):
+List / refresh unplayable tracks (Phase 1):
 
 ```bash
 python3 identify_unplayable.py              # read daily spotify unplayable.json
@@ -16,6 +16,21 @@ python3 identify_unplayable.py --live       # scan playlists via Spotipy now
 python3 identify_unplayable.py --live --json
 python3 identify_unplayable.py --live --write ~/syncthing/log/spotify\ unplayable.json
 ```
+
+Replace with local YouTube audio (Phase 2 — prefers duration-matched uploads, not long music videos):
+
+```bash
+# Preview selection only (no download)
+python3 replace_unplayable.py --dry-run --limit 5
+
+# Download into ~/syncthing/music via music-stack `mp3` (beets/Navidrome path)
+python3 replace_unplayable.py --limit 3 --yes
+
+# After download, also remove greyed-out Spotify URIs from playlists
+python3 replace_unplayable.py --limit 3 --yes --update-spotify
+```
+
+Duration matching: Spotify `duration_ms` vs yt-dlp `ytsearchN` results; default tolerance ±15s (`--tolerance`). Spotify cannot add local files via API — `--update-spotify` only removes the unplayable URI once a local copy exists.
 
 ## dependencies
 - [Spotify API access](https://stevesie.com/docs/pages/spotify-client-id-secret-developer-api)
