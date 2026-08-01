@@ -30,7 +30,14 @@ python3 replace_unplayable.py --limit 3 --yes
 python3 replace_unplayable.py --limit 3 --yes --update-spotify
 ```
 
-Duration matching: Spotify `duration_ms` vs yt-dlp `ytsearchN` results; default tolerance ±15s (`--tolerance`). Spotify cannot add local files via API — `--update-spotify` only removes the unplayable URI once a local copy exists.
+Matching rules:
+- Skip placeholder titles/artists (`(unknown)`, `N/A`, empty, etc.)
+- YouTube hit must include the Spotify artist in the video title or channel
+- Prefer closest duration within ±15s (`--tolerance`), penalize clean/censored/live/cover/karaoke
+- If Spotify marks the track explicit, further penalize clean/censored uploads
+- Search tries `"Artist" Title` before looser queries (avoids same-title wrong-artist hits)
+
+Spotify cannot add local files via API — `--update-spotify` only removes the unplayable URI once a local copy exists.
 
 ## dependencies
 - [Spotify API access](https://stevesie.com/docs/pages/spotify-client-id-secret-developer-api)

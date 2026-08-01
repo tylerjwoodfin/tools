@@ -31,8 +31,26 @@ from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth
 
 MARKET = "US"
 DEFAULT_UNPLAYABLE = "spotify unplayable.json"
-DEFAULT_SEARCH_RESULTS = 8
+DEFAULT_SEARCH_RESULTS = 12
 DEFAULT_TOLERANCE_SEC = 15.0
+
+# Titles/artists that cannot drive a reliable YouTube search.
+_PLACEHOLDER_RE = re.compile(
+    r"^\s*[\(\[\{\s]*(?:unknown|n/?a|none|null|untitled|track|tbd)[\)\]\}\s]*\.?\s*$",
+    re.IGNORECASE,
+)
+
+# Soft penalties added to duration delta when ranking YouTube hits (seconds-equivalent).
+_TITLE_PENALTIES: List[Tuple[re.Pattern[str], float]] = [
+    (re.compile(r"\bclean\b", re.I), 40.0),
+    (re.compile(r"\bcensored\b", re.I), 40.0),
+    (re.compile(r"\bradio\s*edit\b", re.I), 25.0),
+    (re.compile(r"\blive\b", re.I), 35.0),
+    (re.compile(r"\bcover\b", re.I), 35.0),
+    (re.compile(r"\bkaraoke\b", re.I), 80.0),
+    (re.compile(r"\binstrumental\b", re.I), 35.0),
+    (re.compile(r"\blyric(?:s)?\b", re.I), 8.0),
+]
 
 
 def default_unplayable_path(cab: Cabinet) -> Path:
@@ -145,12 +163,109 @@ def spotify_oauth_client(cab: Cabinet) -> spotipy.Spotify:
     return spotipy.Spotify(auth=token["access_token"])
 
 
-def fetch_duration_ms(sp: spotipy.Spotify, track_id: str) -> Optional[int]:
+def is_placeholder(value: str) -> bool:
+    """True for blank / (unknown) / N/A style metadata that should be skipped."""
+    text = (value or "").strip()
+    if not text:
+        return True
+    return bool(_PLACEHOLDER_RE.match(text))
+
+
+def fold_alnum(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
+
+
+def artist_in_text(artist: str, *parts: str) -> bool:
+    """Require the Spotify artist (folded) to appear in YouTube title and/or channel."""
+    needle = fold_alnum(artist)
+    if len(needle) < 2:
+        return False
+    hay = fold_alnum(" ".join(p for p in parts if p))
+    return needle in hay
+
+
+def title_token_bonus(track_name: str, video_title: str) -> float:
+    """Reward overlap of significant title words (reduces score)."""
+    stop = {
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "of",
+        "feat",
+        "ft",
+        "featuring",
+        "with",
+        "official",
+        "audio",
+        "video",
+        "music",
+        "lyrics",
+        "hd",
+        "hq",
+    }
+    track_tokens = [
+        t
+        for t in re.findall(r"[a-z0-9]+", track_name.lower())
+        if len(t) > 1 and t not in stop
+    ]
+    if not track_tokens:
+        return 0.0
+    hay = set(re.findall(r"[a-z0-9]+", video_title.lower()))
+    matched = sum(1 for t in track_tokens if t in hay)
+    # Up to ~12s equivalent bonus for full title overlap
+    return -12.0 * (matched / len(track_tokens))
+
+
+def title_penalties(video_title: str, *, want_explicit: bool) -> float:
+    penalty = 0.0
+    for pattern, amount in _TITLE_PENALTIES:
+        if pattern.search(video_title):
+            penalty += amount
+    if want_explicit and re.search(r"\bclean\b|\bcensored\b", video_title, re.I):
+        penalty += 60.0
+    if want_explicit and re.search(r"\bexplicit\b|\buncensored\b", video_title, re.I):
+        penalty -= 8.0
+    return penalty
+
+
+def build_search_queries(artist: str, name: str) -> List[str]:
+    """Ordered YouTube queries; quoted artist first to avoid same-title wrong-artist hits."""
+    queries: List[str] = []
+    seen: set[str] = set()
+
+    def add(q: str) -> None:
+        q = " ".join(q.split())
+        if q and q not in seen:
+            seen.add(q)
+            queries.append(q)
+
+    add(f'"{artist}" {name}')
+    add(f"{artist} {name}")
+    # Drop trailing parenthetical / " - Original" style suffixes for a looser pass
+    loose = re.sub(r"\s*[\(\[].*?[\)\]]\s*", " ", name)
+    loose = re.sub(r"\s+-\s+(original|radio\s*edit|remaster(?:ed)?)\s*$", "", loose, flags=re.I)
+    loose = " ".join(loose.split())
+    if loose and loose.lower() != name.lower():
+        add(f'"{artist}" {loose}')
+        add(f"{artist} {loose}")
+    return queries
+
+
+def fetch_track_meta(sp: spotipy.Spotify, track_id: str) -> Dict[str, Any]:
     track = sp.track(track_id, market=MARKET)
+    artists = track.get("artists") or []
+    artist = ""
+    if artists:
+        artist = (artists[0].get("name") or "").strip()
     duration = track.get("duration_ms")
-    if isinstance(duration, int) and duration > 0:
-        return duration
-    return None
+    return {
+        "name": (track.get("name") or "").strip(),
+        "artist": artist,
+        "duration_ms": duration if isinstance(duration, int) and duration > 0 else None,
+        "explicit": bool(track.get("explicit")),
+    }
 
 
 def youtube_search(
@@ -196,10 +311,12 @@ def youtube_search(
             continue
         if duration_f <= 0:
             continue
+        channel = row.get("channel") or row.get("uploader") or ""
         candidates.append(
             {
                 "id": str(video_id),
                 "title": row.get("title") or "",
+                "channel": channel,
                 "duration": duration_f,
                 "url": f"https://www.youtube.com/watch?v={video_id}",
             }
@@ -207,21 +324,43 @@ def youtube_search(
     return candidates
 
 
-def pick_closest_duration(
+def pick_best_candidate(
     candidates: List[Dict[str, Any]],
+    *,
+    artist: str,
+    track_name: str,
     target_sec: float,
     tolerance_sec: float,
-) -> Optional[Tuple[Dict[str, Any], float]]:
+    want_explicit: bool,
+) -> Optional[Tuple[Dict[str, Any], float, float]]:
+    """
+    Pick best YouTube hit: must include artist + duration within tolerance.
+    Rank by duration delta + clean/live/cover penalties − title overlap bonus.
+    Returns (candidate, duration_diff, score).
+    """
     best: Optional[Dict[str, Any]] = None
+    best_score = float("inf")
     best_diff = float("inf")
+
     for cand in candidates:
+        if not artist_in_text(artist, cand.get("title") or "", cand.get("channel") or ""):
+            continue
         diff = abs(float(cand["duration"]) - target_sec)
-        if diff < best_diff:
+        if diff > tolerance_sec:
+            continue
+        score = (
+            diff
+            + title_penalties(cand.get("title") or "", want_explicit=want_explicit)
+            + title_token_bonus(track_name, cand.get("title") or "")
+        )
+        if score < best_score:
             best = cand
+            best_score = score
             best_diff = diff
-    if best is None or best_diff > tolerance_sec:
+
+    if best is None:
         return None
-    return best, best_diff
+    return best, best_diff, best_score
 
 
 def download_with_mp3(
@@ -300,46 +439,81 @@ def process_row(
     url = (row.get("url") or "").strip()
     playlists = list(row.get("playlists") or [])
 
-    if not name or name == "(unknown)":
-        print("  SKIP: missing/unknown title", file=sys.stderr)
-        return "skip"
-    if not artist:
-        print("  SKIP: missing artist", file=sys.stderr)
-        return "skip"
-
     track_id = extract_track_id(url)
     if not track_id:
         print(f"  SKIP: cannot parse Spotify track id from {url!r}", file=sys.stderr)
         return "skip"
 
-    duration_ms = fetch_duration_ms(sp, track_id)
+    meta = fetch_track_meta(sp, track_id)
+    # Prefer live Spotify metadata when the unplayable export has placeholders.
+    if is_placeholder(name) and not is_placeholder(meta["name"]):
+        name = meta["name"]
+    if is_placeholder(artist) and not is_placeholder(meta["artist"]):
+        artist = meta["artist"]
+
+    if is_placeholder(name):
+        print("  SKIP: missing/unknown title", file=sys.stderr)
+        return "skip"
+    if is_placeholder(artist):
+        print("  SKIP: missing/unknown artist", file=sys.stderr)
+        return "skip"
+
+    duration_ms = meta["duration_ms"]
     if duration_ms is None:
         print("  SKIP: Spotify duration unavailable", file=sys.stderr)
         return "skip"
     target_sec = duration_ms / 1000.0
+    want_explicit = bool(meta["explicit"])
 
-    query = f"{artist} {name} audio"
-    print(
-        f"  Spotify duration={target_sec:.1f}s; searching YouTube: {query!r}",
-        file=sys.stderr,
-    )
-    candidates = youtube_search(ytdlp, query, search_results)
-    picked = pick_closest_duration(candidates, target_sec, tolerance_sec)
+    queries = build_search_queries(artist, name)
+    picked: Optional[Tuple[Dict[str, Any], float, float]] = None
+    all_candidates: List[Dict[str, Any]] = []
+    seen_ids: set[str] = set()
+
+    for query in queries:
+        print(
+            f"  Spotify duration={target_sec:.1f}s"
+            f"{' explicit' if want_explicit else ''}; "
+            f"searching YouTube: {query!r}",
+            file=sys.stderr,
+        )
+        batch = youtube_search(ytdlp, query, search_results)
+        for cand in batch:
+            if cand["id"] not in seen_ids:
+                seen_ids.add(cand["id"])
+                all_candidates.append(cand)
+        picked = pick_best_candidate(
+            all_candidates,
+            artist=artist,
+            track_name=name,
+            target_sec=target_sec,
+            tolerance_sec=tolerance_sec,
+            want_explicit=want_explicit,
+        )
+        if picked:
+            break
+
     if not picked:
+        artist_hits = [
+            c
+            for c in all_candidates
+            if artist_in_text(artist, c.get("title") or "", c.get("channel") or "")
+        ]
+        preview_src = artist_hits or all_candidates
         preview = ", ".join(
-            f"{c['duration']:.0f}s:{c['title'][:40]}" for c in candidates[:5]
+            f"{c['duration']:.0f}s:{c['title'][:40]}" for c in preview_src[:5]
         ) or "(none)"
         print(
-            f"  FAIL: no YouTube hit within ±{tolerance_sec:g}s "
-            f"(target {target_sec:.1f}s); candidates: {preview}",
+            f"  FAIL: no artist+duration match within ±{tolerance_sec:g}s "
+            f"(target {target_sec:.1f}s, artist={artist!r}); candidates: {preview}",
             file=sys.stderr,
         )
         return "fail"
 
-    cand, diff = picked
+    cand, diff, score = picked
     print(
-        f"  Picked {cand['id']} ({cand['duration']:.1f}s, Δ{diff:.1f}s) "
-        f"{cand['title']!r}",
+        f"  Picked {cand['id']} ({cand['duration']:.1f}s, Δ{diff:.1f}s, "
+        f"score={score:.1f}) {cand['title']!r}",
         file=sys.stderr,
     )
 
