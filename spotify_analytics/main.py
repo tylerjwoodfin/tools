@@ -1039,28 +1039,39 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         self._save_data()
         self._update_statistics()
 
+    def _primary_playlist_name(self) -> str:
+        """First configured playlist label (Tyler Radio in the usual setup)."""
+        playlists = self._get_playlists()
+        if playlists and isinstance(playlists[0], str) and "," in playlists[0]:
+            return playlists[0].split(",", 1)[1].strip() or "Tyler Radio"
+        return "Tyler Radio"
+
     def _dedupe_unplayable_tracks(self) -> List[Dict[str, Any]]:
-        """Collapse unplayable records by URL (or name/artist when URL is empty)."""
+        """Collapse unplayable records for the primary playlist only (Tyler Radio).
+
+        Other playlists are still logged as warnings during analysis, but
+        ``spotify unplayable.json`` is scoped to the main library playlist.
+        """
+        primary = self._primary_playlist_name()
         by_key: Dict[str, Dict[str, Any]] = {}
         for record in self._unplayable_tracks:
+            playlist = record.get("playlist") or ""
+            if playlist != primary:
+                continue
             url = (record.get("url") or "").strip()
             name = record.get("name") or ""
             artist = record.get("artist") or ""
             key = url or f"{name}\0{artist}"
             existing = by_key.get(key)
-            playlist = record.get("playlist") or ""
             if existing is None:
-                playlists = [playlist] if playlist else []
                 by_key[key] = {
                     "name": name,
                     "artist": artist,
                     "url": url,
                     "reason": record.get("reason") or "",
-                    "playlists": playlists,
+                    "playlists": [playlist] if playlist else [],
                 }
                 continue
-            if playlist and playlist not in existing["playlists"]:
-                existing["playlists"].append(playlist)
             reason = record.get("reason") or ""
             if reason and reason not in (existing.get("reason") or ""):
                 existing["reason"] = (

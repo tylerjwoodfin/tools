@@ -101,7 +101,25 @@ def _merge_records(records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return list(by_key.values())
 
 
-def scan_live(cab: Cabinet) -> List[Dict[str, Any]]:
+def primary_playlist_name(cab: Cabinet) -> str:
+    """First configured spotipy playlist label (Tyler Radio in the usual setup)."""
+    for entry in cab.get("spotipy", "playlists") or []:
+        if isinstance(entry, str) and "," in entry:
+            return entry.split(",", 1)[1].strip() or "Tyler Radio"
+    return "Tyler Radio"
+
+
+def scan_live(
+    cab: Cabinet,
+    *,
+    playlist_filter: Optional[str] = None,
+    all_playlists: bool = False,
+) -> List[Dict[str, Any]]:
+    """Scan playlists for unplayable tracks.
+
+    Default: only the primary playlist (Tyler Radio). Pass all_playlists=True
+    or playlist_filter to change scope.
+    """
     client_id = cab.get("spotipy", "client_id")
     client_secret = cab.get("spotipy", "client_secret")
     playlists = cab.get("spotipy", "playlists") or []
@@ -109,6 +127,13 @@ def scan_live(cab: Cabinet) -> List[Dict[str, Any]]:
         raise RuntimeError("Missing spotipy.client_id / spotipy.client_secret in Cabinet")
     if not playlists:
         raise RuntimeError("Missing spotipy.playlists in Cabinet")
+
+    if all_playlists:
+        wanted: Optional[str] = None
+    elif playlist_filter is not None:
+        wanted = playlist_filter.strip() or None
+    else:
+        wanted = primary_playlist_name(cab)
 
     sp = spotipy.Spotify(
         client_credentials_manager=SpotifyClientCredentials(
@@ -118,12 +143,16 @@ def scan_live(cab: Cabinet) -> List[Dict[str, Any]]:
     )
 
     found: List[Dict[str, Any]] = []
+    scanned = 0
     for entry in playlists:
         if not isinstance(entry, str) or "," not in entry:
             continue
         playlist_id, playlist_name = entry.split(",", 1)
         playlist_id = playlist_id.strip()
         playlist_name = playlist_name.strip()
+        if wanted and playlist_name.lower() != wanted.lower():
+            continue
+        scanned += 1
         results = sp.playlist_items(playlist_id, market=MARKET)
         while results:
             for item in results.get("items") or []:
@@ -142,6 +171,9 @@ def scan_live(cab: Cabinet) -> List[Dict[str, Any]]:
             if not results.get("next"):
                 break
             results = sp.next(results)
+
+    if wanted and scanned == 0:
+        raise RuntimeError(f"No configured playlist matched {wanted!r}")
 
     return _merge_records(found)
 
@@ -173,7 +205,22 @@ def main() -> int:
     parser.add_argument(
         "--live",
         action="store_true",
-        help="Scan playlists via Spotipy instead of reading the daily JSON file",
+        help="Scan Spotify via Spotipy instead of reading the daily JSON file",
+    )
+    parser.add_argument(
+        "--playlist",
+        type=str,
+        default=None,
+        metavar="NAME",
+        help=(
+            "With --live: only scan this playlist "
+            "(default: first Cabinet spotipy playlist, usually Tyler Radio)"
+        ),
+    )
+    parser.add_argument(
+        "--all-playlists",
+        action="store_true",
+        help="With --live: scan every configured playlist (including Removed)",
     )
     parser.add_argument(
         "--json-file",
@@ -198,7 +245,11 @@ def main() -> int:
     cab = Cabinet()
     try:
         if args.live:
-            rows = scan_live(cab)
+            rows = scan_live(
+                cab,
+                playlist_filter=args.playlist,
+                all_playlists=args.all_playlists,
+            )
         else:
             path = Path(args.json_file) if args.json_file else default_unplayable_path(cab)
             try:

@@ -6,15 +6,16 @@ Unplayable detection:
 - A track is reported when the playlist item's `track` is `null`, or when `is_playable` is explicitly `false`.
 - Empty `available_markets` alone is **not** treated as unplayable (that field is unreliable without a market).
 - Unplayable tracks are logged as warnings; they are not removed automatically.
-- The daily run also writes a deduped list to `spotify unplayable.json` next to `spotify songs.json` (under Cabinet `path.log`).
+- `spotify unplayable.json` (next to `spotify songs.json`) lists **Tyler Radio only** (first Cabinet `spotipy.playlists` entry). Other playlists are still warned about in logs.
 
 List / refresh unplayable tracks (Phase 1):
 
 ```bash
 python3 identify_unplayable.py              # read daily spotify unplayable.json
-python3 identify_unplayable.py --live       # scan playlists via Spotipy now
+python3 identify_unplayable.py --live       # scan Tyler Radio via Spotipy
 python3 identify_unplayable.py --live --json
 python3 identify_unplayable.py --live --write ~/syncthing/log/spotify\ unplayable.json
+python3 identify_unplayable.py --live --all-playlists   # include Removed / genres
 ```
 
 Replace with local YouTube audio (Phase 2 — prefers duration-matched uploads, not long music videos):
