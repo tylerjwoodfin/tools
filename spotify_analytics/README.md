@@ -6,6 +6,16 @@ Unplayable detection:
 - A track is reported when the playlist item's `track` is `null`, or when `is_playable` is explicitly `false`.
 - Empty `available_markets` alone is **not** treated as unplayable (that field is unreliable without a market).
 - Unplayable tracks are logged as warnings; they are not removed automatically.
+- The daily run also writes a deduped list to `spotify unplayable.json` next to `spotify songs.json` (under Cabinet `path.log`).
+
+List / refresh unplayable tracks (Phase 1 of auto-replace with local copies):
+
+```bash
+python3 identify_unplayable.py              # read daily spotify unplayable.json
+python3 identify_unplayable.py --live       # scan playlists via Spotipy now
+python3 identify_unplayable.py --live --json
+python3 identify_unplayable.py --live --write ~/syncthing/log/spotify\ unplayable.json
+```
 
 ## dependencies
 - [Spotify API access](https://stevesie.com/docs/pages/spotify-client-id-secret-developer-api)
