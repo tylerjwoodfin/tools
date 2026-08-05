@@ -971,11 +971,19 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         self.cab.log(message, level=level, log_folder_path=log_folder_path, log_name=log_name)
 
     def _validate_and_retry_genres(self):
-        """Validate that all tracks have valid genres and retry classification for missing ones."""
+        """Validate genres; ChatGPT only for tracks not already in a genre playlist."""
         tracks_missing_genre = []
         tracks_invalid_genre = []
 
         for track in self.main_tracks:
+            membership = self._find_genre_playlists_for_track(track)
+            if membership:
+                # Already categorized in Spotify — do not ask AI to "correct" it
+                if len(membership) == 1 and membership[0] in self.VALID_GENRES:
+                    track.genre = membership[0]
+                    self._genre_cache[self._genre_cache_key(track)] = membership[0]
+                continue
+
             if not track.genre:
                 tracks_missing_genre.append(track)
             elif track.genre not in self.VALID_GENRES:
@@ -985,7 +993,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         if tracks_missing_genre:
             self.cab.log(
                 f"SPOTIFY - Found {len(tracks_missing_genre)} tracks missing "
-                f"genre, retrying classification",
+                f"genre (not in any genre playlist), classifying with ChatGPT",
                 level="info",
             )
 
@@ -1007,7 +1015,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 tracks_needing_api_call, "missing genres", "info"
             )
 
-        # Process invalid genres
+        # Process invalid genres (only when not already in a genre playlist)
         if tracks_invalid_genre:
             self.cab.log(
                 f"SPOTIFY - Found {len(tracks_invalid_genre)} tracks with "
@@ -1021,6 +1029,10 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         # Final validation
         still_missing = [
             t for t in self.main_tracks if not t.genre or t.genre not in self.VALID_GENRES
+        ]
+        # Tracks in multiple genre playlists may intentionally lack a single genre
+        still_missing = [
+            t for t in still_missing if not self._find_genre_playlists_for_track(t)
         ]
         if still_missing:
             track_list = ", ".join([f"'{t.name}' by {t.artist}" for t in still_missing[:5]])
@@ -1093,10 +1105,17 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 )
             )
 
-        # Process all pending classifications (batch across all pages)
+        # Prefer genre-playlist membership over cached/AI genres, then classify
+        # only tracks that are not already in a genre playlist.
+        self._assign_genres_from_playlists()
+        self._pending_classifications = [
+            (track_obj, key)
+            for track_obj, key in self._pending_classifications
+            if not track_obj.genre or track_obj.genre not in self.VALID_GENRES
+        ]
         self._process_pending_classifications()
 
-        # Validate and retry genres for all tracks
+        # Validate and retry genres for tracks still missing a genre
         self._validate_and_retry_genres()
 
         unplayable_count = len(self._unplayable_tracks)
@@ -1335,6 +1354,54 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 return True
         return False
 
+    def _genre_playlists(self) -> List[PlaylistData]:
+        """Configured genre playlists (indices 2–7), or empty if not loaded."""
+        if len(self.playlist_data) < 8:
+            return []
+        return self.playlist_data[2:8]
+
+    def _find_genre_playlists_for_track(self, track: Track) -> List[str]:
+        """Genre playlist names that already contain this track."""
+        names: List[str] = []
+        for playlist in self._genre_playlists():
+            if track.is_local or not track.spotify_url:
+                if self._local_ref_in_playlist(track, playlist):
+                    names.append(playlist.name)
+            elif track.spotify_url in playlist.tracks:
+                names.append(playlist.name)
+        return names
+
+    def _assign_genres_from_playlists(self) -> None:
+        """Set genre from existing genre-playlist membership (beats ChatGPT/cache).
+
+        ChatGPT is only for tracks that are not in any genre playlist yet.
+        """
+        assigned = 0
+        for track in self.main_tracks:
+            membership = self._find_genre_playlists_for_track(track)
+            if len(membership) == 1 and membership[0] in self.VALID_GENRES:
+                genre = membership[0]
+                if track.genre != genre:
+                    self.cab.log(
+                        f"SPOTIFY - Using playlist genre '{genre}' for "
+                        f"'{track.name}' by {track.artist} "
+                        f"(was '{track.genre or 'unset'}')",
+                        level="debug",
+                    )
+                track.genre = genre
+                self._genre_cache[self._genre_cache_key(track)] = genre
+                assigned += 1
+            elif len(membership) > 1:
+                # Ambiguous membership — do not let AI pick a "correct" genre
+                if track.genre not in membership:
+                    track.genre = None
+        if assigned:
+            self.cab.log(
+                f"SPOTIFY - Assigned genre from playlist membership for "
+                f"{assigned} track(s)",
+                level="info",
+            )
+
     def _check_local_duplicates_across_playlists(self):
         """Flag local files that share title+artist+album across genre playlists."""
         if len(self.playlist_data) < 8:
@@ -1438,7 +1505,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
 
         Catalog tracks are added/removed via the API by URL.
         Local files cannot be moved via the API — rule breaks are flagged only.
-        Genres themselves come from ChatGPT (OpenAI), not Spotify.
+        Genre labels come from playlist membership when present; ChatGPT is only
+        used earlier for tracks that were not in any genre playlist.
         """
         if len(self.playlist_data) < 8:
             self.cab.log(
