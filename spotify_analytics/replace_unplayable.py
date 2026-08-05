@@ -589,7 +589,7 @@ def main() -> int:
     parser.add_argument(
         "--all-playlists",
         action="store_true",
-        help="Process every unplayable track (including Removed-only). Overrides --playlist.",
+        help="Process every unplayable track. Overrides --playlist.",
     )
     parser.add_argument(
         "--mp3",
