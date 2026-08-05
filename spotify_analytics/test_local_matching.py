@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for local/catalog title matching (TJW-334)."""
+"""Unit tests for local duplicate identity (TJW-334)."""
 
 import unittest
 
@@ -7,40 +7,30 @@ from main import SpotifyAnalyzer
 
 
 class TestLocalMatching(unittest.TestCase):
-    """Artist/title similarity used for local song genre + duplicate checks."""
+    """Local files are compared by title + artist + album; catalog by URL."""
 
     def setUp(self):
         self.analyzer = object.__new__(SpotifyAnalyzer)
 
-    def test_red_balloons_matches_luftballons(self):
-        self.assertTrue(
-            self.analyzer._tracks_are_same_song(
-                "Nena", "99 Red Balloons", "Nena", "99 Luftballoons"
-            )
-        )
+    def test_local_identity_case_insensitive(self):
+        a = self.analyzer._local_identity("Song", "Artist", "Album")
+        b = self.analyzer._local_identity("song", "artist", "album")
+        self.assertEqual(a, b)
 
-    def test_different_artists_do_not_match(self):
-        self.assertFalse(
-            self.analyzer._tracks_are_same_song(
-                "Goldfinger", "99 Red Balloons", "Nena", "99 Luftballoons"
-            )
-        )
+    def test_local_identity_requires_same_album(self):
+        a = self.analyzer._local_identity("99 Red Balloons", "Nena", "Album A")
+        b = self.analyzer._local_identity("99 Red Balloons", "Nena", "Album B")
+        self.assertNotEqual(a, b)
 
-    def test_album_version_suffix_matches(self):
-        self.assertTrue(
-            self.analyzer._tracks_are_same_song(
-                "Drake",
-                "Hate Sleeping Alone",
-                "Drake",
-                "Hate Sleeping Alone (Album Version)",
-            )
-        )
+    def test_local_identity_different_title_not_equal(self):
+        a = self.analyzer._local_identity("99 Red Balloons", "Nena", "99 Luftballons")
+        b = self.analyzer._local_identity("99 Luftballoons", "Nena", "99 Luftballons")
+        self.assertNotEqual(a, b)
 
-    def test_local_genre_key_stable(self):
-        key_a = self.analyzer._local_genre_key("Nena", "99 Red Balloons")
-        key_b = self.analyzer._local_genre_key("nena", "99 Red Balloons")
-        self.assertEqual(key_a, key_b)
-        self.assertTrue(key_a.startswith("local:"))
+    def test_local_genre_key_includes_album(self):
+        key = self.analyzer._local_genre_key("Song", "Artist", "Album")
+        self.assertTrue(key.startswith("local:"))
+        self.assertIn("album", key)
 
     def test_extract_track_id_uri_and_url(self):
         self.assertEqual(

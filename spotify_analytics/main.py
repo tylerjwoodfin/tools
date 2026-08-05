@@ -14,14 +14,12 @@ import json
 import subprocess
 import socket
 import argparse
-import unicodedata
 from dataclasses import dataclass, asdict, field
 from typing import List, Dict, Optional, Tuple, Any
 from statistics import mean
 import logging
 from pathlib import Path
 from collections import Counter
-from difflib import SequenceMatcher
 
 import re
 
@@ -50,6 +48,7 @@ class Track:
     added_at: Optional[str] = None
     genre: Optional[str] = None
     is_local: bool = False
+    album: str = ""
 
     @classmethod
     def from_spotify_track(
@@ -75,16 +74,18 @@ class Track:
             added_at=added_at,
             genre=genre,
             is_local=is_local,
+            album=album.get("name") or "",
         )
 
 
 @dataclass
 class PlaylistTrackRef:
-    """A playlist entry with enough metadata for local/title-based matching."""
+    """A playlist entry with enough metadata for local duplicate checks."""
 
     key: str  # Spotify URL or local URI
     name: str
     artist: str
+    album: str = ""
     is_local: bool = False
 
 
@@ -134,90 +135,33 @@ class SpotifyAnalyzer:
         self._genre_cache: Dict[str, str] = {}  # Cache spotify_url/local key -> genre
         self._pending_classifications: List[Tuple[Track, str]] = []  # Tracks needing classification
         self._unplayable_tracks: List[Dict[str, str]] = []
-        self._catalog_url_cache: Dict[str, Optional[str]] = {}  # local key -> spotify URL
 
         # Register cleanup function to run on exit
         atexit.register(self._cleanup_oauth_port)
 
     @staticmethod
-    def _slugify(text: str) -> str:
-        """Collapse text to lowercase alphanumeric for fuzzy matching."""
-        normalized = unicodedata.normalize("NFKD", text or "")
-        without_marks = "".join(c for c in normalized if not unicodedata.combining(c))
-        # Drop common noise in parentheses/brackets before slugifying
-        without_marks = re.sub(
-            r"[\(\[\{][^\)\]\}]*[\)\]\}]",
-            " ",
-            without_marks,
-        )
-        without_marks = re.sub(
-            r"\b(remaster(?:ed)?|album version|radio edit|explicit|clean version)\b",
-            " ",
-            without_marks,
-            flags=re.IGNORECASE,
-        )
-        return re.sub(r"[^a-z0-9]+", "", without_marks.lower())
+    def _normalize_field(text: str) -> str:
+        """Case-insensitive trim for exact local-field comparisons."""
+        return (text or "").strip().casefold()
 
-    @staticmethod
-    def _primary_artist(artist: str) -> str:
-        """Strip featuring/collab tails for comparison."""
-        cleaned = (artist or "").strip()
-        cleaned = re.sub(
-            r"\s+(?:feat\.?|ft\.?|featuring)\s+.+$",
-            "",
-            cleaned,
-            flags=re.IGNORECASE,
+    def _local_identity(self, name: str, artist: str, album: str) -> Tuple[str, str, str]:
+        """Identity key for local files: title + artist + album."""
+        return (
+            self._normalize_field(name),
+            self._normalize_field(artist),
+            self._normalize_field(album),
         )
-        # Keep left side of common collab separators
-        cleaned = re.split(r"\s*[,;/&]\s*", cleaned, maxsplit=1)[0].strip()
-        return cleaned
 
-    def _local_genre_key(self, artist: str, name: str) -> str:
+    def _local_genre_key(self, name: str, artist: str, album: str) -> str:
         """Stable genre-cache key for local files (no Spotify URL)."""
-        return f"local:{self._slugify(self._primary_artist(artist))}|{self._slugify(name)}"
+        title_k, artist_k, album_k = self._local_identity(name, artist, album)
+        return f"local:{artist_k}|{title_k}|{album_k}"
 
     def _genre_cache_key(self, track: Track) -> str:
         """Cache key for a track's genre (URL for catalog tracks, local key otherwise)."""
         if track.spotify_url:
             return track.spotify_url
-        return self._local_genre_key(track.artist, track.name)
-
-    def _artists_match(self, artist_a: str, artist_b: str) -> bool:
-        """True when primary artist slugs match."""
-        slug_a = self._slugify(self._primary_artist(artist_a))
-        slug_b = self._slugify(self._primary_artist(artist_b))
-        if not slug_a or not slug_b:
-            return False
-        if slug_a == slug_b:
-            return True
-        # Allow substring match for longer names (e.g. "Nena" vs "Nena Band")
-        shorter, longer = (slug_a, slug_b) if len(slug_a) <= len(slug_b) else (slug_b, slug_a)
-        return len(shorter) >= 4 and shorter in longer
-
-    def _titles_similar(self, title_a: str, title_b: str) -> bool:
-        """True when titles look like the same song (incl. alternate-language variants)."""
-        slug_a = self._slugify(title_a)
-        slug_b = self._slugify(title_b)
-        if not slug_a or not slug_b:
-            return False
-        if slug_a == slug_b:
-            return True
-
-        shorter, longer = (slug_a, slug_b) if len(slug_a) <= len(slug_b) else (slug_b, slug_a)
-        # Substring overlap only when lengths are close (avoids "Like That" in longer titles)
-        if len(shorter) >= 6 and shorter in longer:
-            if len(longer) * 9 <= len(shorter) * 12:
-                return True
-
-        # 0.72 catches close alt-titles like "99 Red Balloons" / "99 Luftballoons"
-        ratio = SequenceMatcher(None, slug_a, slug_b).ratio()
-        return ratio >= 0.72
-
-    def _tracks_are_same_song(
-        self, artist_a: str, title_a: str, artist_b: str, title_b: str
-    ) -> bool:
-        """Match songs across local/catalog IDs and alternate titles."""
-        return self._artists_match(artist_a, artist_b) and self._titles_similar(title_a, title_b)
+        return self._local_genre_key(track.name, track.artist, track.album)
 
     def _setup_logging(self) -> logging.Logger:
         """Configure logging for the application."""
@@ -814,99 +758,97 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         self.cab.log(message, level="warning")
         self._unplayable_tracks.append(record)
 
-    def _check_duplicates(self, tracks: List[str], playlist_name: str, playlist_id: str):
-        """Check for duplicate tracks within a playlist and automatically remove them.
+    def _check_duplicates(
+        self,
+        tracks: List[str],
+        playlist_name: str,
+        playlist_id: str,
+        track_refs: Optional[List[PlaylistTrackRef]] = None,
+    ):
+        """Check for duplicate tracks within a playlist.
 
-        Keeps one occurrence of each duplicate track and removes the rest.
-        Only warns if removal fails. Local URIs cannot be removed by ID via the API,
-        so those duplicates are logged only.
-
-        Args:
-            tracks: List of track URLs / local URIs
-            playlist_name: Name of the playlist for logging
-            playlist_id: Spotify playlist ID for removal operations
+        Catalog tracks are compared by Spotify URL/ID and auto-deduped when possible.
+        Local files are compared by title + artist + album and only flagged (API cannot
+        add/remove local URIs by id).
         """
-        # Extract track IDs from URLs for reliable duplicate detection
-        track_ids = []
-        url_to_id_map = {}  # Map track_id -> first URL seen (for logging)
-        local_keys = []
-        for url in tracks:
-            if url.startswith("spotify:local:") or (
-                url and not self._extract_track_id(url) and "spotify.com/track" not in url
-            ):
-                local_keys.append(url)
-                continue
-            track_id = self._extract_track_id(url)
-            if track_id:
-                track_ids.append(track_id)
-                if track_id not in url_to_id_map:
-                    url_to_id_map[track_id] = url
-            else:
-                # If we can't extract track ID, fall back to URL-based detection
-                track_ids.append(url)
-                if url not in url_to_id_map:
-                    url_to_id_map[url] = url
+        refs = track_refs or []
 
-        local_counts = Counter(local_keys)
-        for local_key, count in local_counts.items():
-            if count > 1:
+        # Local duplicates: exact title + artist + album
+        local_groups: Dict[Tuple[str, str, str], List[PlaylistTrackRef]] = {}
+        for ref in refs:
+            if not ref.is_local:
+                continue
+            identity = self._local_identity(ref.name, ref.artist, ref.album)
+            local_groups.setdefault(identity, []).append(ref)
+        for identity, group in local_groups.items():
+            if len(group) > 1:
+                label = f"'{group[0].name}' by {group[0].artist} [{group[0].album}]"
                 self.cab.log(
-                    f"SPOTIFY - Duplicate local file in {playlist_name}: {local_key} "
-                    f"appears {count} times (API cannot remove local URIs by id)",
+                    f"SPOTIFY - Duplicate local file in {playlist_name}: {label} "
+                    f"appears {len(group)} times (title+artist+album)",
                     level="warning",
                 )
+
+        # Catalog duplicates: URL / track ID
+        track_ids = []
+        url_to_id_map = {}  # Map track_id -> first URL seen (for logging)
+        for url in tracks:
+            track_id = self._extract_track_id(url)
+            if not track_id:
+                continue
+            track_ids.append(track_id)
+            if track_id not in url_to_id_map:
+                url_to_id_map[track_id] = url
 
         track_counts = Counter(track_ids)
         duplicates = {track_id: count for track_id, count in track_counts.items() if count > 1}
 
-        if duplicates:
-            oauth_client = None
-            try:
-                oauth_client = self._initialize_oauth_client()
-            except SpotifyReauthorizationRequired:
-                raise
-            except Exception as e:
-                self.cab.log(
-                    f"SPOTIFY - Failed to initialize OAuth client for duplicate "
-                    f"removal in {playlist_name}: {str(e)}",
-                    level="warning",
-                )
-                # Fall back to just logging duplicates if OAuth fails
-                for track_id, count in duplicates.items():
-                    url = url_to_id_map.get(track_id, track_id)
-                    self.cab.log(
-                        f"SPOTIFY - Duplicate found in {playlist_name}: {url} "
-                        f"appears {count} times (removal failed)",
-                        level="warning",
-                    )
-                return
+        if not duplicates:
+            return
 
+        oauth_client = None
+        try:
+            oauth_client = self._initialize_oauth_client()
+        except SpotifyReauthorizationRequired:
+            raise
+        except Exception as e:
+            self.cab.log(
+                f"SPOTIFY - Failed to initialize OAuth client for duplicate "
+                f"removal in {playlist_name}: {str(e)}",
+                level="warning",
+            )
             for track_id, count in duplicates.items():
                 url = url_to_id_map.get(track_id, track_id)
-                # Remove all occurrences of the duplicate track
-                try:
-                    # Use default argument to capture track_id properly
-                    self._retry_api_call(
-                        lambda tid=track_id: oauth_client.playlist_remove_all_occurrences_of_items(
-                            playlist_id, [tid]
-                        ),
-                        operation_name=f"Remove duplicate track from '{playlist_name}'",
-                    )
-                    # Add back one occurrence
-                    self._retry_api_call(
-                        lambda tid=track_id: oauth_client.playlist_add_items(playlist_id, [tid]),
-                        operation_name=f"Re-add track to '{playlist_name}'",
-                    )
-                    self.cab.log(
-                        f"SPOTIFY - Removed {count - 1} duplicate(s) of {url} from {playlist_name}",
-                        level="info",
-                    )
-                except Exception as e:
-                    self.cab.log(
-                        f"SPOTIFY - Failed to remove duplicate {url} from "
-                        f"{playlist_name}: {str(e)}",
-                        level="warning",
-                    )
+                self.cab.log(
+                    f"SPOTIFY - Duplicate found in {playlist_name}: {url} "
+                    f"appears {count} times (removal failed)",
+                    level="warning",
+                )
+            return
+
+        for track_id, count in duplicates.items():
+            url = url_to_id_map.get(track_id, track_id)
+            try:
+                self._retry_api_call(
+                    lambda tid=track_id: oauth_client.playlist_remove_all_occurrences_of_items(
+                        playlist_id, [tid]
+                    ),
+                    operation_name=f"Remove duplicate track from '{playlist_name}'",
+                )
+                self._retry_api_call(
+                    lambda tid=track_id: oauth_client.playlist_add_items(playlist_id, [tid]),
+                    operation_name=f"Re-add track to '{playlist_name}'",
+                )
+                self.cab.log(
+                    f"SPOTIFY - Removed {count - 1} duplicate(s) of {url} from {playlist_name}",
+                    level="info",
+                )
+            except Exception as e:
+                self.cab.log(
+                    f"SPOTIFY - Failed to remove duplicate {url} from "
+                    f"{playlist_name}: {str(e)}",
+                    level="warning",
+                )
 
     def _process_tracks(
         self, tracks: Dict, playlist_name: str, playlist_index: int, total_tracks: int
@@ -939,9 +881,12 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             artists = track.get("artists") or []
             artist_name = artists[0].get("name", "") if artists else ""
             track_name = track.get("name") or ""
+            album_obj = track.get("album") or {}
+            album_name = album_obj.get("name") or ""
             if is_local:
                 track_key = track.get("uri") or (
-                    f"local:{self._slugify(artist_name)}:{self._slugify(track_name)}"
+                    "local:"
+                    + "|".join(self._local_identity(track_name, artist_name, album_name))
                 )
             else:
                 track_key = (track.get("external_urls") or {}).get("spotify") or ""
@@ -953,6 +898,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                     key=track_key,
                     name=track_name,
                     artist=artist_name,
+                    album=album_name,
                     is_local=is_local,
                 )
             )
@@ -963,7 +909,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 cache_key = (
                     spotify_url
                     if spotify_url
-                    else self._local_genre_key(artist_name, track_name)
+                    else self._local_genre_key(track_name, artist_name, album_name)
                 )
                 genre = self._genre_cache.get(cache_key)
 
@@ -972,12 +918,11 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 )
                 self.main_tracks.append(track_obj)
 
-                # Queue for classification when genre is unknown (includes local files)
+                # Queue for ChatGPT classification when genre is unknown (includes locals)
                 if not genre:
                     self._pending_classifications.append((track_obj, cache_key))
 
-                album = track.get("album") or {}
-                release_date = album.get("release_date")
+                release_date = album_obj.get("release_date")
                 if release_date:
                     try:
                         year = int(str(release_date).split("-")[0])
@@ -1129,7 +1074,9 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             playlist_tracks = [ref.key for ref in playlist_refs]
 
             # Check for duplicates in the playlist and remove them
-            self._check_duplicates(playlist_tracks, playlist_name, playlist_id)
+            self._check_duplicates(
+                playlist_tracks, playlist_name, playlist_id, track_refs=playlist_refs
+            )
 
             self.playlist_data.append(
                 PlaylistData(
@@ -1270,7 +1217,8 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 if is_local is True:
                     artist = track_dict.get("artist", "")
                     name = track_dict.get("name", "")
-                    self._genre_cache[self._local_genre_key(artist, name)] = genre
+                    album = track_dict.get("album", "")
+                    self._genre_cache[self._local_genre_key(name, artist, album)] = genre
 
             self.cab.log(f"SPOTIFY - Loaded {len(self._genre_cache)} genres from cache")
 
@@ -1320,6 +1268,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                     added_at=track_dict.get("added_at"),
                     genre=track_dict.get("genre"),
                     is_local=bool(is_local),
+                    album=track_dict.get("album", "") or "",
                 )
                 self.main_tracks.append(track)
 
@@ -1351,13 +1300,13 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         """Validate playlist contents according to business rules."""
         self._validate_playlist_inclusion()
         self._validate_removed_tracks()
-        self._check_version_duplicates()
+        self._check_local_duplicates_across_playlists()
         self._validate_genre_assignments()
 
     def _validate_playlist_inclusion(self):
         """Verify that tracks from each genre playlist are in the main playlist."""
         main_playlist = self.playlist_data[0]
-        for playlist in self.playlist_data[1:8]:  # Genre playlists
+        for playlist in self.playlist_data[1:8]:  # Last 25 + genre playlists
             self._check_playlist_subset(playlist, main_playlist)
 
     def _validate_removed_tracks(self):
@@ -1365,194 +1314,38 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         if len(self.playlist_data) > 8:
             self._check_playlist_exclusion(self.playlist_data[8], self.playlist_data[0])
 
-    def _resolve_catalog_url(self, track: Track) -> Optional[str]:
-        """Resolve a Spotify catalog URL for a track (search when local).
+    def _local_ref_in_playlist(self, track: Track, playlist: PlaylistData) -> bool:
+        """True if playlist has a local entry matching title+artist+album."""
+        identity = self._local_identity(track.name, track.artist, track.album)
+        for ref in playlist.track_refs:
+            if not ref.is_local:
+                continue
+            if self._local_identity(ref.name, ref.artist, ref.album) == identity:
+                return True
+        return False
 
-        Local files cannot be added via the Web API, so we search for a catalog
-        match by artist + title and use that URL for genre playlist updates.
-        """
-        if track.spotify_url and self._extract_track_id(track.spotify_url):
-            return track.spotify_url
-
-        cache_key = self._local_genre_key(track.artist, track.name)
-        if cache_key in self._catalog_url_cache:
-            return self._catalog_url_cache[cache_key]
-
-        resolved: Optional[str] = None
-        try:
-            # Prefer structured search; fall back to free-text
-            queries = [
-                f'track:"{track.name}" artist:"{self._primary_artist(track.artist)}"',
-                f"{self._primary_artist(track.artist)} {track.name}",
-            ]
-            for query in queries:
-                results = self._retry_api_call(
-                    lambda q=query: self.spotify_client.search(
-                        q=q, type="track", limit=5, market=self.MARKET
-                    ),
-                    operation_name=f"Search catalog for '{track.name}'",
-                )
-                items = ((results or {}).get("tracks") or {}).get("items") or []
-                for item in items:
-                    if not item:
-                        continue
-                    artists = item.get("artists") or []
-                    item_artist = artists[0].get("name", "") if artists else ""
-                    item_name = item.get("name") or ""
-                    if self._tracks_are_same_song(
-                        track.artist, track.name, item_artist, item_name
-                    ):
-                        resolved = (item.get("external_urls") or {}).get("spotify")
-                        if resolved:
-                            break
-                if resolved:
-                    break
-        except SpotifyReauthorizationRequired:
-            raise
-        except Exception as e:
-            self.cab.log(
-                f"SPOTIFY - Catalog search failed for local '{track.name}' "
-                f"by {track.artist}: {e}",
-                level="warning",
-            )
-            resolved = None
-
-        self._catalog_url_cache[cache_key] = resolved
-        if resolved:
-            self.cab.log(
-                f"SPOTIFY - Resolved local '{track.name}' by {track.artist} "
-                f"to catalog track {resolved}",
-                level="info",
-            )
-        else:
-            self.cab.log(
-                f"SPOTIFY - No catalog match for local '{track.name}' by {track.artist}; "
-                "cannot add to genre playlist via API",
-                level="warning",
-            )
-        return resolved
-
-    def _find_matching_refs(
-        self,
-        artist: str,
-        name: str,
-        playlists: List[PlaylistData],
-        artist_index: Optional[Dict[str, List[Tuple[PlaylistData, PlaylistTrackRef]]]] = None,
-    ) -> List[Tuple[PlaylistData, PlaylistTrackRef]]:
-        """Find playlist entries that match artist+title (any ID / local URI)."""
-        matches: List[Tuple[PlaylistData, PlaylistTrackRef]] = []
-        if artist_index is not None:
-            artist_slug = self._slugify(self._primary_artist(artist)) or "_"
-            candidates = artist_index.get(artist_slug, [])
-            # Also check substring artist buckets when slug is short/ambiguous
-            if len(artist_slug) >= 4:
-                for slug, entries in artist_index.items():
-                    if slug == artist_slug:
-                        continue
-                    if artist_slug in slug or slug in artist_slug:
-                        candidates = candidates + entries
-            for playlist, ref in candidates:
-                if self._tracks_are_same_song(artist, name, ref.artist, ref.name):
-                    matches.append((playlist, ref))
-            return matches
-
-        for playlist in playlists:
-            for ref in playlist.track_refs:
-                if artist and not self._artists_match(artist, ref.artist):
-                    continue
-                if self._tracks_are_same_song(artist, name, ref.artist, ref.name):
-                    matches.append((playlist, ref))
-        return matches
-
-    def _index_refs_by_artist(
-        self, playlists: List[PlaylistData]
-    ) -> Dict[str, List[Tuple[PlaylistData, PlaylistTrackRef]]]:
-        """Bucket playlist refs by primary-artist slug for faster duplicate scans."""
-        index: Dict[str, List[Tuple[PlaylistData, PlaylistTrackRef]]] = {}
-        for playlist in playlists:
-            for ref in playlist.track_refs:
-                slug = self._slugify(self._primary_artist(ref.artist)) or "_"
-                index.setdefault(slug, []).append((playlist, ref))
-        return index
-
-    def _check_version_duplicates(self):
-        """Detect same-song variants across playlists (local vs catalog, alt titles).
-
-        Exact Spotify-ID duplicates within a playlist are handled by _check_duplicates.
-        This catches cases like a local "99 Red Balloons" in Tyler Radio and a catalog
-        "99 Luftballoons" already sitting in a genre playlist.
-        """
+    def _check_local_duplicates_across_playlists(self):
+        """Flag local files that share title+artist+album across genre playlists."""
         if len(self.playlist_data) < 8:
             return
 
         genre_playlists = self.playlist_data[2:8]
-        main_playlist = self.playlist_data[0]
-
-        # Within each playlist: warn on title/artist duplicates with different keys
-        for playlist in self.playlist_data[:9]:
-            by_artist: Dict[str, List[PlaylistTrackRef]] = {}
+        by_identity: Dict[Tuple[str, str, str], List[Tuple[str, PlaylistTrackRef]]] = {}
+        for playlist in genre_playlists:
             for ref in playlist.track_refs:
-                slug = self._slugify(self._primary_artist(ref.artist)) or "_"
-                priors = by_artist.setdefault(slug, [])
-                for prior in priors:
-                    if prior.key == ref.key:
-                        continue
-                    if self._titles_similar(prior.name, ref.name):
-                        self.cab.log(
-                            f"SPOTIFY - Version duplicate in {playlist.name}: "
-                            f"'{prior.name}' by {prior.artist} ({prior.key}) ~ "
-                            f"'{ref.name}' by {ref.artist} ({ref.key})",
-                            level="warning",
-                        )
-                        break
-                else:
-                    priors.append(ref)
-
-        # Across genre playlists: same song in multiple genres
-        genre_index = self._index_refs_by_artist(genre_playlists)
-        reported_pairs: set = set()
-        for artist_slug, entries in genre_index.items():
-            for i, (playlist_a, ref_a) in enumerate(entries):
-                for playlist_b, ref_b in entries[i + 1 :]:
-                    if playlist_a.name == playlist_b.name or ref_a.key == ref_b.key:
-                        continue
-                    if not self._titles_similar(ref_a.name, ref_b.name):
-                        continue
-                    pair_key = tuple(
-                        sorted(
-                            [
-                                (playlist_a.name, ref_a.key),
-                                (playlist_b.name, ref_b.key),
-                            ]
-                        )
-                    )
-                    if pair_key in reported_pairs:
-                        continue
-                    reported_pairs.add(pair_key)
-                    self.cab.log(
-                        f"SPOTIFY - Version duplicate across genre playlists: "
-                        f"'{ref_a.name}' by {ref_a.artist} in {playlist_a.name} ~ "
-                        f"'{ref_b.name}' by {ref_b.artist} in {playlist_b.name}",
-                        level="warning",
-                    )
-
-        # Local (or alt-title) in Tyler Radio vs catalog version in a genre playlist
-        for main_ref in main_playlist.track_refs:
-            genre_matches = self._find_matching_refs(
-                main_ref.artist,
-                main_ref.name,
-                genre_playlists,
-                artist_index=genre_index,
-            )
-            for genre_playlist, genre_ref in genre_matches:
-                if genre_ref.key == main_ref.key:
+                if not ref.is_local:
                     continue
+                identity = self._local_identity(ref.name, ref.artist, ref.album)
+                by_identity.setdefault(identity, []).append((playlist.name, ref))
+
+        for identity, entries in by_identity.items():
+            playlists = sorted({name for name, _ in entries})
+            if len(playlists) > 1:
+                ref = entries[0][1]
                 self.cab.log(
-                    f"SPOTIFY - Version pair: '{main_ref.name}' by {main_ref.artist} "
-                    f"in {main_playlist.name} "
-                    f"({'local' if main_ref.is_local else main_ref.key}) "
-                    f"matches '{genre_ref.name}' in {genre_playlist.name} ({genre_ref.key})",
-                    level="info",
+                    f"SPOTIFY - Duplicate local file across genre playlists: "
+                    f"'{ref.name}' by {ref.artist} [{ref.album}] in {playlists}",
+                    level="warning",
                 )
 
     def _add_track_to_playlist(self, playlist_id: str, track_url: str, playlist_name: str) -> bool:
@@ -1632,10 +1425,9 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
     def _validate_genre_assignments(self):
         """Verify that each Tyler Radio track appears in exactly one genre playlist.
 
-        Local files cannot be added via the API; when present, a Spotify catalog
-        match is searched and that catalog track is added to the genre playlist.
-        Title/artist matching also treats alternate versions (e.g. 99 Red Balloons /
-        99 Luftballoons) as the same song when deciding add/remove.
+        Catalog tracks are added/removed via the API by URL.
+        Local files cannot be moved via the API — rule breaks are flagged only.
+        Genres themselves come from ChatGPT (OpenAI), not Spotify.
         """
         if len(self.playlist_data) < 8:
             self.cab.log(
@@ -1650,7 +1442,12 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         for playlist in genre_playlists:
             genre_to_playlist[playlist.name] = playlist
 
-        genre_index = self._index_refs_by_artist(genre_playlists)
+        # Catalog: URL -> list of genre playlist names
+        track_playlist_map: Dict[str, List[str]] = {}
+        for playlist in genre_playlists:
+            for track_url in playlist.tracks:
+                if self._extract_track_id(track_url):
+                    track_playlist_map.setdefault(track_url, []).append(playlist.name)
 
         for track in self.main_tracks:
             if not track.genre or track.genre not in self.VALID_GENRES:
@@ -1664,127 +1461,124 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 )
                 continue
 
-            catalog_url = self._resolve_catalog_url(track)
-            matching = self._find_matching_refs(
-                track.artist, track.name, genre_playlists, artist_index=genre_index
-            )
+            # Local files: flag rule breaks; do not search/add catalog substitutes
+            if track.is_local or not track.spotify_url:
+                in_correct = self._local_ref_in_playlist(track, expected_playlist)
+                wrong = [
+                    playlist.name
+                    for playlist in genre_playlists
+                    if playlist.name != track.genre
+                    and self._local_ref_in_playlist(track, playlist)
+                ]
+                label = f"'{track.name}' by {track.artist} [{track.album}]"
+                if not in_correct:
+                    self.cab.log(
+                        f"SPOTIFY - Local file {label} is in Tyler Radio but missing "
+                        f"from '{track.genre}' playlist (cannot add local via API)",
+                        level="warning",
+                    )
+                for wrong_name in wrong:
+                    self.cab.log(
+                        f"SPOTIFY - Local file {label} is in '{wrong_name}' playlist "
+                        f"(should be in '{track.genre}') (cannot move local via API)",
+                        level="warning",
+                    )
+                continue
 
-            in_correct = any(
-                playlist.name == track.genre for playlist, _ in matching
-            )
-            # Also treat exact catalog URL presence as correct
-            if catalog_url and catalog_url in expected_playlist.tracks:
-                in_correct = True
-
-            wrong_matches = [
-                (playlist, ref)
-                for playlist, ref in matching
-                if playlist.name != track.genre
+            track_url = track.spotify_url
+            is_in_correct_playlist = track_url in expected_playlist.tracks
+            wrong_playlists = [
+                name
+                for name in track_playlist_map.get(track_url, [])
+                if name != track.genre
             ]
 
-            if not in_correct:
-                if not catalog_url:
-                    self.cab.log(
-                        f"SPOTIFY - Skipping genre add for '{track.name}' by "
-                        f"{track.artist}: no catalog URL "
-                        f"({'local file' if track.is_local else 'invalid URL'})",
-                        level="warning",
-                    )
-                else:
-                    self.cab.log(
-                        f"SPOTIFY - Adding track {catalog_url} "
-                        f"('{track.name}' by {track.artist}) to '{track.genre}' playlist",
-                        level="info",
-                    )
-                    success = self._add_track_to_playlist(
-                        expected_playlist.playlist_id, catalog_url, track.genre
-                    )
-                    if success:
-                        expected_playlist.tracks.append(catalog_url)
-                        expected_playlist.track_refs.append(
-                            PlaylistTrackRef(
-                                key=catalog_url,
-                                name=track.name,
-                                artist=track.artist,
-                                is_local=False,
-                            )
-                        )
-                        # Keep artist index fresh for subsequent matches
-                        slug = self._slugify(self._primary_artist(track.artist)) or "_"
-                        genre_index.setdefault(slug, []).append(
-                            (expected_playlist, expected_playlist.track_refs[-1])
-                        )
-                    else:
-                        self.cab.log(
-                            f"SPOTIFY - Warning: Could not add track {catalog_url} "
-                            f"to '{track.genre}' playlist",
-                            level="warning",
-                        )
-
-            for wrong_playlist, wrong_ref in wrong_matches:
-                if not wrong_playlist.playlist_id:
-                    continue
-                if wrong_ref.is_local or not self._extract_track_id(wrong_ref.key):
-                    self.cab.log(
-                        f"SPOTIFY - Version of '{track.name}' is in "
-                        f"'{wrong_playlist.name}' as local/unremovable {wrong_ref.key} "
-                        f"(should be in '{track.genre}')",
-                        level="warning",
-                    )
-                    continue
+            if not is_in_correct_playlist:
                 self.cab.log(
-                    f"SPOTIFY - Removing track {wrong_ref.key} "
-                    f"('{wrong_ref.name}' by {wrong_ref.artist}) from "
-                    f"'{wrong_playlist.name}' playlist (should be in '{track.genre}')",
+                    f"SPOTIFY - Adding track {track_url} to '{track.genre}' playlist",
                     level="info",
                 )
-                success = self._remove_track_from_playlist(
-                    wrong_playlist.playlist_id, wrong_ref.key, wrong_playlist.name
+                success = self._add_track_to_playlist(
+                    expected_playlist.playlist_id, track_url, track.genre
                 )
                 if success:
-                    if wrong_ref.key in wrong_playlist.tracks:
-                        wrong_playlist.tracks.remove(wrong_ref.key)
-                    wrong_playlist.track_refs = [
-                        ref for ref in wrong_playlist.track_refs if ref.key != wrong_ref.key
-                    ]
+                    expected_playlist.tracks.append(track_url)
+                    expected_playlist.track_refs.append(
+                        PlaylistTrackRef(
+                            key=track_url,
+                            name=track.name,
+                            artist=track.artist,
+                            album=track.album,
+                            is_local=False,
+                        )
+                    )
                 else:
                     self.cab.log(
-                        f"SPOTIFY - Warning: Could not remove track "
-                        f"{wrong_ref.key} from '{wrong_playlist.name}' playlist",
+                        f"SPOTIFY - Warning: Could not add track {track_url} "
+                        f"to '{track.genre}' playlist",
                         level="warning",
                     )
+
+            for wrong_playlist_name in wrong_playlists:
+                wrong_playlist = genre_to_playlist.get(wrong_playlist_name)
+                if wrong_playlist and wrong_playlist.playlist_id:
+                    self.cab.log(
+                        f"SPOTIFY - Removing track {track_url} from "
+                        f"'{wrong_playlist_name}' playlist (should be in "
+                        f"'{track.genre}')",
+                        level="info",
+                    )
+                    success = self._remove_track_from_playlist(
+                        wrong_playlist.playlist_id, track_url, wrong_playlist_name
+                    )
+                    if success:
+                        if track_url in wrong_playlist.tracks:
+                            wrong_playlist.tracks.remove(track_url)
+                        wrong_playlist.track_refs = [
+                            ref
+                            for ref in wrong_playlist.track_refs
+                            if ref.key != track_url
+                        ]
+                    else:
+                        self.cab.log(
+                            f"SPOTIFY - Warning: Could not remove track "
+                            f"{track_url} from '{wrong_playlist_name}' playlist",
+                            level="warning",
+                        )
 
     def _check_playlist_subset(self, subset: PlaylistData, superset: PlaylistData):
         """Verify that all tracks in subset appear in superset.
 
-        Catalog tracks in a genre playlist that match a local (or alt-title) entry
-        in Tyler Radio are treated as present.
+        Catalog tracks are compared by URL. Local files are compared by
+        title + artist + album.
         """
-        if not subset.track_refs:
-            missing = set(subset.tracks) - set(superset.tracks)
-            if missing:
-                self.cab.log(
-                    f"SPOTIFY - Tracks from {subset.name} missing from {superset.name}: {missing}",
-                    level="warning",
-                )
-            return
+        superset_urls = set(
+            url for url in superset.tracks if self._extract_track_id(url)
+        )
+        superset_local = {
+            self._local_identity(ref.name, ref.artist, ref.album)
+            for ref in superset.track_refs
+            if ref.is_local
+        }
 
-        superset_keys = set(superset.tracks)
-        missing_keys = []
-        for ref in subset.track_refs:
-            if ref.key in superset_keys:
-                continue
-            if any(
-                self._tracks_are_same_song(ref.artist, ref.name, main_ref.artist, main_ref.name)
-                for main_ref in superset.track_refs
-            ):
-                continue
-            missing_keys.append(ref.key)
+        missing = []
+        if subset.track_refs:
+            for ref in subset.track_refs:
+                if ref.is_local:
+                    identity = self._local_identity(ref.name, ref.artist, ref.album)
+                    if identity not in superset_local:
+                        missing.append(
+                            f"local:'{ref.name}' by {ref.artist} [{ref.album}]"
+                        )
+                elif ref.key not in superset_urls:
+                    missing.append(ref.key)
+        else:
+            missing = list(set(subset.tracks) - set(superset.tracks))
 
-        if missing_keys:
+        if missing:
             self.cab.log(
                 f"SPOTIFY - Tracks from {subset.name} missing from {superset.name}: "
-                f"{set(missing_keys)}",
+                f"{set(missing)}",
                 level="warning",
             )
 

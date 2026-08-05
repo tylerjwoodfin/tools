@@ -1,14 +1,12 @@
 # spotify-analytics
-Checks for duplicate songs (including local vs catalog / alternate-title versions),
-unplayable songs (US market via Spotify `is_playable` / track relinking), and songs
-missing from playlists.
+Checks for duplicate songs, unplayable songs (US market via Spotify `is_playable` /
+track relinking), and songs missing from playlists.
 
 Local files:
-- Classified with ChatGPT like catalog tracks (no longer hard-defaulted to Pop).
-- Spotify Web API cannot add `spotify:local:` URIs; the tool searches the catalog for
-  a matching track and adds that URL to the genre playlist instead.
-- Duplicate detection matches by artist + fuzzy title so a local "99 Red Balloons"
-  and a catalog "99 Luftballoons" are treated as the same song.
+- Genres are classified with ChatGPT (OpenAI), same as catalog tracks — not hard-defaulted to Pop.
+- Spotify Web API cannot add/move `spotify:local:` URIs; rule breaks (e.g. in Tyler Radio
+  but missing from the genre playlist) are **flagged only**, not auto-fixed via catalog search.
+- Duplicate detection: catalog tracks by Spotify URL/ID; local files by title + artist + album.
 
 Unplayable detection:
 - Playlist fetches use `market=US`.
