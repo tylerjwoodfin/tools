@@ -6,6 +6,43 @@ Unplayable detection:
 - A track is reported when the playlist item's `track` is `null`, or when `is_playable` is explicitly `false`.
 - Empty `available_markets` alone is **not** treated as unplayable (that field is unreliable without a market).
 - Unplayable tracks are logged as warnings; they are not removed automatically.
+- `spotify unplayable.json` (next to `spotify songs.json`) lists **Tyler Radio only** (first Cabinet `spotipy.playlists` entry). Other playlists are still warned about in logs.
+
+List / refresh unplayable tracks (Phase 1):
+
+```bash
+python3 identify_unplayable.py              # read daily spotify unplayable.json
+python3 identify_unplayable.py --live       # scan Tyler Radio via Spotipy
+python3 identify_unplayable.py --live --json
+python3 identify_unplayable.py --live --write ~/syncthing/log/spotify\ unplayable.json
+python3 identify_unplayable.py --live --all-playlists   # include Removed / genres
+```
+
+Replace with local YouTube audio (Phase 2 — prefers duration-matched uploads, not long music videos):
+
+```bash
+# Preview selection only (no download) — Tyler Radio only by default
+python3 replace_unplayable.py --dry-run --limit 5
+
+# Download into ~/syncthing/music via music-stack `mp3` (beets/Navidrome path)
+python3 replace_unplayable.py --limit 3 --yes
+
+# After download, also remove greyed-out Spotify URIs from playlists
+python3 replace_unplayable.py --limit 3 --yes --update-spotify
+
+# Include Removed / other playlists (not just Tyler Radio)
+python3 replace_unplayable.py --all-playlists --dry-run --limit 5
+```
+
+Matching rules:
+- **Default scope: Tyler Radio only** (first Cabinet `spotipy.playlists` entry). Use `--all-playlists` or `--playlist NAME` to change.
+- Skip placeholder titles/artists (`(unknown)`, `N/A`, empty, etc.)
+- YouTube hit must include the Spotify artist in the video title or channel
+- Prefer closest duration within ±15s (`--tolerance`), penalize clean/censored/live/cover/karaoke
+- If Spotify marks the track explicit, further penalize clean/censored uploads
+- Search tries `"Artist" Title` before looser queries (avoids same-title wrong-artist hits)
+
+Spotify cannot add local files via API — `--update-spotify` only removes the unplayable URI once a local copy exists.
 
 ## dependencies
 - [Spotify API access](https://stevesie.com/docs/pages/spotify-client-id-secret-developer-api)
