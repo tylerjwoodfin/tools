@@ -13,7 +13,7 @@ Unplayable detection:
 - A track is reported when the playlist item's `track` is `null`, or when `is_playable` is explicitly `false`.
 - Empty `available_markets` alone is **not** treated as unplayable (that field is unreliable without a market).
 - Unplayable tracks are logged as warnings; they are not removed automatically.
-- `spotify unplayable.json` (next to `spotify songs.json`) lists **Tyler Radio only** (first Cabinet `spotipy.playlists` entry). Other playlists are still warned about in logs.
+- `spotify unplayable.json` (next to `spotify songs.json`) lists **Tyler Radio only** (first Cabinet `spotipy.playlists` entry). Other playlists are still warned about in logs, except **Removed** (never flagged).
 
 List / refresh unplayable tracks (Phase 1):
 
@@ -22,7 +22,7 @@ python3 identify_unplayable.py              # read daily spotify unplayable.json
 python3 identify_unplayable.py --live       # scan Tyler Radio via Spotipy
 python3 identify_unplayable.py --live --json
 python3 identify_unplayable.py --live --write ~/syncthing/log/spotify\ unplayable.json
-python3 identify_unplayable.py --live --all-playlists   # include Removed / genres
+python3 identify_unplayable.py --live --all-playlists   # include genres (not Removed)
 ```
 
 Replace with local YouTube audio (Phase 2 — prefers duration-matched uploads, not long music videos):
@@ -37,7 +37,7 @@ python3 replace_unplayable.py --limit 3 --yes
 # After download, also remove greyed-out Spotify URIs from playlists
 python3 replace_unplayable.py --limit 3 --yes --update-spotify
 
-# Include Removed / other playlists (not just Tyler Radio)
+# Include genre / other playlists (Removed is never scanned for unplayables)
 python3 replace_unplayable.py --all-playlists --dry-run --limit 5
 ```
 

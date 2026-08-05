@@ -150,6 +150,9 @@ def scan_live(
         playlist_id, playlist_name = entry.split(",", 1)
         playlist_id = playlist_id.strip()
         playlist_name = playlist_name.strip()
+        # Removed is intentional storage for unplayable tracks — never flag it.
+        if playlist_name.casefold() == "removed":
+            continue
         if wanted and playlist_name.lower() != wanted.lower():
             continue
         scanned += 1
@@ -220,7 +223,7 @@ def main() -> int:
     parser.add_argument(
         "--all-playlists",
         action="store_true",
-        help="With --live: scan every configured playlist (including Removed)",
+        help="With --live: scan every configured playlist (except Removed)",
     )
     parser.add_argument(
         "--json-file",

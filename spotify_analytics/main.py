@@ -865,15 +865,21 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             track = item["track"]
             if not track:
                 # Spotify returns null track when the item is fully unavailable
-                self._report_unplayable_track(
-                    playlist_name, track=None, reason="null track entry"
-                )
+                if not self._is_removed_playlist(playlist_name):
+                    self._report_unplayable_track(
+                        playlist_name, track=None, reason="null track entry"
+                    )
                 continue
 
             # market=US replaces available_markets with is_playable (track relinking).
             # Only treat explicit False as unplayable to avoid false positives.
+            # Removed playlist is intentional greyed-out storage — do not flag.
             is_local = bool(track.get("is_local"))
-            if not is_local and track.get("is_playable") is False:
+            if (
+                not is_local
+                and track.get("is_playable") is False
+                and not self._is_removed_playlist(playlist_name)
+            ):
                 self._report_unplayable_track(
                     playlist_name, track=track, reason="is_playable=false"
                 )
@@ -1116,11 +1122,16 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             return playlists[0].split(",", 1)[1].strip() or "Tyler Radio"
         return "Tyler Radio"
 
+    @staticmethod
+    def _is_removed_playlist(playlist_name: str) -> bool:
+        """True for the Removed playlist (intentional unplayable storage)."""
+        return (playlist_name or "").strip().casefold() == "removed"
+
     def _dedupe_unplayable_tracks(self) -> List[Dict[str, Any]]:
         """Collapse unplayable records for the primary playlist only (Tyler Radio).
 
-        Other playlists are still logged as warnings during analysis, but
-        ``spotify unplayable.json`` is scoped to the main library playlist.
+        Other playlists are still logged as warnings during analysis (except Removed),
+        but ``spotify unplayable.json`` is scoped to the main library playlist.
         """
         primary = self._primary_playlist_name()
         by_key: Dict[str, Dict[str, Any]] = {}
