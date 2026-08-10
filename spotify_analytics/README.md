@@ -5,9 +5,9 @@ track relinking), and songs missing from playlists.
 Local files:
 - ChatGPT (OpenAI) is used for genre **only when a track is not already in a genre
   playlist**. Existing playlist membership is the source of truth (AI never
-  "corrects" a track that is already categorized).
-- Spotify Web API cannot add/move `spotify:local:` URIs; rule breaks (e.g. in Tyler Radio
-  but missing from the genre playlist) are **flagged only**, not auto-fixed via catalog search.
+  "corrects" or reassigns a track that is already categorized).
+- Spotify Web API cannot add/move `spotify:local:` URIs; if a local track is in Tyler
+  Radio but **no** genre playlist, that gap is flagged only (no catalog substitute).
 - Duplicate detection: catalog tracks by Spotify URL/ID; local files by title + artist + album.
 
 Unplayable detection:

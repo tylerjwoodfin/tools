@@ -1501,12 +1501,12 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             return False
 
     def _validate_genre_assignments(self):
-        """Verify that each Tyler Radio track appears in exactly one genre playlist.
+        """Ensure Tyler Radio tracks that lack a genre playlist get one.
 
-        Catalog tracks are added/removed via the API by URL.
-        Local files cannot be moved via the API — rule breaks are flagged only.
-        Genre labels come from playlist membership when present; ChatGPT is only
-        used earlier for tracks that were not in any genre playlist.
+        If a track is already in any genre playlist, that membership is final —
+        never compare against an AI genre or warn/move it to a different one.
+        ChatGPT genres are only used when the track is in no genre playlist yet
+        (catalog: add via API; local: flag only).
         """
         if len(self.playlist_data) < 8:
             self.cab.log(
@@ -1521,14 +1521,16 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         for playlist in genre_playlists:
             genre_to_playlist[playlist.name] = playlist
 
-        # Catalog: URL -> list of genre playlist names
-        track_playlist_map: Dict[str, List[str]] = {}
-        for playlist in genre_playlists:
-            for track_url in playlist.tracks:
-                if self._extract_track_id(track_url):
-                    track_playlist_map.setdefault(track_url, []).append(playlist.name)
-
         for track in self.main_tracks:
+            membership = self._find_genre_playlists_for_track(track)
+            if membership:
+                # Already categorized — trust Spotify playlists, never AI-correct
+                if len(membership) == 1 and membership[0] in self.VALID_GENRES:
+                    track.genre = membership[0]
+                    self._genre_cache[self._genre_cache_key(track)] = membership[0]
+                continue
+
+            # Not in any genre playlist — need an AI/cache genre to place or flag
             if not track.genre or track.genre not in self.VALID_GENRES:
                 continue
 
@@ -1540,90 +1542,44 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                 )
                 continue
 
-            # Local files: flag rule breaks; do not search/add catalog substitutes
+            # Local files: flag only (API cannot add local URIs)
             if track.is_local or not track.spotify_url:
-                in_correct = self._local_ref_in_playlist(track, expected_playlist)
-                wrong = [
-                    playlist.name
-                    for playlist in genre_playlists
-                    if playlist.name != track.genre
-                    and self._local_ref_in_playlist(track, playlist)
-                ]
                 label = f"'{track.name}' by {track.artist} [{track.album}]"
-                if not in_correct:
-                    self.cab.log(
-                        f"SPOTIFY - Local file {label} is in Tyler Radio but missing "
-                        f"from '{track.genre}' playlist (cannot add local via API)",
-                        level="warning",
-                    )
-                for wrong_name in wrong:
-                    self.cab.log(
-                        f"SPOTIFY - Local file {label} is in '{wrong_name}' playlist "
-                        f"(should be in '{track.genre}') (cannot move local via API)",
-                        level="warning",
-                    )
+                self.cab.log(
+                    f"SPOTIFY - Local file {label} is in Tyler Radio but missing "
+                    f"from '{track.genre}' playlist (cannot add local via API)",
+                    level="warning",
+                )
                 continue
 
             track_url = track.spotify_url
-            is_in_correct_playlist = track_url in expected_playlist.tracks
-            wrong_playlists = [
-                name
-                for name in track_playlist_map.get(track_url, [])
-                if name != track.genre
-            ]
+            if track_url in expected_playlist.tracks:
+                continue
 
-            if not is_in_correct_playlist:
+            self.cab.log(
+                f"SPOTIFY - Adding track {track_url} to '{track.genre}' playlist",
+                level="info",
+            )
+            success = self._add_track_to_playlist(
+                expected_playlist.playlist_id, track_url, track.genre
+            )
+            if success:
+                expected_playlist.tracks.append(track_url)
+                expected_playlist.track_refs.append(
+                    PlaylistTrackRef(
+                        key=track_url,
+                        name=track.name,
+                        artist=track.artist,
+                        album=track.album,
+                        is_local=False,
+                    )
+                )
+            else:
                 self.cab.log(
-                    f"SPOTIFY - Adding track {track_url} to '{track.genre}' playlist",
-                    level="info",
+                    f"SPOTIFY - Warning: Could not add track {track_url} "
+                    f"to '{track.genre}' playlist",
+                    level="warning",
                 )
-                success = self._add_track_to_playlist(
-                    expected_playlist.playlist_id, track_url, track.genre
-                )
-                if success:
-                    expected_playlist.tracks.append(track_url)
-                    expected_playlist.track_refs.append(
-                        PlaylistTrackRef(
-                            key=track_url,
-                            name=track.name,
-                            artist=track.artist,
-                            album=track.album,
-                            is_local=False,
-                        )
-                    )
-                else:
-                    self.cab.log(
-                        f"SPOTIFY - Warning: Could not add track {track_url} "
-                        f"to '{track.genre}' playlist",
-                        level="warning",
-                    )
-
-            for wrong_playlist_name in wrong_playlists:
-                wrong_playlist = genre_to_playlist.get(wrong_playlist_name)
-                if wrong_playlist and wrong_playlist.playlist_id:
-                    self.cab.log(
-                        f"SPOTIFY - Removing track {track_url} from "
-                        f"'{wrong_playlist_name}' playlist (should be in "
-                        f"'{track.genre}')",
-                        level="info",
-                    )
-                    success = self._remove_track_from_playlist(
-                        wrong_playlist.playlist_id, track_url, wrong_playlist_name
-                    )
-                    if success:
-                        if track_url in wrong_playlist.tracks:
-                            wrong_playlist.tracks.remove(track_url)
-                        wrong_playlist.track_refs = [
-                            ref
-                            for ref in wrong_playlist.track_refs
-                            if ref.key != track_url
-                        ]
-                    else:
-                        self.cab.log(
-                            f"SPOTIFY - Warning: Could not remove track "
-                            f"{track_url} from '{wrong_playlist_name}' playlist",
-                            level="warning",
-                        )
 
     def _check_playlist_subset(self, subset: PlaylistData, superset: PlaylistData):
         """Verify that all tracks in subset appear in superset.
