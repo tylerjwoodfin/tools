@@ -49,6 +49,7 @@ class Track:
     genre: Optional[str] = None
     is_local: bool = False
     album: str = ""
+    local_uri: str = ""  # spotify:local:... when is_local
 
     @classmethod
     def from_spotify_track(
@@ -75,6 +76,7 @@ class Track:
             genre=genre,
             is_local=is_local,
             album=album.get("name") or "",
+            local_uri=(track.get("uri") or "") if is_local else "",
         )
 
 
@@ -1299,6 +1301,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
                     genre=track_dict.get("genre"),
                     is_local=bool(is_local),
                     album=track_dict.get("album", "") or "",
+                    local_uri=track_dict.get("local_uri", "") or "",
                 )
                 self.main_tracks.append(track)
 
@@ -1344,13 +1347,43 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         if len(self.playlist_data) > 8:
             self._check_playlist_exclusion(self.playlist_data[8], self.playlist_data[0])
 
+    def _local_ref_matches_track(self, track: Track, ref: PlaylistTrackRef) -> bool:
+        """True if a local playlist ref is the same song as track.
+
+        Prefer URI, then title+artist+album. If artist/album is missing on either
+        side (common for locals), fall back to title match with compatible artist.
+        """
+        if not ref.is_local:
+            return False
+        if track.local_uri and ref.key and track.local_uri == ref.key:
+            return True
+        if self._local_identity(track.name, track.artist, track.album) == self._local_identity(
+            ref.name, ref.artist, ref.album
+        ):
+            return True
+
+        title = self._normalize_field(track.name)
+        if not title or title != self._normalize_field(ref.name):
+            return False
+
+        track_artist = self._normalize_field(track.artist)
+        ref_artist = self._normalize_field(ref.artist)
+        if track_artist and ref_artist and track_artist != ref_artist:
+            return False
+
+        track_album = self._normalize_field(track.album)
+        ref_album = self._normalize_field(ref.album)
+        if track_album and ref_album and track_album != ref_album:
+            return False
+
+        return True
+
     def _local_ref_in_playlist(self, track: Track, playlist: PlaylistData) -> bool:
-        """True if playlist has a local entry matching title+artist+album."""
-        identity = self._local_identity(track.name, track.artist, track.album)
+        """True if playlist has a local entry matching this track."""
+        if track.local_uri and track.local_uri in playlist.tracks:
+            return True
         for ref in playlist.track_refs:
-            if not ref.is_local:
-                continue
-            if self._local_identity(ref.name, ref.artist, ref.album) == identity:
+            if self._local_ref_matches_track(track, ref):
                 return True
         return False
 
@@ -1361,7 +1394,10 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
         return self.playlist_data[2:8]
 
     def _find_genre_playlists_for_track(self, track: Track) -> List[str]:
-        """Genre playlist names that already contain this track."""
+        """Genre playlist names that already contain this track.
+
+        Exactly one membership means the track is categorized (any genre is fine).
+        """
         names: List[str] = []
         for playlist in self._genre_playlists():
             if track.is_local or not track.spotify_url:
