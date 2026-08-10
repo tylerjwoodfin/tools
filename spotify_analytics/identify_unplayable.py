@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -39,10 +40,23 @@ def load_from_file(path: Path) -> List[Dict[str, Any]]:
     return [row for row in data if isinstance(row, dict)]
 
 
+def _extract_track_id(url_or_id: str) -> Optional[str]:
+    if not url_or_id:
+        return None
+    match = re.search(r"(?:track/|spotify:track:)([a-zA-Z0-9]+)", url_or_id)
+    if match:
+        return match.group(1)
+    if len(url_or_id) == 22 and url_or_id.isalnum():
+        return url_or_id
+    return None
+
+
 def _track_record(
     playlist_name: str,
     track: Optional[Dict[str, Any]],
     reason: str,
+    sp: Optional[Any] = None,
+    meta_cache: Optional[Dict[str, tuple]] = None,
 ) -> Dict[str, Any]:
     if not track:
         return {
@@ -55,16 +69,44 @@ def _track_record(
 
     artists = track.get("artists") or []
     artist = (artists[0].get("name") or "") if artists else ""
-    name = track.get("name") or "(unknown)"
+    name = track.get("name") or ""
     external_urls = track.get("external_urls") or {}
     url = external_urls.get("spotify") or track.get("uri") or track.get("id") or ""
+    track_id = track.get("id") or _extract_track_id(str(url))
+
+    # Market-restricted playlist items often omit name/artist; look up without market.
+    if sp is not None and track_id and (not name or not artist):
+        cache = meta_cache if meta_cache is not None else {}
+        if track_id in cache:
+            looked_name, looked_artist, looked_url = cache[track_id]
+        else:
+            looked_name, looked_artist, looked_url = "", "", ""
+            try:
+                full = sp.track(track_id)
+                if full:
+                    looked_name = full.get("name") or ""
+                    full_artists = full.get("artists") or []
+                    if full_artists:
+                        looked_artist = full_artists[0].get("name") or ""
+                    looked_url = (full.get("external_urls") or {}).get("spotify") or ""
+            except Exception:  # pylint: disable=broad-except
+                pass
+            cache[track_id] = (looked_name, looked_artist, looked_url)
+        name = name or looked_name
+        artist = artist or looked_artist
+        if looked_url and (not url or not str(url).startswith("http")):
+            url = looked_url
+
+    if track_id and (not url or not str(url).startswith("http")):
+        url = f"https://open.spotify.com/track/{track_id}"
+
     restrictions = track.get("restrictions") or {}
     restriction_reason = restrictions.get("reason")
     detail = reason
     if restriction_reason:
         detail = f"{reason}; restrictions.reason={restriction_reason}"
     return {
-        "name": name,
+        "name": name or "(unknown)",
         "artist": artist,
         "url": url,
         "reason": detail,
@@ -144,6 +186,7 @@ def scan_live(
 
     found: List[Dict[str, Any]] = []
     scanned = 0
+    meta_cache: Dict[str, tuple] = {}
     for entry in playlists:
         if not isinstance(entry, str) or "," not in entry:
             continue
@@ -169,7 +212,13 @@ def scan_live(
                     continue
                 if track.get("is_playable") is False:
                     found.append(
-                        _track_record(playlist_name, track, reason="is_playable=false")
+                        _track_record(
+                            playlist_name,
+                            track,
+                            reason="is_playable=false",
+                            sp=sp,
+                            meta_cache=meta_cache,
+                        )
                     )
             if not results.get("next"):
                 break

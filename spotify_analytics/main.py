@@ -137,6 +137,8 @@ class SpotifyAnalyzer:
         self._genre_cache: Dict[str, str] = {}  # Cache spotify_url/local key -> genre
         self._pending_classifications: List[Tuple[Track, str]] = []  # Tracks needing classification
         self._unplayable_tracks: List[Dict[str, str]] = []
+        # track_id -> (name, artist, url) for bare unplayable playlist payloads
+        self._track_meta_cache: Dict[str, Tuple[str, str, str]] = {}
 
         # Register cleanup function to run on exit
         atexit.register(self._cleanup_oauth_port)
@@ -710,6 +712,63 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             operation_name=f"Fetch playlist {playlist_id}",
         )
 
+    def _lookup_track_metadata(self, track_id: str) -> Tuple[str, str, str]:
+        """Fetch name/artist/url for a track ID (no market filter).
+
+        Playlist items for market-restricted tracks often omit name/artist while
+        still including the URL/id. Looking up without a market returns metadata.
+        """
+        if track_id in self._track_meta_cache:
+            return self._track_meta_cache[track_id]
+
+        name, artist, url = "", "", f"https://open.spotify.com/track/{track_id}"
+        try:
+            full = self._retry_api_call(
+                lambda tid=track_id: self.spotify_client.track(tid),
+                operation_name=f"Fetch metadata for track {track_id}",
+            )
+            if full:
+                name = full.get("name") or ""
+                artists = full.get("artists") or []
+                if artists:
+                    artist = artists[0].get("name") or ""
+                url = (full.get("external_urls") or {}).get("spotify") or url
+        except Exception as e:  # pylint: disable=broad-except
+            self.cab.log(
+                f"SPOTIFY - Could not fetch metadata for track {track_id}: {e}",
+                level="debug",
+            )
+
+        self._track_meta_cache[track_id] = (name, artist, url)
+        return name, artist, url
+
+    def _track_display_fields(self, track: Dict) -> Tuple[str, str, str]:
+        """Return (name, artist, url) for logging, enriching when the payload is bare."""
+        artists = track.get("artists") or []
+        artist = (artists[0].get("name") or "") if artists else ""
+        name = track.get("name") or ""
+        external_urls = track.get("external_urls") or {}
+        url = external_urls.get("spotify") or track.get("uri") or track.get("id") or ""
+        track_id = track.get("id") or self._extract_track_id(str(url))
+
+        if (not name or not artist) and track_id:
+            looked_up_name, looked_up_artist, looked_up_url = self._lookup_track_metadata(
+                track_id
+            )
+            name = name or looked_up_name
+            artist = artist or looked_up_artist
+            if looked_up_url and (
+                not url or not str(url).startswith("http")
+            ):
+                url = looked_up_url
+            elif not url:
+                url = looked_up_url
+
+        if track_id and (not url or not str(url).startswith("http")):
+            url = f"https://open.spotify.com/track/{track_id}"
+
+        return name or "(unknown)", artist, url
+
     def _report_unplayable_track(
         self,
         playlist_name: str,
@@ -718,13 +777,7 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
     ) -> None:
         """Log and record a track that is unplayable in the configured market."""
         if track:
-            artist = ""
-            artists = track.get("artists") or []
-            if artists:
-                artist = artists[0].get("name") or ""
-            name = track.get("name") or "(unknown)"
-            external_urls = track.get("external_urls") or {}
-            url = external_urls.get("spotify") or track.get("uri") or track.get("id") or ""
+            name, artist, url = self._track_display_fields(track)
             restrictions = track.get("restrictions") or {}
             restriction_reason = restrictions.get("reason")
             detail = reason
