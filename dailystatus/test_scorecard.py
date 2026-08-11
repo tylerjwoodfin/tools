@@ -9,7 +9,6 @@ from scorecard import (
     build_scorecard_rows,
     check_pihole,
     check_spotify,
-    check_ssl_expiry,
     check_warnings_summary,
     collect_log_issues,
     parse_borg_archive_name,
@@ -82,23 +81,32 @@ class CheckHelpersTests(unittest.TestCase):
     def test_check_spotify_fresh(self):
         now = datetime.datetime(2026, 8, 10, 20, 0)
         cab = mock.Mock()
-        cab.get.return_value = {"last_success": "2026-08-10 19:20"}
+        cab.get.return_value = {
+            "last_success": "2026-08-10 19:20",
+            "total_tracks": 6709,
+        }
         row = check_spotify(cab, now)
         self.assertEqual(row.status, "ok")
+        self.assertEqual(row.detail, "Checked 40m ago; 6709 songs.")
 
     def test_check_spotify_stale(self):
         now = datetime.datetime(2026, 8, 12, 20, 0)
         cab = mock.Mock()
-        cab.get.return_value = {"last_success": "2026-08-10 19:20"}
+        cab.get.return_value = {
+            "last_success": "2026-08-10 19:20",
+            "total_tracks": 6709,
+        }
         row = check_spotify(cab, now)
         self.assertEqual(row.status, "error")
+        self.assertIn("Checked", row.detail)
+        self.assertIn("6709 songs", row.detail)
 
     def test_check_spotify_missing(self):
         cab = mock.Mock()
         cab.get.return_value = {}
         row = check_spotify(cab, datetime.datetime(2026, 8, 10, 20, 0))
         self.assertEqual(row.status, "unknown")
-        self.assertIn("unknown / not configured", row.detail)
+        self.assertIn("song count unknown", row.detail)
 
     def test_check_pihole_ok(self):
         def run(cmd):
@@ -114,11 +122,6 @@ class CheckHelpersTests(unittest.TestCase):
 
     def test_check_pihole_docker_missing(self):
         row = check_pihole(run_command=lambda _cmd: (127, "", "missing"))
-        self.assertEqual(row.status, "unknown")
-
-    def test_check_ssl_expiry_with_mock(self):
-        # Avoid real network: patch socket path by stubbing results via empty hosts
-        row = check_ssl_expiry(hosts=())
         self.assertEqual(row.status, "unknown")
 
     def test_warnings_summary(self):
@@ -157,30 +160,48 @@ class BuildScorecardTests(unittest.TestCase):
         cab.log_query_issues.return_value = []
 
         with mock.patch("scorecard._list_borg_archives", return_value=None):
-            with mock.patch("scorecard.check_ssl_expiry") as ssl_check:
-                ssl_check.return_value = ScorecardRow(
-                    "SSL expiry", "unknown", "unknown / not configured"
-                )
-                with mock.patch(
-                    "scorecard.check_pihole",
-                    return_value=ScorecardRow(
-                        "Pi-hole", "unknown", "unknown / not configured"
-                    ),
-                ):
-                    with mock.patch("scorecard.ping_host", return_value=False):
-                        rows, issues, source = build_scorecard_rows(
-                            cab,
-                            now=datetime.datetime(2026, 8, 10, 20, 0),
-                            quality_data={},
-                        )
+            with mock.patch(
+                "scorecard.check_pihole",
+                return_value=ScorecardRow(
+                    "Pi-hole", "unknown", "unknown / not configured"
+                ),
+            ):
+                with mock.patch("scorecard.ping_host", return_value=False):
+                    rows, issues, source = build_scorecard_rows(
+                        cab,
+                        now=datetime.datetime(2026, 8, 10, 20, 0),
+                        quality_data={},
+                    )
 
         self.assertTrue(rows)
         self.assertEqual(source, "local")
         self.assertEqual(issues, [])
-        # Every row should be a ScorecardRow with a known status token
+        labels = {row.check for row in rows}
+        self.assertNotIn("Cloud drift", labels)
+        self.assertNotIn("Rainbow drift", labels)
+        self.assertNotIn("SSL expiry", labels)
         for row in rows:
             self.assertIn(row.status, {"ok", "warn", "error", "unknown"})
             self.assertIsInstance(row.detail, str)
+
+
+class CasualWeatherTests(unittest.TestCase):
+    def test_format_casual_tomorrow_weather(self):
+        # Import from main without running CLI
+        import main as dailystatus_main  # pylint: disable=import-outside-toplevel
+
+        line = dailystatus_main.format_casual_tomorrow_weather(
+            {
+                "tomorrow_high": 73,
+                "tomorrow_conditions": "Partly Cloudy",
+            }
+        )
+        self.assertEqual(line, "73 and partly cloudy tomorrow")
+
+    def test_format_casual_missing(self):
+        import main as dailystatus_main  # pylint: disable=import-outside-toplevel
+
+        self.assertIsNone(dailystatus_main.format_casual_tomorrow_weather({}))
 
 
 if __name__ == "__main__":

@@ -642,8 +642,33 @@ def append_spotify_info(today, log_path_today, email):  # pylint: disable=redefi
     return email, last_success_stale
 
 
+def format_casual_tomorrow_weather(weather_data=None) -> str | None:
+    """
+    Casual one-liner like ``68 and partly cloudy tomorrow``.
+
+    Uses Cabinet ``weather.data.tomorrow_high`` + ``tomorrow_conditions``.
+    """
+    if weather_data is None:
+        weather_data = cab.get("weather", "data") or {}
+    if not isinstance(weather_data, dict):
+        return None
+    high = weather_data.get("tomorrow_high")
+    conditions = weather_data.get("tomorrow_conditions")
+    if high is None or not conditions:
+        return None
+    try:
+        high_n = int(round(float(high)))
+    except (TypeError, ValueError):
+        return None
+    cond = str(conditions).strip()
+    if not cond:
+        return None
+    cond = cond.lower()
+    return f"{high_n} and {cond} tomorrow"
+
+
 def append_weather_info(email):
-    """append weather data"""
+    """Append detailed weather block (legacy; prefer casual lead-in)."""
     weather_tomorrow_formatted = cab.get("weather", "data", "tomorrow_formatted") or {}
     if weather_tomorrow_formatted:
         email += f"""
@@ -715,7 +740,14 @@ if __name__ == "__main__":
     log_path_today = os.path.join(cab.path_dir_log, str(today))
 
     # set up email content
-    status_email = "Dear Tyler,<br><br>This is your daily status report.<br><br>"
+    weather_line = format_casual_tomorrow_weather()
+    if weather_line:
+        status_email = (
+            f"Dear Tyler,<br><br>{html.escape(weather_line)}.<br><br>"
+            "This is your daily status report.<br><br>"
+        )
+    else:
+        status_email = "Dear Tyler,<br><br>This is your daily status report.<br><br>"
 
     # run service check first to gather latest data
     run_service_check()
@@ -747,9 +779,6 @@ if __name__ == "__main__":
         has_errors = True
         # Stale Spotify success is not a food-log-only failure
         is_only_food_log_error = False
-
-    # append weather info
-    status_email = append_weather_info(status_email)
 
     # append service check summary
     status_email = append_service_check_summary(status_email)

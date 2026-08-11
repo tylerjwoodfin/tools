@@ -1,8 +1,8 @@
 """
 Personal SRE scorecard for the daily status email (TJW-316).
 
-Reads existing Cabinet keys, Borg archives, local service checks, and SSL
-handshakes. Missing data becomes status=unknown rather than raising.
+Reads existing Cabinet keys, Borg archives, and local service checks.
+Missing data becomes status=unknown rather than raising.
 """
 
 from __future__ import annotations
@@ -10,23 +10,10 @@ from __future__ import annotations
 import datetime
 import os
 import re
-import socket
-import ssl
 import subprocess
 from dataclasses import dataclass
 from typing import Any, Callable
 from urllib.parse import urlparse
-
-# Hosts probed for TLS expiry (Cloudflare-fronted tyler.cloud services).
-DEFAULT_SSL_HOSTS = (
-    "tyler.cloud",
-    "git.tyler.cloud",
-    "photos.tyler.cloud",
-    "affine.tyler.cloud",
-    "auth.tyler.cloud",
-    "vault.tyler.cloud",
-    "notes.tyler.cloud",
-)
 
 _BORG_ARCHIVE_RE = re.compile(
     r"^(?P<label>.+)-(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})$"
@@ -266,107 +253,6 @@ def check_borg(cab, now: datetime.datetime) -> ScorecardRow:
     return ScorecardRow("Borg backups", status, detail)
 
 
-def check_host_drift(quality_data: dict, host: str, now: datetime.datetime) -> ScorecardRow:
-    label = f"{host.title()} drift"
-    device = quality_data.get(host) if isinstance(quality_data, dict) else None
-    if not isinstance(device, dict):
-        return ScorecardRow(label, "unknown", "unknown / not configured")
-
-    updated_raw = device.get("updated_at")
-    updated = parse_quality_updated_at(updated_raw, now=now)
-    free_gb = device.get("free_gb")
-    try:
-        free_gb_f = float(free_gb) if free_gb is not None else None
-    except (TypeError, ValueError):
-        free_gb_f = None
-
-    parts: list[str] = []
-    if updated is None:
-        parts.append(f"updated_at={_safe_str(updated_raw)}")
-        status = "unknown"
-    else:
-        hours = age_hours(updated, now)
-        parts.append(f"quality {format_age_hours(hours)}")
-        if hours > 72:
-            status = "error"
-        elif hours > 36:
-            status = "warn"
-        else:
-            status = "ok"
-
-    if free_gb_f is not None:
-        parts.append(f"{free_gb_f:.1f} GB free")
-        if free_gb_f < 10:
-            status = "error"
-        elif free_gb_f < 50 and status == "ok":
-            status = "warn"
-    else:
-        parts.append("disk free unknown / not configured")
-        if status == "ok":
-            status = "unknown"
-
-    return ScorecardRow(label, status, "; ".join(parts))
-
-
-def check_ssl_expiry(
-    hosts: tuple[str, ...] | list[str] = DEFAULT_SSL_HOSTS,
-    *,
-    now: datetime.datetime | None = None,
-    warn_days: int = 30,
-    error_days: int = 14,
-) -> ScorecardRow:
-    now = now or datetime.datetime.now(datetime.timezone.utc)
-    if now.tzinfo is None:
-        now_aware = now.replace(tzinfo=datetime.timezone.utc)
-    else:
-        now_aware = now.astimezone(datetime.timezone.utc)
-
-    results: list[tuple[str, int | None, str | None]] = []
-    for host in hosts:
-        try:
-            ctx = ssl.create_default_context()
-            with socket.create_connection((host, 443), timeout=5) as sock:
-                with ctx.wrap_socket(sock, server_hostname=host) as ssock:
-                    cert = ssock.getpeercert()
-            not_after = cert.get("notAfter")
-            if not not_after:
-                results.append((host, None, "no notAfter"))
-                continue
-            expiry = datetime.datetime.strptime(
-                not_after, "%b %d %H:%M:%S %Y %Z"
-            ).replace(tzinfo=datetime.timezone.utc)
-            days = (expiry - now_aware).days
-            results.append((host, days, None))
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            results.append((host, None, f"{type(exc).__name__}"))
-
-    if not results:
-        return ScorecardRow("SSL expiry", "unknown", "unknown / not configured")
-
-    ok_hosts = [(h, d) for h, d, err in results if err is None and d is not None]
-    fail_hosts = [(h, err) for h, d, err in results if err is not None]
-
-    if not ok_hosts:
-        detail = "all probes failed: " + ", ".join(f"{h} ({e})" for h, e in fail_hosts[:4])
-        return ScorecardRow("SSL expiry", "unknown", detail)
-
-    soonest_host, soonest_days = min(ok_hosts, key=lambda item: item[1])
-    detail = f"soonest {soonest_host} in {soonest_days}d"
-    if fail_hosts:
-        detail += f"; {len(fail_hosts)} host(s) unreachable"
-
-    if soonest_days < 0:
-        status = "error"
-        detail = f"EXPIRED: {soonest_host} ({soonest_days}d)"
-    elif soonest_days <= error_days:
-        status = "error"
-    elif soonest_days <= warn_days:
-        status = "warn"
-    else:
-        status = "ok"
-    return ScorecardRow("SSL expiry", status, detail)
-
-
 def check_disk_summary(quality_data: dict) -> ScorecardRow:
     if not isinstance(quality_data, dict) or not quality_data:
         return ScorecardRow("Disk free space", "unknown", "unknown / not configured")
@@ -459,6 +345,7 @@ def ping_host(hostname: str, timeout_s: int = 3) -> bool:
 
 
 def check_rainbow(cab, quality_data: dict, now: datetime.datetime) -> ScorecardRow:
+    """Reachability + uptime; disk free lives in the Disk free space row."""
     host = rainbow_host_from_borg_path(cab.get("path", "rainbow-borg"))
     reachable = None
     if host:
@@ -470,9 +357,9 @@ def check_rainbow(cab, quality_data: dict, now: datetime.datetime) -> ScorecardR
 
     if host:
         if reachable is True:
-            parts.append(f"reachable ({host})")
+            parts.append("reachable")
         elif reachable is False:
-            parts.append(f"unreachable ({host})")
+            parts.append("unreachable")
             status = "error"
     else:
         parts.append("host unknown / not configured")
@@ -480,24 +367,20 @@ def check_rainbow(cab, quality_data: dict, now: datetime.datetime) -> ScorecardR
 
     if isinstance(device, dict):
         updated = parse_quality_updated_at(device.get("updated_at"), now=now)
-        free_gb = device.get("free_gb")
         if updated is not None:
             hours = age_hours(updated, now)
-            parts.append(f"quality {format_age_hours(hours)}")
+            # service_check writes quality.rainbow.updated_at on rainbow
+            parts.append(f"last health check {format_age_hours(hours)}")
             if hours > 72 and status != "error":
                 status = "error"
             elif hours > 36 and status == "ok":
                 status = "warn"
         else:
-            parts.append("quality updated_at unknown")
+            parts.append("last health check unknown")
             if status == "ok":
                 status = "unknown"
-        try:
-            parts.append(f"{float(free_gb):.1f} GB free")
-        except (TypeError, ValueError):
-            pass
     else:
-        parts.append("no quality.rainbow data")
+        parts.append("no recent health check")
         if status == "ok":
             status = "unknown"
 
@@ -507,7 +390,7 @@ def check_rainbow(cab, quality_data: dict, now: datetime.datetime) -> ScorecardR
             with open("/proc/uptime", "r", encoding="utf-8") as fh:
                 seconds = float(fh.read().split()[0])
             days = seconds / 86400.0
-            parts.append(f"uptime {days:.1f}d")
+            parts.append(f"uptime {days:.0f}d")
     except (OSError, ValueError, AttributeError):
         pass
 
@@ -523,14 +406,23 @@ def check_spotify(cab, now: datetime.datetime) -> ScorecardRow:
         stats = {}
     raw = stats.get("last_success")
     parsed = parse_spotify_last_success(raw)
+    tracks = stats.get("total_tracks")
+    try:
+        tracks_n = int(tracks) if tracks is not None else None
+    except (TypeError, ValueError):
+        tracks_n = None
+    songs_bit = f"{tracks_n} songs" if tracks_n is not None else "song count unknown"
+
     if parsed is None:
         return ScorecardRow(
             "Spotify analytics",
             "error" if raw else "unknown",
-            f"last_success={_safe_str(raw)}",
+            f"Checked unknown; {songs_bit}."
+            if not raw
+            else f"Checked unknown ({_safe_str(raw)}); {songs_bit}.",
         )
     hours = age_hours(parsed, now)
-    detail = f"last_success {raw} ({format_age_hours(hours)})"
+    detail = f"Checked {format_age_hours(hours)}; {songs_bit}."
     if hours > 48:
         status = "error"
     elif hours > 24:
@@ -573,7 +465,6 @@ def build_scorecard_rows(
     quality_data: dict | None = None,
     issue_lines: list[str] | None = None,
     issue_source: str | None = None,
-    ssl_hosts: tuple[str, ...] | list[str] = DEFAULT_SSL_HOSTS,
 ) -> tuple[list[ScorecardRow], list[str], str]:
     """
     Collect scorecard rows plus the issue lines used for the warnings section.
@@ -596,9 +487,6 @@ def build_scorecard_rows(
 
     rows = [
         check_borg(cab, now),
-        check_host_drift(quality_data, "cloud", now),
-        check_host_drift(quality_data, "rainbow", now),
-        check_ssl_expiry(ssl_hosts, now=now),
         check_disk_summary(quality_data),
         check_pihole(),
         check_rainbow(cab, quality_data, now),
