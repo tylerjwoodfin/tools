@@ -19,6 +19,13 @@ from pathlib import Path
 import cabinet
 from tyler_python_helpers import ChatGPT
 
+from scorecard import (
+    build_scorecard_rows,
+    collect_log_issues,
+    render_issues_html,
+    render_scorecard_html,
+)
+
 # initialize cabinet for configuration and mail for notifications
 cab = cabinet.Cabinet()
 mail = cabinet.Mail()
@@ -53,69 +60,31 @@ def run_service_check():
         return False
 
 
-def append_free_space_info(email):
-    """Append free space information from all devices as a table"""
-    # Get all quality data from cabinet
-    quality_data = cab.get("quality", force_cache_update=True) or {}
-
-    if not quality_data:
-        email += """
-        <h3>Disk Space:</h3>
-        <p>No disk space data available</p>
-        <br>
-        """
-        return email
-
-    # Build HTML table
-    table_html = """
-    <h3>Disk Space:</h3>
-    <table border="1" style="border-collapse: collapse; width: 100%;">
-        <tr style="background-color: #f2f2f2;">
-            <th style="padding: 8px; text-align: left;">Device</th>
-            <th style="padding: 8px; text-align: left;">Free Space (GB)</th>
-        </tr>
+def append_sre_scorecard(email, issue_lines=None, issue_source=None):
     """
-
-    for device_name, device_data in quality_data.items():
-        # Handle nested structure from service check script
-        if isinstance(device_data, dict):
-            # Check if it has the nested structure from service check
-            if "free_gb" in device_data:
-                free_gb = device_data["free_gb"]
-            else:
-                # Try to get free_gb directly from device_data
-                free_gb = device_data
-        else:
-            # Direct value
-            free_gb = device_data
-
-        # Ensure free_gb is a number
-        try:
-            free_gb = float(free_gb)
-        except (ValueError, TypeError):
-            continue
-
-        # Color code based on available space
-        if free_gb < 10:
-            row_style = "background-color: #ffebee; color: #c62828;"
-        elif free_gb < 50:
-            row_style = "background-color: #fff3e0; color: #ef6c00;"
-        else:
-            row_style = "background-color: #e8f5e8; color: #2e7d32;"
-
-        table_html += f"""
-    <tr style="{row_style}">
-        <td style="padding: 8px;">{device_name}</td>
-        <td style="padding: 8px;">{free_gb:.2f}</td>
-    </tr>
-        """
-
-    table_html += """
-    </table>
-    <br>
+    Append the Metrics (Borg, drift, SSL, disk, Pi-hole,
+    Rainbow, Spotify freshness, warnings summary).
     """
-
-    return email + table_html
+    try:
+        rows, issue_lines, issue_source = build_scorecard_rows(
+            cab,
+            issue_lines=issue_lines,
+            issue_source=issue_source,
+        )
+        return email + render_scorecard_html(rows), issue_lines, issue_source
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        cab.log(f"SRE scorecard failed: {e}", level="error")
+        fallback = (
+            "<h3>Metrics</h3>"
+            "<p>Metrics unavailable (see logs). "
+            "Individual checks may show as unknown / not configured.</p><br>"
+        )
+        if issue_lines is None or issue_source is None:
+            try:
+                issue_lines, issue_source = collect_log_issues(cab)
+            except Exception:  # pylint: disable=broad-exception-caught
+                issue_lines, issue_source = [], "unavailable"
+        return email + fallback, issue_lines or [], issue_source or "unavailable"
 
 
 def append_service_check_summary(email):
@@ -574,31 +543,30 @@ def append_syncthing_conflict_check(email):
     return email + "<br>".join(html_diffs)
 
 
-def analyze_logs(email):
-    """Append warning/error/critical log lines from the last 24h via ``cab.log_query_issues()``."""
-    daily_log_issues = cab.log_query_issues()
-    is_warnings = any("WARN" in issue for issue in daily_log_issues)
+def analyze_logs(email, issue_lines=None, issue_source=None):
+    """
+    Append warning/error/critical log lines from the last 24h.
+
+    Prefers Loki (``log_query_issues_loki``) when configured so rainbow can see
+    cloud issues after Cabinet stopped storing logs in MongoDB; falls back to
+    local daily files.
+    """
+    if issue_lines is None or issue_source is None:
+        issue_lines, issue_source = collect_log_issues(cab)
+
+    is_warnings = any("WARN" in issue for issue in issue_lines)
     is_errors = any(
-        "ERROR" in issue or "CRITICAL" in issue for issue in daily_log_issues
+        "ERROR" in issue or "CRITICAL" in issue for issue in issue_lines
     )
 
     error_lines = [
-        line for line in daily_log_issues if "ERROR" in line or "CRITICAL" in line
+        line for line in issue_lines if "ERROR" in line or "CRITICAL" in line
     ]
     only_food_log_error = len(error_lines) == 1 and any(
         "No food logged for today." in line for line in error_lines
     )
 
-    if daily_log_issues:
-        daily_log_filtered = "<br>".join(daily_log_issues)
-        email += textwrap.dedent(
-            f"""
-            <h3>Warning/Error/Critical Log (24h):</h3>
-            <pre style="font-family: monospace; white-space: pre-wrap;">{daily_log_filtered}</pre>
-            <br>
-            """
-        )
-
+    email += render_issues_html(issue_lines, issue_source)
     return email, is_warnings, is_errors, only_food_log_error
 
 
@@ -674,8 +642,34 @@ def append_spotify_info(today, log_path_today, email):  # pylint: disable=redefi
     return email, last_success_stale
 
 
+def format_casual_tomorrow_weather(weather_data=None) -> str | None:
+    """
+    Casual one-liner like ``68° and partly cloudy tomorrow``.
+
+    Uses Cabinet ``weather.data.tomorrow_high`` + ``tomorrow_conditions``.
+    Caller wraps with bold ``Weather is`` lead-in for the email.
+    """
+    if weather_data is None:
+        weather_data = cab.get("weather", "data") or {}
+    if not isinstance(weather_data, dict):
+        return None
+    high = weather_data.get("tomorrow_high")
+    conditions = weather_data.get("tomorrow_conditions")
+    if high is None or not conditions:
+        return None
+    try:
+        high_n = int(round(float(high)))
+    except (TypeError, ValueError):
+        return None
+    cond = str(conditions).strip()
+    if not cond:
+        return None
+    cond = cond.lower()
+    return f"{high_n}\u00b0 and {cond} tomorrow"
+
+
 def append_weather_info(email):
-    """append weather data"""
+    """Append detailed weather block (legacy; prefer casual lead-in)."""
     weather_tomorrow_formatted = cab.get("weather", "data", "tomorrow_formatted") or {}
     if weather_tomorrow_formatted:
         email += f"""
@@ -747,10 +741,20 @@ if __name__ == "__main__":
     log_path_today = os.path.join(cab.path_dir_log, str(today))
 
     # set up email content
-    status_email = "Dear Tyler,<br><br>This is your daily status report.<br><br>"
+    weather_line = format_casual_tomorrow_weather()
+    if weather_line:
+        status_email = (
+            f"Dear Tyler,<br><br><b>Weather</b> is {html.escape(weather_line)}.<br><br>"
+            "This is your daily status report.<br><br>"
+        )
+    else:
+        status_email = "Dear Tyler,<br><br>This is your daily status report.<br><br>"
 
     # run service check first to gather latest data
     run_service_check()
+
+    # SRE scorecard first (also collects cross-host issues via Loki when configured)
+    status_email, log_issues, log_issue_source = append_sre_scorecard(status_email)
 
     # check if food has been logged today
     status_email = append_food_log(status_email, dry_run=args.dry_run)
@@ -767,21 +771,15 @@ if __name__ == "__main__":
         today, log_path_today, status_email
     )
 
-    # analyze logs (24h via cab.log_query when Mongo enabled, else log files)
+    # analyze logs (Loki preferred; reuse scorecard query)
     status_email, has_warnings, has_errors, is_only_food_log_error = analyze_logs(
-        status_email
+        status_email, issue_lines=log_issues, issue_source=log_issue_source
     )
 
     if spotify_last_success_stale:
         has_errors = True
         # Stale Spotify success is not a food-log-only failure
         is_only_food_log_error = False
-
-    # append weather info
-    status_email = append_weather_info(status_email)
-
-    # append free space info
-    status_email = append_free_space_info(status_email)
 
     # append service check summary
     status_email = append_service_check_summary(status_email)
