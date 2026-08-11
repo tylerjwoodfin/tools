@@ -506,7 +506,7 @@ def main() -> None:
 
         # Set the path for the category JSON file
         categories_file_path = (
-            Path.home() / "syncthing/md/docs/selfhosted/transaction_categories.json"
+            Path.home() / "syncthing/notes/docs/selfhosted/transaction_categories.json"
         )
 
         # Find files in Downloads or fall back to file browser

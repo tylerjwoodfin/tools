@@ -29,7 +29,7 @@ def milestones_path() -> Path:
     notes = os.environ.get("notes")
     if notes:
         return Path(notes) / "milestones.md"
-    return Path.home() / "syncthing/md/notes/milestones.md"
+    return Path.home() / "syncthing/notes/milestones.md"
 
 
 def year_bounds(lines: list[str], year: int) -> tuple[int, int] | None:
