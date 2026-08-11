@@ -62,7 +62,7 @@ def run_service_check():
 
 def append_sre_scorecard(email, issue_lines=None, issue_source=None):
     """
-    Append the Personal SRE scorecard (Borg, drift, SSL, disk, Pi-hole,
+    Append the Metrics (Borg, drift, SSL, disk, Pi-hole,
     Rainbow, Spotify freshness, warnings summary).
     """
     try:
@@ -75,8 +75,8 @@ def append_sre_scorecard(email, issue_lines=None, issue_source=None):
     except Exception as e:  # pylint: disable=broad-exception-caught
         cab.log(f"SRE scorecard failed: {e}", level="error")
         fallback = (
-            "<h3>Personal SRE Scorecard</h3>"
-            "<p>Scorecard unavailable (see logs). "
+            "<h3>Metrics</h3>"
+            "<p>Metrics unavailable (see logs). "
             "Individual checks may show as unknown / not configured.</p><br>"
         )
         if issue_lines is None or issue_source is None:
@@ -644,9 +644,10 @@ def append_spotify_info(today, log_path_today, email):  # pylint: disable=redefi
 
 def format_casual_tomorrow_weather(weather_data=None) -> str | None:
     """
-    Casual one-liner like ``68 and partly cloudy tomorrow``.
+    Casual one-liner like ``68° and partly cloudy tomorrow``.
 
     Uses Cabinet ``weather.data.tomorrow_high`` + ``tomorrow_conditions``.
+    Caller wraps with bold ``Weather is`` lead-in for the email.
     """
     if weather_data is None:
         weather_data = cab.get("weather", "data") or {}
@@ -664,7 +665,7 @@ def format_casual_tomorrow_weather(weather_data=None) -> str | None:
     if not cond:
         return None
     cond = cond.lower()
-    return f"{high_n} and {cond} tomorrow"
+    return f"{high_n}\u00b0 and {cond} tomorrow"
 
 
 def append_weather_info(email):
@@ -743,7 +744,7 @@ if __name__ == "__main__":
     weather_line = format_casual_tomorrow_weather()
     if weather_line:
         status_email = (
-            f"Dear Tyler,<br><br>{html.escape(weather_line)}.<br><br>"
+            f"Dear Tyler,<br><br><b>Weather</b> is {html.escape(weather_line)}.<br><br>"
             "This is your daily status report.<br><br>"
         )
     else:

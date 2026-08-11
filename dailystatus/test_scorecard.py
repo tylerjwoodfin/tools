@@ -1,4 +1,4 @@
-"""Tests for dailystatus Personal SRE scorecard (TJW-316)."""
+"""Tests for dailystatus Personal Metrics (TJW-316)."""
 
 import datetime
 import unittest
@@ -84,10 +84,13 @@ class CheckHelpersTests(unittest.TestCase):
         cab.get.return_value = {
             "last_success": "2026-08-10 19:20",
             "total_tracks": 6709,
+            "average_year": 2009.366515837104,
         }
         row = check_spotify(cab, now)
         self.assertEqual(row.status, "ok")
-        self.assertEqual(row.detail, "Checked 40m ago; 6709 songs.")
+        self.assertEqual(
+            row.detail, "Checked 40m ago; 6709 songs; avg year 2009."
+        )
 
     def test_check_spotify_stale(self):
         now = datetime.datetime(2026, 8, 12, 20, 0)
@@ -95,11 +98,13 @@ class CheckHelpersTests(unittest.TestCase):
         cab.get.return_value = {
             "last_success": "2026-08-10 19:20",
             "total_tracks": 6709,
+            "average_year": 2009.3,
         }
         row = check_spotify(cab, now)
         self.assertEqual(row.status, "error")
         self.assertIn("Checked", row.detail)
         self.assertIn("6709 songs", row.detail)
+        self.assertIn("avg year 2009", row.detail)
 
     def test_check_spotify_missing(self):
         cab = mock.Mock()
@@ -107,6 +112,7 @@ class CheckHelpersTests(unittest.TestCase):
         row = check_spotify(cab, datetime.datetime(2026, 8, 10, 20, 0))
         self.assertEqual(row.status, "unknown")
         self.assertIn("song count unknown", row.detail)
+        self.assertIn("avg year unknown", row.detail)
 
     def test_check_pihole_ok(self):
         def run(cmd):
@@ -130,7 +136,7 @@ class CheckHelpersTests(unittest.TestCase):
         )
         self.assertEqual(row.status, "error")
         self.assertIn("1 error", row.detail)
-        self.assertIn("loki", row.detail)
+        self.assertIn("(source: loki)", row.detail)
 
 
 class RenderTests(unittest.TestCase):
@@ -138,7 +144,7 @@ class RenderTests(unittest.TestCase):
         html = render_scorecard_html(
             [ScorecardRow("Borg backups", "ok", "last success today")]
         )
-        self.assertIn("Personal SRE Scorecard", html)
+        self.assertIn("Personal Metrics", html)
         self.assertIn("Borg backups", html)
         self.assertIn("OK", html.upper())
 
@@ -150,6 +156,19 @@ class RenderTests(unittest.TestCase):
         html = render_issues_html(["ERROR <script>alert(1)</script>"], "local")
         self.assertIn("&lt;script&gt;", html)
         self.assertNotIn("<script>", html)
+
+    def test_render_issues_links_loki_source(self):
+        html = render_issues_html(["WARNING something"], "loki")
+        self.assertIn("(source:", html)
+        self.assertIn("https://grafana.tyler.cloud/explore", html)
+        self.assertIn(">loki</a>", html)
+        # & in query string is HTML-escaped in the href attribute
+        self.assertIn("&amp;orgId=1", html)
+
+    def test_render_issues_local_source_not_linked(self):
+        html = render_issues_html(["WARNING something"], "local")
+        self.assertIn("(source: local)", html)
+        self.assertNotIn("<a href=", html)
 
 
 class BuildScorecardTests(unittest.TestCase):
@@ -196,7 +215,7 @@ class CasualWeatherTests(unittest.TestCase):
                 "tomorrow_conditions": "Partly Cloudy",
             }
         )
-        self.assertEqual(line, "73 and partly cloudy tomorrow")
+        self.assertEqual(line, "73° and partly cloudy tomorrow")
 
     def test_format_casual_missing(self):
         import main as dailystatus_main  # pylint: disable=import-outside-toplevel

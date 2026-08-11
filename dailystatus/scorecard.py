@@ -1,5 +1,5 @@
 """
-Personal SRE scorecard for the daily status email (TJW-316).
+Personal Metrics for the daily status email (TJW-316).
 
 Reads existing Cabinet keys, Borg archives, and local service checks.
 Missing data becomes status=unknown rather than raising.
@@ -413,16 +413,23 @@ def check_spotify(cab, now: datetime.datetime) -> ScorecardRow:
         tracks_n = None
     songs_bit = f"{tracks_n} songs" if tracks_n is not None else "song count unknown"
 
+    avg_year = stats.get("average_year")
+    try:
+        avg_year_n = int(round(float(avg_year))) if avg_year is not None else None
+    except (TypeError, ValueError):
+        avg_year_n = None
+    year_bit = f"avg year {avg_year_n}" if avg_year_n is not None else "avg year unknown"
+
     if parsed is None:
         return ScorecardRow(
             "Spotify analytics",
             "error" if raw else "unknown",
-            f"Checked unknown; {songs_bit}."
+            f"Checked unknown; {songs_bit}; {year_bit}."
             if not raw
-            else f"Checked unknown ({_safe_str(raw)}); {songs_bit}.",
+            else f"Checked unknown ({_safe_str(raw)}); {songs_bit}; {year_bit}.",
         )
     hours = age_hours(parsed, now)
-    detail = f"Checked {format_age_hours(hours)}; {songs_bit}."
+    detail = f"Checked {format_age_hours(hours)}; {songs_bit}; {year_bit}."
     if hours > 48:
         status = "error"
     elif hours > 24:
@@ -446,7 +453,7 @@ def check_warnings_summary(issue_lines: list[str], source: str) -> ScorecardRow:
     ]
     warnings = [line for line in issue_lines if "WARN" in line.upper()]
     detail = (
-        f"{len(errors)} error(s), {len(warnings)} warning(s) via {source}"
+        f"{len(errors)} error(s), {len(warnings)} warning(s) (source: {source})"
     )
     if errors:
         status = "error"
@@ -454,7 +461,7 @@ def check_warnings_summary(issue_lines: list[str], source: str) -> ScorecardRow:
         status = "warn"
     else:
         status = "ok"
-        detail = f"none via {source}"
+        detail = f"none (source: {source})"
     return ScorecardRow("Warnings / errors (24h)", status, detail)
 
 
@@ -499,7 +506,7 @@ def build_scorecard_rows(
 def render_scorecard_html(rows: list[ScorecardRow]) -> str:
     """Compact HTML table for the daily status email."""
     table = [
-        "<h3>Personal SRE Scorecard</h3>",
+        "<h3>Personal Metrics</h3>",
         '<table border="1" style="border-collapse: collapse; width: 100%;">',
         '<tr style="background-color: #f2f2f2;">',
         '<th style="padding: 8px; text-align: left;">Check</th>',
@@ -522,12 +529,32 @@ def render_scorecard_html(rows: list[ScorecardRow]) -> str:
     return "\n".join(table)
 
 
+# Grafana Explore: Loki warnings (last 12h), used when the email has issues.
+GRAFANA_LOKI_WARNINGS_URL = (
+    "https://grafana.tyler.cloud/explore?schemaVersion=1&panes=%7B%22ieb%22:%7B%22"
+    "datasource%22:%22loki%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22expr%22:%22"
+    "%7Blevel%3D%5C%22warning%5C%22%7D%20%7C%3D%20%60%60%22,%22queryType%22:%22range"
+    "%22,%22datasource%22:%7B%22type%22:%22loki%22,%22uid%22:%22loki%22%7D,%22"
+    "editorMode%22:%22builder%22,%22direction%22:%22backward%22%7D%5D,%22range%22:%7B"
+    "%22from%22:%22now-12h%22,%22to%22:%22now%22%7D,%22panelsState%22:%7B%22logs%22:"
+    "%7B%22sortOrder%22:%22Descending%22%7D%7D,%22compact%22:false%7D%7D&orgId=1"
+)
+
+
+def _source_note_html(source: str, *, has_issues: bool) -> str:
+    """Build ``(source: loki)`` note; link Loki to Grafana when there are issues."""
+    if has_issues and source == "loki":
+        href = _escape(GRAFANA_LOKI_WARNINGS_URL)
+        return f'(source: <a href="{href}">loki</a>)'
+    return f"(source: {_escape(source)})"
+
+
 def render_issues_html(issue_lines: list[str], source: str, limit: int = 40) -> str:
     """Visually cleaned-up warnings/errors section (replaces raw pre dump)."""
     if not issue_lines:
         return (
             "<h3>Warnings / Errors (24h)</h3>"
-            f"<p>None detected via { _escape(source) }.</p><br>"
+            f"<p>None detected via {_escape(source)}.</p><br>"
         )
 
     shown = issue_lines[-limit:]
@@ -553,11 +580,14 @@ def render_issues_html(issue_lines: list[str], source: str, limit: int = 40) -> 
         )
 
     omitted = max(0, len(issue_lines) - len(shown))
-    note = ""
+    source_note = _source_note_html(source, has_issues=True)
     if omitted:
-        note = f"<p>Showing latest {len(shown)} of {len(issue_lines)} (source: {_escape(source)}).</p>"
+        note = (
+            f"<p>Showing latest {len(shown)} of {len(issue_lines)} "
+            f"{source_note}.</p>"
+        )
     else:
-        note = f"<p>Source: {_escape(source)}.</p>"
+        note = f"<p>{source_note}.</p>"
 
     return (
         "<h3>Warnings / Errors (24h)</h3>"

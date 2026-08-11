@@ -5,11 +5,11 @@
 
 ## Email layout
 
-1. Greeting + casual tomorrow weather (`68 and partly cloudy tomorrow`) from Cabinet `weather.data`
-2. **Personal SRE Scorecard** table
+1. Greeting + casual tomorrow weather (`<b>Weather</b> is 68° and partly cloudy tomorrow`) from Cabinet `weather.data`
+2. **Personal Metrics** table
 3. Other sections (foodlog, Spotify details, warnings table, …)
 
-## Personal SRE scorecard
+## Personal Metrics
 
 Fields (missing data → `unknown / not configured`, never crash the email):
 
@@ -19,8 +19,8 @@ Fields (missing data → `unknown / not configured`, never crash the email):
 | Disk free space | Cabinet `quality.<host>.free_gb` from `quality/service_check.py` |
 | Pi-hole | Local Docker `pihole` container + `pihole status` when available |
 | Rainbow | Ping host from `path.rainbow-borg`; `quality.rainbow.updated_at` as “last health check”; uptime when running on rainbow |
-| Spotify analytics | `Checked <age>; <n> songs.` from `spotipy.last_success` / `total_tracks` (stale if &gt; 24h) |
-| Warnings / errors (24h) | Prefer Cabinet **Loki** (`log_query_issues_loki`) so rainbow sees cloud logs after Mongo log removal; fall back to local files |
+| Spotify analytics | `Checked <age>; <n> songs; avg year <y>.` from `spotipy` |
+| Warnings / errors (24h) | Prefer Cabinet **Loki**; when issues exist, `(source: loki)` links to Grafana Explore |
 
 The detailed warnings/errors section below the scorecard uses the same query, rendered as a compact level/message table.
 
