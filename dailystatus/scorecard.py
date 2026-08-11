@@ -415,10 +415,14 @@ def check_spotify(cab, now: datetime.datetime) -> ScorecardRow:
 
     avg_year = stats.get("average_year")
     try:
-        avg_year_n = int(round(float(avg_year))) if avg_year is not None else None
+        avg_year_f = float(avg_year) if avg_year is not None else None
     except (TypeError, ValueError):
-        avg_year_n = None
-    year_bit = f"avg year {avg_year_n}" if avg_year_n is not None else "avg year unknown"
+        avg_year_f = None
+    if avg_year_f is not None:
+        # Preserve full precision from Cabinet (e.g. 2009.366515837104)
+        year_bit = f"avg year {avg_year_f}"
+    else:
+        year_bit = "avg year unknown"
 
     if parsed is None:
         return ScorecardRow(
@@ -531,13 +535,7 @@ def render_scorecard_html(rows: list[ScorecardRow]) -> str:
 
 # Grafana Explore: Loki warnings (last 12h), used when the email has issues.
 GRAFANA_LOKI_WARNINGS_URL = (
-    "https://grafana.tyler.cloud/explore?schemaVersion=1&panes=%7B%22ieb%22:%7B%22"
-    "datasource%22:%22loki%22,%22queries%22:%5B%7B%22refId%22:%22A%22,%22expr%22:%22"
-    "%7Blevel%3D%5C%22warning%5C%22%7D%20%7C%3D%20%60%60%22,%22queryType%22:%22range"
-    "%22,%22datasource%22:%7B%22type%22:%22loki%22,%22uid%22:%22loki%22%7D,%22"
-    "editorMode%22:%22builder%22,%22direction%22:%22backward%22%7D%5D,%22range%22:%7B"
-    "%22from%22:%22now-12h%22,%22to%22:%22now%22%7D,%22panelsState%22:%7B%22logs%22:"
-    "%7B%22sortOrder%22:%22Descending%22%7D%7D,%22compact%22:false%7D%7D&orgId=1"
+    "https://grafana.tyler.cloud/explore"
 )
 
 

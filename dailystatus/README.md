@@ -19,7 +19,7 @@ Fields (missing data → `unknown / not configured`, never crash the email):
 | Disk free space | Cabinet `quality.<host>.free_gb` from `quality/service_check.py` |
 | Pi-hole | Local Docker `pihole` container + `pihole status` when available |
 | Rainbow | Ping host from `path.rainbow-borg`; `quality.rainbow.updated_at` as “last health check”; uptime when running on rainbow |
-| Spotify analytics | `Checked <age>; <n> songs; avg year <y>.` from `spotipy` |
+| Spotify analytics | `Checked <age>; <n> songs; avg year <full decimal>.` from `spotipy` |
 | Warnings / errors (24h) | Prefer Cabinet **Loki**; when issues exist, `(source: loki)` links to Grafana Explore |
 
 The detailed warnings/errors section below the scorecard uses the same query, rendered as a compact level/message table.

@@ -89,7 +89,8 @@ class CheckHelpersTests(unittest.TestCase):
         row = check_spotify(cab, now)
         self.assertEqual(row.status, "ok")
         self.assertEqual(
-            row.detail, "Checked 40m ago; 6709 songs; avg year 2009."
+            row.detail,
+            "Checked 40m ago; 6709 songs; avg year 2009.366515837104.",
         )
 
     def test_check_spotify_stale(self):
@@ -104,7 +105,7 @@ class CheckHelpersTests(unittest.TestCase):
         self.assertEqual(row.status, "error")
         self.assertIn("Checked", row.detail)
         self.assertIn("6709 songs", row.detail)
-        self.assertIn("avg year 2009", row.detail)
+        self.assertIn("avg year 2009.3", row.detail)
 
     def test_check_spotify_missing(self):
         cab = mock.Mock()
