@@ -708,13 +708,22 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             operation_name=f"Fetch playlist {playlist_id}",
         )
 
+    def _is_removed_playlist(self, playlist_name: str) -> bool:
+        """True when this is the Removed graveyard playlist (not worth unplayable alerts)."""
+        return (playlist_name or "").strip().lower() == "removed"
+
     def _report_unplayable_track(
         self,
         playlist_name: str,
         track: Optional[Dict] = None,
         reason: str = "unplayable",
     ) -> None:
-        """Log and record a track that is unplayable in the configured market."""
+        """Log and record a track that is unplayable in the configured market.
+
+        The Removed playlist is skipped: unplayable tracks there are expected.
+        """
+        if self._is_removed_playlist(playlist_name):
+            return
         if track:
             artist = ""
             artists = track.get("artists") or []

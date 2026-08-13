@@ -13,7 +13,8 @@ Unplayable detection:
 - A track is reported when the playlist item's `track` is `null`, or when `is_playable` is explicitly `false`.
 - Empty `available_markets` alone is **not** treated as unplayable (that field is unreliable without a market).
 - Unplayable tracks are logged as warnings; they are not removed automatically.
-- `spotify unplayable.json` (next to `spotify songs.json`) lists **Tyler Radio only** (first Cabinet `spotipy.playlists` entry). Other playlists are still warned about in logs.
+- The **Removed** playlist is never reported (unplayable tracks there are expected).
+- `spotify unplayable.json` (next to `spotify songs.json`) lists **Tyler Radio only** (first Cabinet `spotipy.playlists` entry). Other playlists (except Removed) are still warned about in logs.
 
 List / refresh unplayable tracks (Phase 1):
 
