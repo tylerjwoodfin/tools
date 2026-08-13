@@ -157,7 +157,7 @@ def main():
 
     # Check syncthing directory structure
     syncthing_base = os.path.expanduser("~/syncthing")
-    required_subfolders = ["documents", "log", "md", "music", "network", "photos"]
+    required_subfolders = ["documents", "log", "notes", "music", "network", "photos"]
 
     if check_directory_exists(syncthing_base):
         cabinet.log(f"✓ Syncthing base directory exists: {syncthing_base}")
