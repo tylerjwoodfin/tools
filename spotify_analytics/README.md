@@ -52,6 +52,19 @@ Matching rules:
 
 Spotify cannot add local files via API — `--update-spotify` only removes the unplayable URI once a local copy exists.
 
+Full library dump into `~/syncthing/music/music_new` (every row in `spotify songs.json`):
+
+```bash
+python3 download_library.py --dry-run --limit 5
+python3 download_library.py --yes
+# resume later — existing dest files are skipped
+python3 download_library.py --yes --start-at 200
+```
+
+- Unique matches already in `~/syncthing/music` are copied instead of re-downloaded (`--no-copy` to force YouTube).
+- Files stay in `music_new` (beets import is disabled). An empty `.ndignore` hides the folder from Navidrome until you delete it or pass `--index-in-navidrome`.
+- Catalog local files with no Spotify URL use an `mp3` artist+title search.
+
 ## dependencies
 - [Spotify API access](https://stevesie.com/docs/pages/spotify-client-id-secret-developer-api)
 - [Cabinet](https://github.com/tylerjwoodfin/cabinet)
