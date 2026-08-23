@@ -446,7 +446,7 @@ def check_spotify(cab, now: datetime.datetime) -> ScorecardRow:
 def check_warnings_summary(issue_lines: list[str], source: str) -> ScorecardRow:
     if source == "unavailable":
         return ScorecardRow(
-            "Warnings / errors (24h)",
+            "Errors / warnings (24h)",
             "unknown",
             "unknown / not configured (log query failed)",
         )
@@ -466,7 +466,7 @@ def check_warnings_summary(issue_lines: list[str], source: str) -> ScorecardRow:
     else:
         status = "ok"
         detail = f"none (source: {source})"
-    return ScorecardRow("Warnings / errors (24h)", status, detail)
+    return ScorecardRow("Errors / warnings (24h)", status, detail)
 
 
 def build_scorecard_rows(
@@ -547,27 +547,72 @@ def _source_note_html(source: str, *, has_issues: bool) -> str:
     return f"(source: {_escape(source)})"
 
 
+def _issue_level(line: str) -> str:
+    """Classify a log line as critical, error, warning, or info."""
+    upper = line.upper()
+    if "CRITICAL" in upper:
+        return "critical"
+    if "ERROR" in upper:
+        return "error"
+    if "WARN" in upper:
+        return "warning"
+    return "info"
+
+
+def prioritize_issues_errors_first(
+    issue_lines: list[str], limit: int | None = None
+) -> list[str]:
+    """Return issues with critical/error before warnings; keep order within a level.
+
+    Source lines are chronological (oldest first). When ``limit`` truncates the
+    list, keep higher-severity items first and the latest entries within each
+    level so errors are not dropped in favor of newer warnings.
+    """
+    buckets: dict[str, list[str]] = {
+        "critical": [],
+        "error": [],
+        "warning": [],
+        "info": [],
+    }
+    for line in issue_lines:
+        buckets[_issue_level(line)].append(line)
+
+    if limit is None or len(issue_lines) <= limit:
+        return (
+            buckets["critical"]
+            + buckets["error"]
+            + buckets["warning"]
+            + buckets["info"]
+        )
+
+    shown: list[str] = []
+    remaining = limit
+    for key in ("critical", "error", "warning", "info"):
+        if remaining <= 0:
+            break
+        bucket = buckets[key]
+        take = bucket[-remaining:]
+        shown.extend(take)
+        remaining -= len(take)
+    return shown
+
+
 def render_issues_html(issue_lines: list[str], source: str, limit: int = 40) -> str:
-    """Visually cleaned-up warnings/errors section (replaces raw pre dump)."""
+    """Visually cleaned-up errors/warnings section (replaces raw pre dump)."""
     if not issue_lines:
         return (
-            "<h3>Warnings / Errors (24h)</h3>"
+            "<h3>Errors / Warnings (24h)</h3>"
             f"<p>None detected via {_escape(source)}.</p><br>"
         )
 
-    shown = issue_lines[-limit:]
+    shown = prioritize_issues_errors_first(issue_lines, limit)
     rows_html: list[str] = []
     for line in shown:
-        level = "info"
-        upper = line.upper()
-        if "CRITICAL" in upper:
-            level = "critical"
-        elif "ERROR" in upper:
-            level = "error"
-        elif "WARN" in upper:
-            level = "warning"
+        level = _issue_level(line)
         style = _STATUS_STYLES.get(
-            {"critical": "error", "error": "error", "warning": "warn"}.get(level, "unknown"),
+            {"critical": "error", "error": "error", "warning": "warn"}.get(
+                level, "unknown"
+            ),
             _STATUS_STYLES["unknown"],
         )
         rows_html.append(
@@ -581,14 +626,14 @@ def render_issues_html(issue_lines: list[str], source: str, limit: int = 40) -> 
     source_note = _source_note_html(source, has_issues=True)
     if omitted:
         note = (
-            f"<p>Showing latest {len(shown)} of {len(issue_lines)} "
-            f"{source_note}.</p>"
+            f"<p>Showing {len(shown)} of {len(issue_lines)} "
+            f"{source_note} (errors first).</p>"
         )
     else:
         note = f"<p>{source_note}.</p>"
 
     return (
-        "<h3>Warnings / Errors (24h)</h3>"
+        "<h3>Errors / Warnings (24h)</h3>"
         f"{note}"
         '<table border="1" style="border-collapse: collapse; width: 100%;">'
         '<tr style="background-color: #f2f2f2;">'

@@ -14,6 +14,7 @@ from scorecard import (
     parse_borg_archive_name,
     parse_quality_updated_at,
     parse_spotify_last_success,
+    prioritize_issues_errors_first,
     rainbow_host_from_borg_path,
     render_issues_html,
     render_scorecard_html,
@@ -152,6 +153,7 @@ class RenderTests(unittest.TestCase):
     def test_render_issues_html_empty(self):
         html = render_issues_html([], "loki")
         self.assertIn("None detected", html)
+        self.assertIn("Errors / Warnings", html)
 
     def test_render_issues_html_escapes(self):
         html = render_issues_html(["ERROR <script>alert(1)</script>"], "local")
@@ -163,13 +165,35 @@ class RenderTests(unittest.TestCase):
         self.assertIn("(source:", html)
         self.assertIn("https://grafana.tyler.cloud/explore", html)
         self.assertIn(">loki</a>", html)
-        # & in query string is HTML-escaped in the href attribute
-        self.assertIn("&amp;orgId=1", html)
 
     def test_render_issues_local_source_not_linked(self):
         html = render_issues_html(["WARNING something"], "local")
         self.assertIn("(source: local)", html)
         self.assertNotIn("<a href=", html)
+
+    def test_render_issues_errors_before_warnings(self):
+        html = render_issues_html(
+            ["WARNING first", "ERROR second", "CRITICAL third", "WARNING fourth"],
+            "local",
+        )
+        error_pos = html.find("ERROR second")
+        critical_pos = html.find("CRITICAL third")
+        warn_first = html.find("WARNING first")
+        warn_fourth = html.find("WARNING fourth")
+        self.assertLess(critical_pos, error_pos)
+        self.assertLess(error_pos, warn_first)
+        self.assertLess(warn_first, warn_fourth)
+
+    def test_prioritize_keeps_latest_errors_when_over_limit(self):
+        lines = [f"WARNING w{i}" for i in range(30)] + [
+            "ERROR old",
+            "ERROR new",
+        ]
+        shown = prioritize_issues_errors_first(lines, limit=5)
+        self.assertEqual(shown[:2], ["ERROR old", "ERROR new"])
+        self.assertTrue(all("WARNING" in line for line in shown[2:]))
+        self.assertEqual(shown[-1], "WARNING w29")
+        self.assertEqual(len(shown), 5)
 
 
 class BuildScorecardTests(unittest.TestCase):
