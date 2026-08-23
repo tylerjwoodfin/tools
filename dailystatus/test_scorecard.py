@@ -6,6 +6,7 @@ from unittest import mock
 
 from scorecard import (
     ScorecardRow,
+    _issue_level,
     build_scorecard_rows,
     check_pihole,
     check_spotify,
@@ -140,6 +141,18 @@ class CheckHelpersTests(unittest.TestCase):
         self.assertIn("1 error", row.detail)
         self.assertIn("(source: loki)", row.detail)
 
+    def test_warnings_summary_ignores_error_substring_in_path(self):
+        line = (
+            "2026-08-22 03:06:33,304 — WARNING -> bin/cabinet:8@cloud -> "
+            "Full Borg transcript: /home/tyler/.cabinet/log/borg-errors/"
+            "borg-warning-20260822-030633.log"
+        )
+        row = check_warnings_summary([line], "loki")
+        self.assertEqual(row.status, "warn")
+        self.assertIn("0 error", row.detail)
+        self.assertIn("1 warning", row.detail)
+        self.assertEqual(_issue_level(line), "warning")
+
 
 class RenderTests(unittest.TestCase):
     def test_render_scorecard_html(self):
@@ -195,6 +208,16 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(shown[-1], "WARNING w29")
         self.assertEqual(len(shown), 5)
 
+    def test_render_issues_uses_cabinet_level_not_message(self):
+        warning = (
+            "2026-08-22 03:06:33,304 — WARNING -> bin/cabinet:8@cloud -> "
+            "Full Borg transcript: /home/tyler/.cabinet/log/borg-errors/"
+            "borg-warning-20260822-030633.log"
+        )
+        html = render_issues_html([warning], "local")
+        self.assertIn(">warning</td>", html)
+        self.assertNotIn(">error</td>", html)
+
 
 class BuildScorecardTests(unittest.TestCase):
     def test_build_does_not_crash_on_missing_data(self):
@@ -246,6 +269,23 @@ class CasualWeatherTests(unittest.TestCase):
         import main as dailystatus_main  # pylint: disable=import-outside-toplevel
 
         self.assertIsNone(dailystatus_main.format_casual_tomorrow_weather({}))
+
+
+class AnalyzeLogsTests(unittest.TestCase):
+    def test_does_not_treat_borg_errors_path_as_error(self):
+        import main as dailystatus_main  # pylint: disable=import-outside-toplevel
+
+        line = (
+            "2026-08-22 03:06:33,304 — WARNING -> bin/cabinet:8@cloud -> "
+            "Full Borg transcript: /home/tyler/.cabinet/log/borg-errors/"
+            "borg-warning-20260822-030633.log"
+        )
+        _, is_warnings, is_errors, only_food = dailystatus_main.analyze_logs(
+            "", issue_lines=[line], issue_source="loki"
+        )
+        self.assertTrue(is_warnings)
+        self.assertFalse(is_errors)
+        self.assertFalse(only_food)
 
 
 if __name__ == "__main__":

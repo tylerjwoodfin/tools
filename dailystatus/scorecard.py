@@ -453,9 +453,9 @@ def check_warnings_summary(issue_lines: list[str], source: str) -> ScorecardRow:
     errors = [
         line
         for line in issue_lines
-        if "ERROR" in line.upper() or "CRITICAL" in line.upper()
+        if _issue_level(line) in ("error", "critical")
     ]
-    warnings = [line for line in issue_lines if "WARN" in line.upper()]
+    warnings = [line for line in issue_lines if _issue_level(line) == "warning"]
     detail = (
         f"{len(errors)} error(s), {len(warnings)} warning(s) (source: {source})"
     )
@@ -547,16 +547,37 @@ def _source_note_html(source: str, *, has_issues: bool) -> str:
     return f"(source: {_escape(source)})"
 
 
-def _issue_level(line: str) -> str:
-    """Classify a log line as critical, error, warning, or info."""
-    upper = line.upper()
-    if "CRITICAL" in upper:
-        return "critical"
-    if "ERROR" in upper:
-        return "error"
-    if "WARN" in upper:
+# Cabinet lines: ``2026-08-22 03:06:33,304 — WARNING -> path:8@host -> message``
+_CABINET_LEVEL_RE = re.compile(
+    r" — (?P<level>CRITICAL|ERROR|WARNING|WARN|INFO|DEBUG)(?: \[|->)",
+    re.IGNORECASE,
+)
+# Unstructured fixtures / non-Cabinet lines: whole-word only so ``borg-errors`` is not ERROR.
+_FALLBACK_LEVEL_RE = re.compile(
+    r"\b(?P<level>CRITICAL|ERROR|WARNING|WARN)\b",
+    re.IGNORECASE,
+)
+
+
+def _normalize_issue_level(raw: str) -> str:
+    low = raw.lower()
+    if low == "warn":
         return "warning"
-    return "info"
+    if low == "debug":
+        return "info"
+    return low
+
+
+def _issue_level(line: str) -> str:
+    """Classify a log line as critical, error, warning, or info.
+
+    Prefer the Cabinet level field (`` — WARNING -> ``) so a WARNING whose
+    message mentions ``borg-errors`` or ``error.log`` is not treated as ERROR.
+    """
+    match = _CABINET_LEVEL_RE.search(line) or _FALLBACK_LEVEL_RE.search(line)
+    if not match:
+        return "info"
+    return _normalize_issue_level(match.group("level"))
 
 
 def prioritize_issues_errors_first(

@@ -20,6 +20,7 @@ import cabinet
 from tyler_python_helpers import ChatGPT
 
 from scorecard import (
+    _issue_level,
     build_scorecard_rows,
     collect_log_issues,
     render_issues_html,
@@ -554,13 +555,15 @@ def analyze_logs(email, issue_lines=None, issue_source=None):
     if issue_lines is None or issue_source is None:
         issue_lines, issue_source = collect_log_issues(cab)
 
-    is_warnings = any("WARN" in issue for issue in issue_lines)
+    is_warnings = any(_issue_level(issue) == "warning" for issue in issue_lines)
     is_errors = any(
-        "ERROR" in issue or "CRITICAL" in issue for issue in issue_lines
+        _issue_level(issue) in ("error", "critical") for issue in issue_lines
     )
 
     error_lines = [
-        line for line in issue_lines if "ERROR" in line or "CRITICAL" in line
+        line
+        for line in issue_lines
+        if _issue_level(line) in ("error", "critical")
     ]
     only_food_log_error = len(error_lines) == 1 and any(
         "No food logged for today." in line for line in error_lines
