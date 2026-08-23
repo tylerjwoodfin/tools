@@ -1,7 +1,7 @@
 """
 Taiga ticket helpers for the Cursor taiga-ticket skill.
 
-Provides get/finish for TJW-### stories without depending on the removed
+Provides get/finish/ls for TJW-### stories without depending on the removed
 backloggist package. Resolves ``taiga.api_root`` with Docker discovery when
 the stored bridge IP is stale.
 """
@@ -9,6 +9,7 @@ the stored bridge IP is stale.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import os
 import re
@@ -42,6 +43,8 @@ LOCALHOST_API_ROOT = "http://127.0.0.1:8000/api/v1"
 PROBE_PATH = "/projects/by_slug"
 # Fail fast on stale Docker bridge IPs (connection refused).
 PROBE_TIMEOUT = (1.5, 5)
+LIST_PAGE_SIZE = 100
+SORT_CHOICES = ("status", "ref", "subject")
 
 
 @dataclass
@@ -61,6 +64,96 @@ class Ticket:
     @property
     def attachments(self) -> list[dict[str, Any]]:
         return list(self.raw.get("_attachments") or [])
+
+
+@dataclass(frozen=True)
+class StorySummary:
+    """One row in ``taiga ls``: ticket number, status, and subject."""
+
+    ref: int
+    subject: str
+    status_name: str
+    status_order: int
+    kanban_order: int
+    is_closed: bool
+
+
+def status_order_map(statuses: list[dict[str, Any]]) -> dict[str, int]:
+    """Map Kanban column display names to their board order."""
+    return {
+        str(row.get("name") or ""): int(row.get("order") or 0) for row in statuses
+    }
+
+
+def summarize_story(
+    raw: dict[str, Any], order_by_status: dict[str, int]
+) -> StorySummary:
+    """Build a ``StorySummary`` from a Taiga user-story list payload."""
+    extra = raw.get("status_extra_info") or {}
+    status_name = str(extra.get("name") or "")
+    return StorySummary(
+        ref=int(raw.get("ref") or 0),
+        subject=str(raw.get("subject") or ""),
+        status_name=status_name,
+        status_order=order_by_status.get(status_name, 10_000),
+        kanban_order=int(raw.get("kanban_order") or 0),
+        is_closed=bool(raw.get("is_closed")),
+    )
+
+
+def sort_story_rows(
+    rows: list[StorySummary],
+    sort_by: str,
+    reverse: bool = False,
+) -> list[StorySummary]:
+    """Sort ticket rows by status (Kanban order), ref, or subject."""
+
+    def sort_key(row: StorySummary) -> tuple:
+        if sort_by == "ref":
+            return (row.ref,)
+        if sort_by == "subject":
+            return (row.subject.lower(), row.ref)
+        return (row.status_order, row.kanban_order, row.ref)
+
+    return sorted(rows, key=sort_key, reverse=reverse)
+
+
+def _ansi(code: str, text: str, enabled: bool) -> str:
+    if not enabled:
+        return text
+    return f"\033[{code}m{text}\033[0m"
+
+
+def format_story_list(
+    rows: list[StorySummary],
+    *,
+    group_by_status: bool = True,
+    color: bool = False,
+) -> str:
+    """Render ticket rows for the terminal (grouped by status, or a flat table)."""
+    if not rows:
+        return "No tickets.\n"
+    ref_width = max(len(f"TJW-{row.ref}") for row in rows)
+    lines: list[str] = []
+    if group_by_status:
+        for status, group in itertools.groupby(
+            rows, key=lambda row: row.status_name or "(no status)"
+        ):
+            group_list = list(group)
+            header = f"{status} ({len(group_list)})"
+            lines.append(_ansi("1;36", header, color))
+            for row in group_list:
+                label = f"TJW-{row.ref}".ljust(ref_width)
+                lines.append(f"  {_ansi('32', label, color)}  {row.subject}")
+            lines.append("")
+        return "\n".join(lines).rstrip() + "\n"
+
+    status_width = max((len(row.status_name) for row in rows), default=0)
+    for row in rows:
+        label = f"TJW-{row.ref}".ljust(ref_width)
+        status = row.status_name.ljust(status_width)
+        lines.append(f"{_ansi('32', label, color)}  {status}  {row.subject}")
+    return "\n".join(lines) + "\n"
 
 
 def discover_taiga_back_api_root(
@@ -354,6 +447,69 @@ class TaigaClient:
             )
         return self.get_ticket(current.ref)
 
+    def list_user_stories(
+        self,
+        status: Optional[str] = None,
+        include_all: bool = False,
+    ) -> list[dict[str, Any]]:
+        """
+        Return user-story list payloads for the project.
+
+        Pages through ``GET /userstories``. By default only stories in
+        open (non-closed, non-archived) Kanban columns are included.
+        """
+        params: dict[str, Any] = {
+            "project": self.project_id,
+            "page_size": LIST_PAGE_SIZE,
+        }
+        if status:
+            params["status"] = self._status_id_by_name(status)
+        elif not include_all:
+            params["status__is_archived"] = "false"
+            params["status__is_closed"] = "false"
+
+        stories: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            params["page"] = page
+            r = requests.get(
+                f"{self.api_root}/userstories",
+                params=params,
+                headers=auth_headers(self.bearer),
+                timeout=REQUEST_TIMEOUT,
+            )
+            if r.status_code != 200:
+                raise RuntimeError(
+                    f"Failed to list user stories ({r.status_code}): {r.text[:800]}"
+                )
+            data = r.json()
+            if not isinstance(data, list):
+                raise RuntimeError(
+                    f"Unexpected userstories payload: {type(data)}"
+                )
+            stories.extend(data)
+            if not r.headers.get("x-pagination-next") or not data:
+                break
+            page += 1
+            if page > 200:
+                break
+        return stories
+
+    def list_story_rows(
+        self,
+        status: Optional[str] = None,
+        include_all: bool = False,
+    ) -> list[StorySummary]:
+        """Return summarized tickets for ``ls``, with Kanban column order."""
+        statuses = fetch_userstory_statuses(
+            self.api_root, self.bearer, self.project_id
+        )
+        order_by_status = status_order_map(statuses)
+        raw_stories = self.list_user_stories(
+            status=status, include_all=include_all
+        )
+        return [summarize_story(raw, order_by_status) for raw in raw_stories]
+
 
 def _cmd_get(args: argparse.Namespace) -> int:
     client = TaigaClient(project_slug=args.project_slug)
@@ -386,6 +542,28 @@ def _cmd_finish(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_ls(args: argparse.Namespace) -> int:
+    client = TaigaClient(project_slug=args.project_slug)
+    rows = client.list_story_rows(
+        status=args.status, include_all=args.all
+    )
+    rows = sort_story_rows(rows, args.sort, reverse=args.reverse)
+    if args.json:
+        payload = [
+            {"ref": row.ref, "status": row.status_name, "subject": row.subject}
+            for row in rows
+        ]
+        print(json.dumps(payload, indent=2))
+        return 0
+    grouped = args.sort == "status"
+    sys.stdout.write(
+        format_story_list(
+            rows, group_by_status=grouped, color=sys.stdout.isatty()
+        )
+    )
+    return 0
+
+
 def _cmd_resolve_api(args: argparse.Namespace) -> int:
     cfg = load_taiga_config()
     hint = resolve_api_root(cfg) or discover_taiga_back_api_root() or ""
@@ -399,7 +577,7 @@ def _cmd_resolve_api(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Fetch/finish Taiga TJW tickets for the Cursor agent workflow."
+        description="Fetch, list, and finish Taiga TJW tickets."
     )
     parser.add_argument(
         "--project-slug",
@@ -430,6 +608,39 @@ def build_parser() -> argparse.ArgumentParser:
         help="Kanban column override (default: Testing / cabinet setting)",
     )
     finish_p.set_defaults(func=_cmd_finish)
+
+    ls_p = sub.add_parser(
+        "ls",
+        help="List tickets by status (ref + summary); sortable",
+    )
+    ls_p.add_argument(
+        "--status",
+        default=None,
+        metavar="NAME_OR_SLUG",
+        help="Only this Kanban column (display name or slug)",
+    )
+    ls_p.add_argument(
+        "--sort",
+        choices=SORT_CHOICES,
+        default="status",
+        help="Sort by Kanban status (default), ticket number, or subject",
+    )
+    ls_p.add_argument(
+        "--reverse",
+        action="store_true",
+        help="Reverse the sort order",
+    )
+    ls_p.add_argument(
+        "--all",
+        action="store_true",
+        help="Include closed and archived columns",
+    )
+    ls_p.add_argument(
+        "--json",
+        action="store_true",
+        help="Print JSON instead of a table",
+    )
+    ls_p.set_defaults(func=_cmd_ls)
 
     api_p = sub.add_parser(
         "resolve-api",
