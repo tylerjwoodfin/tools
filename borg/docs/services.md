@@ -61,14 +61,6 @@ Photo library paths are in `.env` (`UPLOAD_LOCATION`); ensure bind mounts exist.
 
 ---
 
-## Affine
-
-| Export | `affine/database-backup/affine-database.sql` |
-
-Import into `affine_postgres` after DB container is up. Custom image build documented in `affine/README.md`.
-
----
-
 ## Authentik
 
 | Export | `authentik/database-backup/authentik-database.sql` |

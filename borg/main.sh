@@ -184,7 +184,6 @@ else
         add_backup_path "$HOME/git"
         add_backup_path "$HOME/.zshrc"
         add_backup_path "$HOME/.config"
-        add_backup_path "$HOME/.affine"
 
         # Cloudflared (systemd e.g. cloudflared-setup/cloudflared@*.service): tunnel JSON + cert.pem
         # live under /etc/cloudflared and are usually root-readable only. Stage into the same temp
@@ -255,22 +254,6 @@ else
                 fi
             else
                 debug "Immich postgres not running, skipping database dump"
-            fi
-        fi
-
-        # Export Affine database for backup (pg_dump - postgres data dir has restrictive perms)
-        AFFINE_DIR="$HOME/git/docker/affine"
-        AFFINE_BACKUP_DIR="$AFFINE_DIR/database-backup"
-        if [ -d "$AFFINE_DIR" ] && command -v docker >/dev/null 2>&1; then
-            mkdir -p "$AFFINE_BACKUP_DIR"
-            if docker ps --format '{{.Names}}' 2>/dev/null | grep -q affine_postgres; then
-                if docker exec -t affine_postgres pg_dump -U affine affine > "$AFFINE_BACKUP_DIR/affine-database.sql" 2>/dev/null; then
-                    debug "Affine database dumped to database-backup/"
-                else
-                    warning "Failed to dump Affine database"
-                fi
-            else
-                debug "Affine postgres not running, skipping database dump"
             fi
         fi
 

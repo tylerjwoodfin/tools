@@ -60,7 +60,7 @@ See **[docs/archive-contents.md](docs/archive-contents.md)** for the full invent
 
 Summary:
 
-- `$HOME/syncthing`, `$HOME/git` (no `.git`), `$HOME/.config`, `$HOME/.zshrc`, `$HOME/.affine`
+- `$HOME/syncthing`, `$HOME/git` (no `.git`), `$HOME/.config`, `$HOME/.zshrc`
 - Staged per run: crontab, `/etc/cloudflared`, `/root/.config/rustdesk`
 - Pre-export DB/config snapshots under `~/git/docker/*/database-backup`, `taiga-backup`, `pihole-backup`
 - Compression: LZ4; exclusions for live DB trees and caches — details in `main.sh` and docs
