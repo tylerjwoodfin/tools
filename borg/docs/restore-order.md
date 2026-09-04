@@ -14,7 +14,7 @@ Dependencies matter: tunnels, databases, and auth before apps that rely on them.
 1. Restore `$HOME/git` (Docker stacks, dotfiles, tools).
 2. Restore `$HOME/syncthing`.
 3. Restore `$HOME/.config` (includes RustDesk client config).
-4. Restore `$HOME/.zshrc`, `$HOME/.affine` if present.
+4. Restore `$HOME/.zshrc`.
 5. Install dotfiles / run ansible if you use `~/git/dotfiles/scripts/setup.sh` (optional; after tree is in place).
 
 ## Phase 2 — Host-level secrets and scheduling
@@ -30,7 +30,7 @@ Dependencies matter: tunnels, databases, and auth before apps that rely on them.
 2. Start **databases and auth** before apps that depend on them:
    - MongoDB (if apps need it)
    - Authentik
-   - Postgres-backed stacks (Immich, Affine, Miniflux, Taiga, Dawarich)
+   - Postgres-backed stacks (Immich, Miniflux, Taiga, Dawarich)
 3. Restore DB **from snapshots** before or right after first container start — see [services.md](services.md).
 
 ## Phase 4 — Application stacks
@@ -39,7 +39,7 @@ Start order (loose; adjust per stack README):
 
 1. Pi-hole (if on this host)
 2. Gitea / git hosting
-3. Immich, Affine, media stacks
+3. Immich, media stacks
 4. RustDesk (`docker compose up -d` in `~/git/docker/rustdesk`)
 5. RustDesk **client** systemd service: `sudo systemctl enable --now rustdesk`
 6. Remaining compose projects (Loki, Kuma, Vaultwarden, Taiga, sure.am, …)

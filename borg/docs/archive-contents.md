@@ -10,7 +10,6 @@ Source: `~/git/tools/borg/main.sh`. Archives use compression `lz4`.
 | `$HOME/git` | Docker stacks, dotfiles, tools (**`.git` dirs excluded**) |
 | `$HOME/.zshrc` | Shell config |
 | `$HOME/.config` | Includes `rustdesk/`, app configs |
-| `$HOME/.affine` | Affine local data |
 | Temp dir (see below) | Crontab + staged root-only configs |
 
 ## Staged inside temp directory (per backup run)
@@ -32,7 +31,6 @@ Created immediately before `borg create`, then deleted after backup. They **are*
 | Stack | Export path | Live data excluded from Borg |
 |-------|-------------|------------------------------|
 | Immich | `docker/immich/database-backup/immich-database.sql` | `docker/immich/postgres/` |
-| Affine | `docker/affine/database-backup/affine-database.sql` | postgres data dir |
 | Authentik | `docker/authentik/database-backup/authentik-database.sql` | `postgresql/`, `redis/` |
 | Miniflux | `docker/miniflux/database-backup/miniflux-database.sql` | postgres data dir |
 | Taiga | `docker/taiga-docker/taiga-backup/taiga_db.sql`, `media/`, `static/` | named volumes |
