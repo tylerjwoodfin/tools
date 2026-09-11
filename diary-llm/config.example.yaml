@@ -1,0 +1,47 @@
+# Copy to ~/.config/diary-llm/config.yaml and adjust.
+
+diary_dir: /Users/tyler/syncthing/notes/diary
+# conversations_dir defaults to <diary_dir>/conversations
+# state_dir defaults to ~/.local/share/diary-llm
+
+telegram:
+  channel: telegram
+  target: "1234567890"
+
+proactive:
+  enabled: true
+  min_days: 2
+  max_days: 4
+  # Local hours when proactive prompts may be sent
+  allowed_hours: [17, 18, 19, 20, 21]
+
+inactivity_timeout_hours: 3
+
+# Conversation pacing (user replies after the opening prompt)
+conversation:
+  soft_user_replies: 4   # prefer closing
+  max_user_replies: 6    # always close
+
+history:
+  recent_entries: 5
+  topic_entries: 3
+  recent_prompt_limit: 20
+
+llm:
+  # Prefer openclaw + a cloud model for diary turns. Local 26B models can
+  # freeze a busy Mac (watchdog panics) when diary replies trigger inference.
+  # openai = OpenAI-compatible HTTP API (LM Studio / Ollama / cloud)
+  # openclaw = shell out to Gateway `openclaw agent`
+  # stub = deterministic offline replies (tests / dry-run)
+  backend: openclaw
+  model: openai/gpt-5.6-sol
+  timeout_seconds: 60
+  openclaw_bin: /Users/tyler/git/tools/diary-llm/scripts/openclaw-gateway
+  # Optional when backend=openai:
+  # base_url: http://127.0.0.1:1234/v1
+  # api_key: lmstudio-local
+
+timezone: America/Los_Angeles
+
+# How often the OpenClaw cron tick should run (install script uses this)
+tick_cron: "0 */2 * * *"

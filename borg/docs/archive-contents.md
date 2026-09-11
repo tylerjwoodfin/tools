@@ -6,11 +6,21 @@ Source: `~/git/tools/borg/main.sh`. Archives use compression `lz4`.
 
 | Path | Notes |
 |------|--------|
-| `$HOME/syncthing` | Syncthing-synced data |
-| `$HOME/git` | Docker stacks, dotfiles, tools (**`.git` dirs excluded**) |
-| `$HOME/.zshrc` | Shell config |
-| `$HOME/.config` | Includes `rustdesk/`, app configs |
+| `$HOME/.config` | App configs (incl. diary-llm example links, rustdesk, etc.) |
+| `$HOME/.openclaw` | OpenClaw config/workspace/state (**`tools`/`npm`/`cache` excluded**) |
+| `$HOME/.ssh` | SSH keys and config |
+| `$HOME/.gnupg` | GPG keyring (if present) |
+| `$HOME/.zshrc` (+ `.zprofile` / `.zshenv`) | Shell config |
+| `$HOME/.local/share/diary-llm` | Diary session state |
+| `$HOME/.cabinet` / `.local/share/cabinet` | Cabinet logs/state when present |
 | Temp dir (see below) | Crontab + staged root-only configs |
+
+### Host-specific additions
+
+| Host | Extra paths | Skipped |
+|------|-------------|---------|
+| Linux (`cloud`) | `$HOME/syncthing`, `$HOME/git` | — |
+| macOS (`ice`) | `$HOME/Library/LaunchAgents` | `$HOME/syncthing`, `$HOME/git` |
 
 ## Staged inside temp directory (per backup run)
 
@@ -67,4 +77,11 @@ For named volumes not bind-mounted into `~/git`, data may **only** exist inside 
 
 ## Replication
 
-`main.sh` rsyncs the Borg repo to `path.rainbow-borg` when checks pass. If primary repo is unavailable, use the secondary copy with the **same passphrase**.
+`main.sh` rsyncs the Borg repo to a **host-scoped** rainbow path when checks pass:
+
+- `cloud` → cabinet `path.rainbow-borg` unchanged (legacy offsite history)
+- other hosts → same base path with `-<hostname>` appended (e.g. `…/syncthing-backups-borg-repo-ice`)
+
+This prevents `rsync --delete` on one machine from wiping another machine’s offsite copy. Local repos are already per-machine (`$HOME/syncthing-backups-borg-repo`). Archives and prune use `{hostname}-*` for the same reason.
+
+If primary repo is unavailable, use that host’s secondary copy with the **same passphrase**.

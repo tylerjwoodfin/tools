@@ -14,6 +14,30 @@ fi
 # Cron jobs run with minimal PATH, so we need to set it explicitly
 export PATH="/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin:$HOME/bin:$PATH"
 
+# Short hostname for archive names, prune globs, and offsite path scoping.
+# Borg's {hostname} placeholder uses the same idea; keep them aligned.
+HOSTNAME=$(hostname -s 2>/dev/null || hostname)
+HOSTNAME=${HOSTNAME%%.*}
+
+# Portable date helpers (GNU date on Linux; BSD date on macOS)
+date_ymd_ago() {
+    # $1 = days ago (0 = today)
+    _days="$1"
+    if date -u -d "1970-01-01" +%Y >/dev/null 2>&1; then
+        date -d "$_days days ago" +%Y-%m-%d
+    else
+        date -v-"${_days}"d +%Y-%m-%d
+    fi
+}
+
+date_ymd_last_month() {
+    if date -u -d "1970-01-01" +%Y >/dev/null 2>&1; then
+        date -d "-1 month" +%Y-%m
+    else
+        date -v-1m +%Y-%m
+    fi
+}
+
 # Find borg command
 BORG_CMD=""
 if command -v borg >/dev/null 2>&1; then
@@ -55,8 +79,8 @@ BORG_PASSPHRASE=$("$CABINET" -g "keys" "borg" "passphrase") || {
 export BORG_REPO
 export BORG_PASSPHRASE
 
-# Log repo
-echo "Borg repository: $BORG_REPO"
+# Log repo (never log the passphrase)
+echo "Borg repository: $BORG_REPO (host=$HOSTNAME)"
 
 # Logging functions
 debug() { "$CABINET" --log "$*" --level 'debug'; }
@@ -140,9 +164,11 @@ else
         exit 1
     fi
 
-    # Check if backup already exists from today (for idempotency)
-    today=$(date +%Y-%m-%d)
-    existing_today=$("$BORG_CMD" list --short 2>/dev/null | grep -c "$today" 2>/dev/null || echo 0)
+    # Check if THIS HOST already has a backup from today (for idempotency).
+    # Must be hostname-scoped so another machine's archive for today does not
+    # suppress this host's create (and so shared-calendar greps stay accurate).
+    today=$(date_ymd_ago 0)
+    existing_today=$("$BORG_CMD" list --short --glob-archives "${HOSTNAME}-*" 2>/dev/null | grep -c "$today" 2>/dev/null || echo 0)
     
     # Ensure existing_today is numeric (default to 0 if empty or non-numeric)
     case "$existing_today" in
@@ -150,7 +176,7 @@ else
     esac
 
     if [ "$existing_today" -ge 1 ]; then
-        info "Backup from today already exists, skipping create step"
+        info "Backup from today already exists for $HOSTNAME, skipping create step"
         backup_exit=0
     else
         # Create temporary directory for crontab backup
@@ -178,12 +204,32 @@ else
             fi
         }
         
-        # Check and add paths that exist
-        # (Dawarich: pg_dump from crontab → ~/syncthing/... is included when Syncthing is backed up; not exported here.)
-        add_backup_path "$HOME/syncthing"
-        add_backup_path "$HOME/git"
+        # Paths that matter on every host (machine-local state, not Syncthing content).
         add_backup_path "$HOME/.zshrc"
+        add_backup_path "$HOME/.zprofile"
+        add_backup_path "$HOME/.zshenv"
         add_backup_path "$HOME/.config"
+        add_backup_path "$HOME/.openclaw"
+        add_backup_path "$HOME/.ssh"
+        add_backup_path "$HOME/.gnupg"
+        add_backup_path "$HOME/.local/share/diary-llm"
+        add_backup_path "$HOME/.local/share/cabinet"
+        add_backup_path "$HOME/.cabinet"
+
+        # Syncthing + git trees: authoritative on cloud. Darwin focuses on
+        # machine-local secrets/config (accept risk that unpushed git is lost).
+        case "$(uname -s)" in
+            Darwin)
+                debug "Skipping $HOME/syncthing on Darwin (backed up from cloud)"
+                debug "Skipping $HOME/git on Darwin (unpushed work accepted as at-risk)"
+                add_backup_path "$HOME/Library/LaunchAgents"
+                add_backup_path "$HOME/Library/LaunchDaemons"
+                ;;
+            *)
+                add_backup_path "$HOME/syncthing"
+                add_backup_path "$HOME/git"
+                ;;
+        esac
 
         # Cloudflared (systemd e.g. cloudflared-setup/cloudflared@*.service): tunnel JSON + cert.pem
         # live under /etc/cloudflared and are usually root-readable only. Stage into the same temp
@@ -478,6 +524,12 @@ else
             --exclude 'sh:**/etc-pihole/logrotate'  \
             --exclude 're:etc-pihole'               \
             --exclude 'sh:**/tmp_objdir-*'  \
+            --exclude 'sh:**/syncthing-backups-borg-repo' \
+            --exclude 'sh:**/.openclaw/tools' \
+            --exclude 'sh:**/.openclaw/npm' \
+            --exclude 'sh:**/.openclaw/cache' \
+            --exclude 'sh:**/.openclaw/tmp' \
+            --exclude 'sh:**/.openclaw/media' \
                                             \
             ::'{hostname}-{now}'            \
             $BACKUP_PATHS \
@@ -636,8 +688,8 @@ else
 
     # Check if backups are performing as expected
     check_backups() {
-        # Get list of backups, handling errors
-        backups=$("$BORG_CMD" list --short 2>&1)
+        # Only evaluate THIS host's archives. Other hosts may share a calendar day.
+        backups=$("$BORG_CMD" list --short --glob-archives "${HOSTNAME}-*" 2>&1)
         borg_list_exit=$?
         
         if [ $borg_list_exit -ne 0 ]; then
@@ -647,13 +699,13 @@ else
         
         # Check if backup list is empty
         if [ -z "$backups" ]; then
-            error "No backups found in repository"
+            error "No backups found in repository for $HOSTNAME"
             return 1
         fi
         
-        today=$(date +%Y-%m-%d)
-        yesterday=$(date -d "yesterday" +%Y-%m-%d)
-        last_month=$(date -d "-1 month" +%Y-%m)
+        today=$(date_ymd_ago 0)
+        yesterday=$(date_ymd_ago 1)
+        last_month=$(date_ymd_last_month)
 
         # Count backups matching dates (handle empty grep results)
         today_count=$(echo "$backups" | grep -c "$today" 2>/dev/null || echo 0)
@@ -670,7 +722,7 @@ else
         week_count=0
         i=0
         while [ $i -le 6 ]; do
-            day=$(date -d "$i days ago" +%Y-%m-%d)
+            day=$(date_ymd_ago $i)
             day_count=$(echo "$backups" | grep -c "$day" 2>/dev/null || echo 0)
             case "$day_count" in
                 ''|*[!0-9]*) day_count=0 ;;
@@ -765,7 +817,27 @@ if [ ${global_exit} -le 1 ]; then
     # Convert ssh:// URI to rsync format if needed
     RSYNC_DEST="$RAINBOW_PATH"
     SSH_OPTS="-o StrictHostKeyChecking=no"
-    
+
+    # Host-scope the offsite replica so rsync --delete on one machine cannot
+    # wipe another machine's rainbow copy.
+    # - cloud keeps the legacy path (existing offsite history).
+    # - every other host appends -<hostname> to the cabinet base path.
+    case "$HOSTNAME" in
+        cloud)
+            info "Using legacy rainbow path for cloud: $RAINBOW_PATH"
+            ;;
+        *)
+            case "$RAINBOW_PATH" in
+                *-"$HOSTNAME"|*-"$HOSTNAME"/)
+                    ;;
+                *)
+                    RAINBOW_PATH=$(echo "$RAINBOW_PATH" | sed "s|/*\$|-$HOSTNAME|")
+                    info "Host-scoped rainbow path: $RAINBOW_PATH"
+                    ;;
+            esac
+            ;;
+    esac
+
     case "$RAINBOW_PATH" in
         ssh://*)
             # Extract components from ssh://[user@]host[:port]/path format
@@ -804,6 +876,9 @@ if [ ${global_exit} -le 1 ]; then
                     RSYNC_DEST="${HOST_PART}:/${PATH_PART}"
                     ;;
             esac
+            ;;
+        *)
+            RSYNC_DEST="$RAINBOW_PATH"
             ;;
     esac
 
