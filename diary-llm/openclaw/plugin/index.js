@@ -79,8 +79,19 @@ function runDiary(api, args) {
 }
 
 function isDiaryCommand(text) {
-  const t = (text || "").trim().toLowerCase();
-  return t === "/diary" || t.startsWith("/diary ");
+  return Boolean(extractDiaryCommand(text));
+}
+
+function extractDiaryCommand(text) {
+  const t = (text || "").trim();
+  if (!t) return null;
+  const lower = t.toLowerCase();
+  if (lower === "/diary" || lower.startsWith("/diary ")) {
+    return t.split(/\r?\n/)[0].trim();
+  }
+  // Skill-injected turns often look like "...\nUser request:\n/diary"
+  const match = t.match(/(?:^|\n)\s*(\/diary(?:[^\n]*))\s*$/i);
+  return match ? match[1].trim() : null;
 }
 
 function isTelegramTurn(ctx) {
@@ -145,10 +156,6 @@ export default definePluginEntry({
     api.on(
       "before_agent_reply",
       (event, ctx) => {
-        // Never claim non-Telegram turns (cron, infer, internal agent, etc.).
-        if (!isTelegramTurn(ctx)) {
-          return;
-        }
         if (process.env.DIARY_LLM_INTERNAL === "1") {
           return;
         }
@@ -158,12 +165,19 @@ export default definePluginEntry({
           return;
         }
 
-        if (isDiaryCommand(body)) {
-          const result = runDiary(api, ["handle", body]);
+        const diaryCmd = extractDiaryCommand(body);
+        // Always claim /diary* — do not let the general agent roleplay journaling.
+        if (diaryCmd) {
+          const result = runDiary(api, ["handle", diaryCmd]);
           return {
             handled: true,
             reply: { text: extractReplyText(result) },
           };
+        }
+
+        // Active-session follow-ups: Telegram only.
+        if (!isTelegramTurn(ctx)) {
+          return;
         }
 
         if (!statusIsActive(api)) {
