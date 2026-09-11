@@ -145,16 +145,40 @@ def main(argv: list[str] | None = None) -> int:
             results.append(wf.start_proactive(force=True, send=not args.no_send))
         else:
             results = wf.tick(send=not args.no_send)
+        results = [r for r in results if r is not None]
+
         if args.json:
             print(result_json(results))
-        else:
-            for r in results:
+            return 0 if all(r.ok for r in results) else 1
+
+        # Cron jobs often use --announce. Skip/status chatter must stay silent.
+        # When tick itself already delivered via Telegram, also stay silent to
+        # avoid duplicate messages.
+        announceable = [
+            r
+            for r in results
+            if r.action in {"started", "finalized"} and (r.message or "").strip()
+        ]
+        if args.no_send and announceable:
+            for r in announceable:
                 _emit(r, as_json=False)
+        else:
+            print("NO_REPLY")
         return 0 if all(r.ok for r in results) else 1
 
     if args.command == "proactive":
         result = wf.start_proactive(force=args.force, send=not args.no_send)
-        _emit(result, as_json=args.json)
+        if args.json:
+            _emit(result, as_json=True)
+        elif result.action == "skip":
+            # Keep cron/announce quiet when nothing should be sent.
+            print("NO_REPLY")
+        elif args.no_send:
+            # Caller (e.g. announce) will deliver stdout.
+            _emit(result, as_json=False)
+        else:
+            # Already delivered via TelegramSender.
+            print("NO_REPLY")
         return 0 if result.ok else 1
 
     if args.command == "handle":

@@ -191,6 +191,19 @@ def test_handle_slash_diary_and_done(workflow: DiaryWorkflow):
     assert done.action == "finalized"
 
 
+def test_cli_tick_is_silent_when_nothing_to_announce(config_file: Path, capsys):
+    from diary_llm.cli import main
+
+    # Default stub tick: no active session to finalize; proactive may start or skip.
+    # With send enabled (default), stdout must be NO_REPLY so cron --announce stays quiet.
+    code = main(["--config", str(config_file), "--stub-llm", "--dry-run", "tick"])
+    captured = capsys.readouterr()
+    assert code == 0
+    assert captured.out.strip() == "NO_REPLY"
+    assert "Proactive prompt not due yet" not in captured.out
+    assert "not due" not in captured.out.lower()
+
+
 def test_cli_start_reply_done(config_file: Path, tmp_path: Path):
     from diary_llm.cli import main
 
