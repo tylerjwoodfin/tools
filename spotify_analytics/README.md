@@ -3,9 +3,12 @@ Checks for duplicate songs, unplayable songs (US market via Spotify `is_playable
 track relinking), and songs missing from playlists.
 
 Local files:
-- Genres are classified with ChatGPT (OpenAI), same as catalog tracks — not hard-defaulted to Pop.
-- Spotify Web API cannot add/move `spotify:local:` URIs; rule breaks (e.g. in Tyler Radio
-  but missing from the genre playlist) are **flagged only**, not auto-fixed via catalog search.
+- ChatGPT (OpenAI) is used for genre **only when a track is not already in a genre
+  playlist**. If it is in exactly one genre playlist, that is fine regardless of which
+  genre (AI never reassigns). Membership matching uses local URI when available, then
+  title+artist+album, with a title fallback when artist/album metadata is missing.
+- Spotify Web API cannot add/move `spotify:local:` URIs; if a local track is in Tyler
+  Radio but **no** genre playlist, that gap is flagged only (no catalog substitute).
 - Duplicate detection: catalog tracks by Spotify URL/ID; local files by title + artist + album.
 
 Unplayable detection:
