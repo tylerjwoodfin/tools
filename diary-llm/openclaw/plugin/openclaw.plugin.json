@@ -1,0 +1,23 @@
+{
+  "id": "diary-llm",
+  "name": "Diary LLM",
+  "description": "Conversational Telegram diary sessions with proactive prompts and Markdown storage.",
+  "version": "0.1.0",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "cliPath": {
+        "type": "string",
+        "description": "Path to the diary-llm executable"
+      },
+      "configPath": {
+        "type": "string",
+        "description": "Optional path to diary-llm config.yaml"
+      }
+    }
+  }
+}

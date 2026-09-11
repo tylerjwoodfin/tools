@@ -60,10 +60,12 @@ See **[docs/archive-contents.md](docs/archive-contents.md)** for the full invent
 
 Summary:
 
-- `$HOME/syncthing`, `$HOME/git` (no `.git`), `$HOME/.config`, `$HOME/.zshrc`
-- Staged per run: crontab, `/etc/cloudflared`, `/root/.config/rustdesk`
-- Pre-export DB/config snapshots under `~/git/docker/*/database-backup`, `taiga-backup`, `pihole-backup`
-- Compression: LZ4; exclusions for live DB trees and caches — details in `main.sh` and docs
+- **All hosts:** `$HOME/.config`, `$HOME/.openclaw`, `$HOME/.ssh`, `$HOME/.gnupg`, shell rc files, diary-llm state
+- **Linux (cloud):** also `$HOME/syncthing`, `$HOME/git`, plus staged crontab / cloudflared / RustDesk / DB exports
+- **macOS (ice):** also `~/Library/LaunchAgents` (skips Syncthing and `~/git` — accept unpushed work as at-risk)
+- Archives named `{hostname}-{timestamp}`; prune is limited to `{hostname}-*`
+- Offsite rainbow replica is host-scoped (`…/syncthing-backups-borg-repo` for cloud; `…-ice` etc. for other hosts) so `rsync --delete` cannot wipe another machine’s copy
+- Compression: LZ4; exclusions for live DB trees, caches, and `.openclaw/tools` — details in `main.sh` and docs
 
 ## Disaster recovery
 

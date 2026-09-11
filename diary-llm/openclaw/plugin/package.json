@@ -1,0 +1,16 @@
+{
+  "name": "@local/diary-llm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenClaw plugin for conversational diary sessions via diary-llm",
+  "type": "module",
+  "peerDependencies": {
+    "openclaw": ">=2026.5.17"
+  },
+  "openclaw": {
+    "extensions": ["./index.js"],
+    "compat": {
+      "pluginApi": ">=2026.5.17"
+    }
+  }
+}
