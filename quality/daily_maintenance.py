@@ -484,7 +484,7 @@ def _ensure_ssh_remote(cab, remote_name="origin"):
         return False
 
 
-def _merge_backup_branches(cab, env, current_backup_branch=None):
+def _merge_backup_branches(cab, env):
     """
     Merge all backup branches into main to ensure main has everything.
     Uses merge strategies to avoid conflicts:
@@ -514,10 +514,6 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
         cab.log(f"Found {len(backup_branches)} backup branch(es) to merge")
 
         for backup_branch in backup_branches:
-            if backup_branch == current_backup_branch:
-                cab.log(f"Skipping current backup branch: {backup_branch}")
-                continue
-
             cab.log(f"Merging backup branch: {backup_branch}")
 
             # Check if branch has commits not in main
@@ -753,6 +749,131 @@ def _merge_backup_branches(cab, env, current_backup_branch=None):
         return False
 
 
+def _git_run(args, check=False, env=None, timeout=None):
+    """Run a git command, capturing stdout/stderr as text."""
+    return subprocess.run(  # pylint: disable=subprocess-run-check
+        ["git", *args],
+        capture_output=True,
+        text=True,
+        check=check,
+        env=env,
+        timeout=timeout,
+    )
+
+
+def _working_tree_is_dirty():
+    """Return True if the current Git working tree has uncommitted changes."""
+    result = _git_run(["status", "--porcelain"], check=True)
+    return bool(result.stdout.strip())
+
+
+def _move_uncommitted_changes_to_backup_branch(cab):
+    """
+    Snapshot a dirty working tree onto a committed backup branch and return
+    to the original branch with a clean tree.
+
+    `git stash branch` re-applies the stash as unstaged files. If we switch
+    back without committing, git carries those files onto the original
+    branch and `git pull --rebase` fails.
+
+    Returns (ok, backup_branch). ok is False only when stash failed and
+    the pull must be aborted.
+    """
+    if not _working_tree_is_dirty():
+        return True, None
+
+    cab.log(
+        "Uncommitted changes detected in ~/git/backend; creating backup branch",
+        level="warning",
+    )
+
+    current_branch = _git_run(["branch", "--show-current"], check=True).stdout.strip()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_branch = f"backup_{timestamp}"
+
+    stash_result = _git_run(
+        [
+            "stash",
+            "push",
+            "--include-untracked",
+            "-m",
+            f"Auto-stash before pulling main - {timestamp}",
+        ]
+    )
+    if stash_result.returncode != 0:
+        cab.log(
+            "Failed to stash changes - cannot pull with uncommitted changes: "
+            f"{stash_result.stderr or stash_result.stdout}".strip(),
+            level="error",
+        )
+        return False, None
+
+    cab.log("Stashed changes")
+
+    stash_branch_result = _git_run(["stash", "branch", backup_branch])
+    if stash_branch_result.returncode != 0:
+        cab.log(
+            f"Warning: Failed to create backup branch: {stash_branch_result.stderr}",
+            level="warning",
+        )
+        return True, None
+
+    cab.log(f"Created backup branch: {backup_branch}")
+
+    add_result = _git_run(["add", "-A"])
+    if add_result.returncode == 0 and _working_tree_is_dirty():
+        commit_result = _git_run(
+            ["commit", "-m", f"Auto-backup of uncommitted changes - {timestamp}"]
+        )
+        if commit_result.returncode == 0:
+            cab.log(f"Committed stashed changes on {backup_branch}")
+        else:
+            cab.log(
+                "Warning: Could not commit backup changes: "
+                f"{commit_result.stderr or commit_result.stdout}".strip(),
+                level="warning",
+            )
+
+    checkout_target = current_branch or "main"
+    checkout_result = _git_run(["checkout", checkout_target])
+    if checkout_result.returncode != 0:
+        cab.log(
+            f"Warning: Failed to checkout {checkout_target}: {checkout_result.stderr}",
+            level="warning",
+        )
+
+    return True, backup_branch
+
+
+def _ensure_clean_tree_for_pull(cab):
+    """Stash any remaining dirty files so `git pull --rebase` can run."""
+    if not _working_tree_is_dirty():
+        return True
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    cab.log(
+        "Working tree still dirty before pull; stashing remaining changes",
+        level="warning",
+    )
+    stash_result = _git_run(
+        [
+            "stash",
+            "push",
+            "--include-untracked",
+            "-m",
+            f"Safety stash before pulling main - {timestamp}",
+        ]
+    )
+    if stash_result.returncode != 0:
+        cab.log(
+            "Failed to stash remaining changes - cannot pull with uncommitted "
+            f"changes: {stash_result.stderr or stash_result.stdout}".strip(),
+            level="error",
+        )
+        return False
+    return True
+
+
 def update_backend_repo():
     """
     Update the Git repository to the latest main branch.
@@ -793,71 +914,9 @@ def update_backend_repo():
         # Ensure remote uses SSH instead of HTTPS
         _ensure_ssh_remote(cab)
 
-        # Check for uncommitted changes
-        result = subprocess.run(
-            ["git", "status", "--porcelain"], capture_output=True, text=True, check=True
-        )
-
-        backup_branch = None
-        if result.stdout.strip():
-            cab.log(
-                "Uncommitted changes detected in ~/git/backend; "
-                "creating backup branch",
-                level="warning",
-            )
-
-            # Get current branch name
-            result = subprocess.run(
-                ["git", "branch", "--show-current"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            current_branch = result.stdout.strip()
-
-            # Create a backup branch with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_branch = f"backup_{timestamp}"
-
-            # Stash current changes (include untracked to allow clean pull)
-            stash_result = subprocess.run(
-                [
-                    "git",
-                    "stash",
-                    "push",
-                    "--include-untracked",
-                    "-m",
-                    f"Auto-stash before pulling main - {timestamp}",
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if stash_result.returncode != 0:
-                cab.log(
-                    f"Failed to stash changes - cannot pull with uncommitted changes: "
-                    f"{stash_result.stderr or stash_result.stdout}".strip(),
-                    level="error",
-                )
-                return False
-            cab.log("Stashed changes")
-
-            # Create backup branch from stash
-            stash_branch_result = subprocess.run(
-                ["git", "stash", "branch", backup_branch],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if stash_branch_result.returncode == 0:
-                cab.log(f"Created backup branch: {backup_branch}")
-                # git stash branch checks out the new branch, so switch back to original
-                subprocess.run(["git", "checkout", current_branch], check=False)
-            else:
-                cab.log(
-                    f"Warning: Failed to create backup branch: {stash_branch_result.stderr}",
-                    level="warning",
-                )
+        ok, _backup_branch = _move_uncommitted_changes_to_backup_branch(cab)
+        if not ok:
+            return False
 
         # Fetch latest changes from remote
         # Set GIT_TERMINAL_PROMPT=0 to prevent interactive credential prompts
@@ -893,6 +952,9 @@ def update_backend_repo():
 
         # Switch to main branch
         subprocess.run(["git", "checkout", "main"], check=True)
+
+        if not _ensure_clean_tree_for_pull(cab):
+            return False
 
         # Check if branches have diverged before pulling
         status_result = subprocess.run(
@@ -932,7 +994,7 @@ def update_backend_repo():
                 cab.log(f"Git output: {result.stdout.strip()}")
 
             # After successfully pulling, merge any backup branches into main
-            _merge_backup_branches(cab, env, backup_branch)
+            _merge_backup_branches(cab, env)
         else:
             error_msg = result.stderr.strip() or result.stdout.strip()
             cab.log(f"✗ Failed to pull latest main: {error_msg}", level="error")
@@ -956,7 +1018,7 @@ def update_backend_repo():
                         if merge_result.stdout.strip():
                             cab.log(f"Git output: {merge_result.stdout.strip()}")
                         # After successfully pulling, merge any backup branches into main
-                        _merge_backup_branches(cab, env, backup_branch)
+                        _merge_backup_branches(cab, env)
                         # Successfully handled with merge strategy
                         return True
                     else:
