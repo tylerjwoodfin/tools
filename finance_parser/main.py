@@ -1,651 +1,545 @@
-"""
-Multi-file transaction parser for Venmo and other CSV files.
-"""
+#!/usr/bin/env python3
+"""Import the latest Venmo statement CSV into Sure."""
 
-import json
+from __future__ import annotations
+
 import argparse
+import csv
+import json
+import re
+import sys
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from pathlib import Path
-from tkinter import Tk
-from tkinter.filedialog import askopenfilename
-from datetime import datetime, timedelta
-from typing import Dict, Optional
-import argcomplete  # type: ignore # pylint: disable=import-error
-import pandas as pd  # type: ignore # pylint: disable=import-error
-import pyperclip  # type: ignore # pylint: disable=import-error
-import ezodf  # type: ignore # pylint: disable=import-error
+from typing import Any, Iterable, Optional
+
+import requests
+from cabinet import Cabinet
+
+VENMO_PATTERN = "VenmoStatement*.csv"
+DEFAULT_CATEGORIES = Path.home() / "syncthing/notes/docs/selfhosted/transaction_categories.json"
+DEFAULT_SURE_BASE_URL = "http://192.168.1.101:3006"
+DEFAULT_ACCOUNT_NAME = "Venmo"
+SKIP_SURE_NAMES = {"manual balance update"}
+QUOTED_NOTE = re.compile(r'"([^"]+)"')
 
 
-def find_latest_file_in_downloads(pattern: str) -> Optional[str]:
-    """Finds the latest file in Downloads matching the given pattern."""
-    downloads_path = Path.home() / "Downloads"
-    matching_files = list(downloads_path.glob(pattern))
-    if not matching_files:
-        return None
-    return str(max(matching_files, key=lambda x: x.stat().st_mtime))
+@dataclass
+class VenmoRow:
+    """One Venmo statement line after cleaning."""
+
+    venmo_id: str
+    txn_date: date
+    note: str
+    from_name: str
+    to_name: str
+    amount: float
+    txn_type: str
+    category: str
+
+    @property
+    def amount_cents(self) -> int:
+        """Signed cents matching Sure's signed_amount_cents (income +, expense -)."""
+        return int(round(self.amount * 100))
+
+    @property
+    def nature(self) -> str:
+        """Sure nature: money in is income, money out is expense."""
+        return "income" if self.amount > 0 else "expense"
+
+    @property
+    def display_name(self) -> str:
+        """Name to store in Sure: Venmo note, or type if the note is blank."""
+        return self.note or self.txn_type or "Venmo"
 
 
-def find_all_files_in_downloads(pattern: str) -> list[str]:
-    """Finds all files in Downloads matching the given pattern."""
-    downloads_path = Path.home() / "Downloads"
-    matching_files = list(downloads_path.glob(pattern))
-    if not matching_files:
-        return []
-    return [str(f) for f in matching_files]
+@dataclass
+class SureTxn:
+    """Subset of a Sure transaction used for matching and updates."""
+
+    txn_id: str
+    txn_date: date
+    name: str
+    signed_amount_cents: int
+    category_name: Optional[str]
+    source: Optional[str]
+    external_id: Optional[str]
 
 
-class BaseParser:
-    """Base class for all parsers."""
+class SureClient:
+    """Minimal Sure API client (LAN origin; public hostname is behind Authentik)."""
 
-    def __init__(self, file_path: str, category_file: Path):
-        self.file_path = file_path
-        self.category_file = category_file
-        self.transactions_df = pd.DataFrame()
-        self.category_mapping: Dict[str, list] = {}
-        self.filtered_rows: list = []
-
-    def load_categories(self) -> None:
-        """Loads categories and filtered rows from the specified JSON file."""
-        try:
-            with open(self.category_file, "r", encoding="utf-8") as file:
-                config = json.load(file)
-                self.category_mapping = config["categories"]
-                self.filtered_rows = config.get("filteredRows", [])
-        except FileNotFoundError:
-            print("Categories JSON file not found.")
-            exit()
-
-    def should_include_transaction(self, description: str) -> bool:
-        """
-        Determines if a transaction should be included based on filtered rows.
-        """
-        if pd.isnull(description) or not isinstance(description, str):
-            return True  # Include non-string values by default
-        return not any(
-            filtered_text.lower() in description.lower()
-            for filtered_text in self.filtered_rows
+    def __init__(self, base_url: str, api_key: str, timeout: int = 30) -> None:
+        """Configure the API origin and X-Api-Key session."""
+        self.base_url = base_url.rstrip("/")
+        self.session = requests.Session()
+        self.session.headers.update(
+            {"X-Api-Key": api_key, "Accept": "application/json"}
         )
+        self.timeout = timeout
 
-    def categorize_transaction(self, note: str) -> str:
-        """Categorizes transactions based on keywords from the JSON file.
-        Keywords starting with ! are exclusions - if matched, the category is skipped.
-        """
-        if pd.isnull(note) or not isinstance(note, str):
-            return "Other"
-        note_lower = note.lower()
-        for category, keywords in self.category_mapping.items():
-            # Separate include and exclude patterns
-            include_keywords = [k for k in keywords if not k.startswith("!")]
-            exclude_keywords = [k[1:] for k in keywords if k.startswith("!")]
+    def _url(self, path: str) -> str:
+        return f"{self.base_url}{path}"
 
-            # Check if any exclusion patterns match
-            if any(keyword.lower() in note_lower for keyword in exclude_keywords):
-                continue  # Skip this category
-
-            # Check if any inclusion patterns match
-            if any(keyword.lower() in note_lower for keyword in include_keywords):
-                return category
-        return "Other"
-
-    def clean_amount(self, value: str) -> float:
-        """Cleans and converts the amount to a float."""
-        if pd.isnull(value):
-            return 0.0  # Handle NaN as 0
-
-        # Skip rows with formulas
-        if isinstance(value, str) and value.startswith("="):
-            return 0.0
-
-        try:
-            if isinstance(value, str):
-                cleaned_value = (
-                    value.replace("$", "").replace(",", "").replace(" ", "").strip()
-                )
-                return float(cleaned_value)
-            return float(value)
-        except (ValueError, AttributeError):
-            print(f"Warning: Could not parse amount '{value}', using 0.0")
-            return 0.0
-
-    def filter_previous_month(self, date_column: str) -> None:
-        """Filters transactions to only include the previous month."""
-        today = datetime.now()
-        first_day_of_current_month = today.replace(day=1)
-        last_day_of_previous_month = first_day_of_current_month - timedelta(days=1)
-        first_day_of_previous_month = last_day_of_previous_month.replace(day=1)
-
-        self.transactions_df = self.transactions_df[
-            (self.transactions_df[date_column] >= first_day_of_previous_month)
-            & (self.transactions_df[date_column] <= last_day_of_previous_month)
-        ]
-
-    def process_transactions(self, source: str) -> pd.DataFrame:
-        """Processes transactions to categorize and clean amounts."""
-        raise NotImplementedError("Subclasses must implement this method.")
-
-    def print_summary(self, summary_df: pd.DataFrame) -> None:
-        """Prints the transaction summary and category totals."""
-        print("\nTransaction Summary (Sorted by Category and Date):")
-        print(summary_df.to_string(index=False))
-
-        # Calculate totals for each category
-        totals_df = (
-            summary_df.groupby("Category", observed=True)["Adjusted Amount"]
-            .sum()
-            .reset_index()
-        )
-
-        # Move 'Other' category to the end
-        totals_df["Category"] = pd.Categorical(
-            totals_df["Category"],
-            categories=sorted(self.category_mapping.keys()) + ["Other"],
-            ordered=True,
-        )
-        totals_df = totals_df.sort_values(by="Category")
-
-        print("\nCategory Totals:")
-        print(totals_df.to_string(index=False))
-
-
-class VenmoParser(BaseParser):
-    """
-    Parses Venmo transactions from a CSV file.
-    """
-
-    def load_transactions(self) -> None:
-        """Loads Venmo transactions from the CSV file."""
-        # Automatically find the header row
-        with open(self.file_path, "r", encoding="utf-8") as file:
-            for i, line in enumerate(file):
-                if "Datetime" in line and "Note" in line:
-                    header_row = i
-                    break
-            else:
-                print("Error: Could not find the header row in the Venmo CSV file.")
-                exit()
-
-        # Load the CSV starting from the header row
-        self.transactions_df = pd.read_csv(
-            self.file_path, skiprows=header_row, dtype=str
-        )
-        print("Venmo CSV file successfully loaded!")
-
-    def process_transactions(self, source: str = "Venmo") -> pd.DataFrame:
-        """Processes Venmo transactions to categorize and clean amounts."""
-        # Filter out unwanted transactions
-        self.transactions_df = self.transactions_df[
-            self.transactions_df["Note"].apply(self.should_include_transaction)
-        ]
-
-        self.transactions_df["Note"] = self.transactions_df["Note"].fillna("")
-        self.transactions_df["Category"] = self.transactions_df["Note"].apply(
-            self.categorize_transaction
-        )
-
-        self.transactions_df["Adjusted Amount"] = self.transactions_df.apply(
-            lambda row: -self.clean_amount(row["Amount (total)"]), axis=1
-        )
-
-        self.transactions_df["Datetime"] = pd.to_datetime(
-            self.transactions_df["Datetime"], errors="coerce"
-        )
-
-        # Filter for previous month
-        self.filter_previous_month("Datetime")
-
-        self.transactions_df["Source"] = source
-        return self.transactions_df.loc[
-            :, ["Datetime", "Category", "Adjusted Amount", "Note", "Source"]
-        ]
-
-
-class EverBankParser(BaseParser):
-    """
-    Parses EverBank transactions from a CSV file in the format:
-    Date,Check#,Transaction Type,Description,Debits(-),Credits(+)
-    Debits are negative in the export; credits are positive.
-    """
-
-    def __init__(self, file_path: str, category_file: Path):
-        super().__init__(file_path, category_file)
-        self.transactions_df = pd.DataFrame()
-
-    def load_transactions(self) -> None:
-        """Loads EverBank transactions from the CSV file."""
-        try:
-            self.transactions_df = pd.read_csv(
-                self.file_path, dtype=str, index_col=False
-            )
-            print("EverBank CSV file successfully loaded!")
-        except Exception as e:  # pylint: disable=broad-except
-            print(f"Error loading EverBank CSV file: {e}")
-            exit()
-
-    def process_transactions(self, source: str = "EverBank") -> pd.DataFrame:
-        """Processes EverBank transactions to categorize and clean amounts."""
-        self.transactions_df["Datetime"] = pd.to_datetime(
-            self.transactions_df["Date"], format="%m/%d/%Y", errors="coerce"
-        )
-
-        self.filter_previous_month("Datetime")
-
-        def calculate_amount(row):
-            debit = (
-                self.clean_amount(row["Debits(-)"])
-                if pd.notna(row["Debits(-)"])
-                else 0
-            )
-            credit = (
-                self.clean_amount(row["Credits(+)"])
-                if pd.notna(row["Credits(+)"])
-                else 0
-            )
-            # Negative debits are spending (positive); credits are income (negative)
-            return -debit - credit
-
-        self.transactions_df["Adjusted Amount"] = self.transactions_df.apply(
-            calculate_amount, axis=1
-        )
-
-        self.transactions_df = self.transactions_df[
-            self.transactions_df["Description"].apply(self.should_include_transaction)
-        ]
-
-        self.transactions_df["Category"] = self.transactions_df["Description"].apply(
-            self.categorize_transaction
-        )
-
-        income_categories = ["Apiture"]
-        self.transactions_df.loc[
-            self.transactions_df["Category"].isin(income_categories), "Adjusted Amount"
-        ] *= -1
-
-        self.transactions_df["Source"] = source
-
-        return self.transactions_df.loc[
-            :, ["Datetime", "Category", "Adjusted Amount", "Description", "Source"]
-        ]
-
-
-class RobinhoodParser(BaseParser):
-    """
-    Parses Robinhood Credit Card transactions from a CSV file.
-    """
-
-    def __init__(self, file_path: str, category_file: Path):
-        super().__init__(file_path, category_file)
-        self.transactions_df = pd.DataFrame()
-
-    def load_transactions(self) -> None:
-        """Loads Robinhood transactions from the CSV file."""
-        try:
-            self.transactions_df = pd.read_csv(self.file_path, dtype=str)
-            print("Robinhood CSV file successfully loaded!")
-        except Exception as e:  # pylint: disable=broad-except
-            print(f"Error loading Robinhood CSV file: {e}")
-            exit()
-
-    def process_transactions(self, source: str = "Robinhood CC") -> pd.DataFrame:
-        """Processes Robinhood transactions to categorize and clean amounts."""
-        # Filter out declined transactions
-        self.transactions_df = self.transactions_df[
-            self.transactions_df["Status"] == "Posted"
-        ]
-
-        # Convert date string to datetime
-        self.transactions_df["Datetime"] = pd.to_datetime(
-            self.transactions_df["Date"], format="%Y-%m-%d", errors="coerce"
-        )
-
-        # Filter for previous month
-        self.filter_previous_month("Datetime")
-
-        # Clean amounts (all purchases are positive spending)
-        self.transactions_df["Adjusted Amount"] = self.transactions_df["Amount"].apply(
-            self.clean_amount
-        )
-
-        # Filter out unwanted transactions
-        self.transactions_df = self.transactions_df[
-            self.transactions_df["Description"].apply(self.should_include_transaction)
-        ]
-
-        # Categorize based on Description
-        self.transactions_df["Category"] = self.transactions_df["Description"].apply(
-            self.categorize_transaction
-        )
-
-        # Add source column
-        self.transactions_df["Source"] = source
-
-        # Return only the columns we need
-        return self.transactions_df.loc[
-            :, ["Datetime", "Category", "Adjusted Amount", "Description", "Source"]
-        ]
-
-
-class SchwabParser(BaseParser):
-    """
-    Parses Schwab transactions from a CSV file.
-    """
-
-    def __init__(self, file_path: str, category_file: Path):
-        super().__init__(file_path, category_file)
-        self.transactions_df = pd.DataFrame()
-
-    def load_transactions(self) -> None:
-        """Loads Schwab transactions from the CSV file."""
-        try:
-            # Read the CSV file directly with pandas
-            self.transactions_df = pd.read_csv(self.file_path, dtype=str)
-            print("Schwab CSV file successfully loaded!")
-        except Exception as e:  # pylint: disable=broad-except
-            print(f"Error loading Schwab CSV file: {e}")
-            exit()
-
-    def process_transactions(self, source: str = "Schwab") -> pd.DataFrame:
-        """Processes Schwab transactions to categorize and clean amounts."""
-        # Convert date string to datetime
-        self.transactions_df["Datetime"] = pd.to_datetime(
-            self.transactions_df["Date"], format="%m/%d/%Y", errors="coerce"
-        )
-
-        # Filter for previous month
-        self.filter_previous_month("Datetime")
-
-        # Clean and convert amounts, making deposits negative (money received)
-        def calculate_amount(row):
-            withdrawal = (
-                self.clean_amount(row["Withdrawal"])
-                if pd.notna(row["Withdrawal"])
-                else 0
-            )
-            deposit = (
-                self.clean_amount(row["Deposit"]) if pd.notna(row["Deposit"]) else 0
-            )
-            # Withdrawals are positive (money spent)
-            # Deposits are negative (money received)
-            return withdrawal - deposit
-
-        self.transactions_df["Adjusted Amount"] = self.transactions_df.apply(
-            calculate_amount, axis=1
-        )
-
-        # Filter out unwanted transactions
-        self.transactions_df = self.transactions_df[
-            self.transactions_df["Description"].apply(self.should_include_transaction)
-        ]
-
-        # Categorize based on Description
-        self.transactions_df["Category"] = self.transactions_df["Description"].apply(
-            self.categorize_transaction
-        )
-
-        # Income categories should be positive (flip the sign for deposits)
-        income_categories = ["Apiture"]
-        self.transactions_df.loc[
-            self.transactions_df["Category"].isin(income_categories), "Adjusted Amount"
-        ] *= -1
-
-        # Add source column
-        self.transactions_df["Source"] = source
-
-        # Return only the columns we need
-        return self.transactions_df.loc[
-            :, ["Datetime", "Category", "Adjusted Amount", "Description", "Source"]
-        ]
-
-
-def ask_for_file(file_description: str) -> Optional[str]:
-    """Prompts the user to select a file via a file dialog."""
-    print(f"Please select the {file_description}.")
-    Tk().withdraw()
-    file_path = askopenfilename(
-        filetypes=[("CSV files", "*.csv"), ("ODS files", "*.ods")]
-    )
-    if not file_path:
-        print("No file selected.")
-        return None
-    return file_path
-
-
-def update_spreadsheet_with_totals(
-    spreadsheet_path: str,
-    totals_df: pd.DataFrame,
-    schwab_balance: Optional[float],
-    venmo_balance: Optional[float],
-) -> None:
-    """Reads an ODS spreadsheet, allows the user to select a sheet, and updates only Column C."""
-    # Open the spreadsheet
-    doc = ezodf.opendoc(spreadsheet_path)
-    sheet_names = [sheet.name for sheet in doc.sheets]
-
-    # Display available sheets
-    print("Available sheets:")
-    for i, sheet in enumerate(sheet_names, start=1):
-        print(f"{i}. {sheet}")
-
-    # Ask user to select a sheet
-    selected_index = int(input(f"Select a sheet (1-{len(sheet_names)}): ")) - 1
-    if selected_index < 0 or selected_index >= len(sheet_names):
-        print("Invalid sheet selection.")
-        return
-
-    selected_sheet = doc.sheets[selected_index]
-
-    # Map totals to their respective categories
-    unmatched_categories = []
-    for _, row in totals_df.iterrows():
-        category = row["Category"]
-        total = row["Adjusted Amount"]
-        matched = False
-
-        # Iterate over rows in the selected sheet
-        for row_idx in range(1, selected_sheet.nrows()):  # Skip the header
-            cell_value = selected_sheet[row_idx, 0].value  # Column A
-            if isinstance(cell_value, str):
-                # Write the total to Column C
-                if cell_value.strip().lower() == category.lower():
-                    selected_sheet[row_idx, 2].set_value(total)
-                    matched = True
-                    break
-                # Update Schwab balance (only if we loaded Schwab data)
-                elif (
-                    cell_value.strip().lower() == "schwab checking"
-                    and schwab_balance is not None
-                ):
-                    selected_sheet[row_idx, 3].set_value(schwab_balance)
-                    matched = True
-                # Update Venmo balance (only if we loaded Venmo data)
-                elif (
-                    cell_value.strip().lower().startswith("venmo")
-                    and venmo_balance is not None
-                ):
-                    selected_sheet[row_idx, 3].set_value(venmo_balance)
-                    matched = True
-
-        if not matched:
-            unmatched_categories.append(category)
-
-    # Save the updated document
-    doc.save()
-    print(f"Spreadsheet updated successfully: {spreadsheet_path}")
-
-    # Print unmatched categories
-    if unmatched_categories:
-        print("\nUnmatched categories:")
-        print("\n".join(unmatched_categories))
-    else:
-        print("\nAll categories matched successfully.")
-
-
-def get_default_spreadsheet_path() -> str:
-    """Returns the default spreadsheet path with the current year."""
-    current_year = datetime.now().year
-    return str(
-        Path.home()
-        / f"syncthing/documents/spreadsheets/budget/Budget {current_year}.ods"
-    )
-
-
-def main() -> None:
-    """Main function to handle argument parsing and execution."""
-    try:
-        parser = argparse.ArgumentParser(
-            description="Parse and categorize transactions from relevant CSV files."
-        )
-        parser.add_argument(
-            "-spreadsheet",
-            type=str,
-            help="Path to the spreadsheet file",
-            required=False,
-        )
-        args = parser.parse_args()
-
-        # Enable autocompletion
-        argcomplete.autocomplete(parser)
-
-        # Set the path for the category JSON file
-        categories_file_path = (
-            Path.home() / "syncthing/notes/docs/selfhosted/transaction_categories.json"
-        )
-
-        # Find files in Downloads or fall back to file browser
-        venmo_file_path = (
-            find_latest_file_in_downloads("VenmoStatement*.csv")
-            or ask_for_file("Venmo transactions CSV")
-            or None
-        )
-
-        schwab_file_path = (
-            find_latest_file_in_downloads("schwab.csv")
-            or find_latest_file_in_downloads("Checking_*.csv")
-            or ask_for_file("Schwab transactions CSV")
-            or None
-        )
-        everbank_file_path = (
-            find_latest_file_in_downloads("Transactions_*.csv")
-            or ask_for_file("EverBank transactions CSV")
-            or None
-        )
-
-        # Try to find Robinhood CSV by checking for the characteristic column structure
-        robinhood_file_path = None
-        downloads_path = Path.home() / "Downloads"
-        for csv_file in downloads_path.glob("*.csv"):
-            try:
-                df = pd.read_csv(csv_file, nrows=1)
-                if (
-                    "Cardholder" in df.columns
-                    and "Points" in df.columns
-                    and "Merchant" in df.columns
-                ):
-                    robinhood_file_path = str(csv_file)
-                    print(f"Found Robinhood CSV: {csv_file.name}")
-                    break
-            except Exception:  # pylint: disable=broad-except
-                continue
-
-        if not robinhood_file_path:
-            robinhood_file_path = ask_for_file("Robinhood Credit Card CSV") or None
-
-        spreadsheet_path = args.spreadsheet or get_default_spreadsheet_path()
-
-        # Process Venmo transactions
-        venmo_summary_df = None
-        venmo_balance = None
-        if venmo_file_path:
-            venmo_parser = VenmoParser(
-                file_path=venmo_file_path, category_file=categories_file_path
-            )
-            venmo_parser.load_categories()
-            venmo_parser.load_transactions()
-            venmo_summary_df = venmo_parser.process_transactions()
-            venmo_balance = (
-                float(venmo_summary_df["Balance"].iloc[-1])
-                if "Balance" in venmo_summary_df.columns
-                else None
-            )
-
-        # Process Schwab transactions
-        schwab_summary_df = None
-        schwab_balance = None
-        if schwab_file_path:
-            schwab_parser = SchwabParser(
-                file_path=schwab_file_path, category_file=categories_file_path
-            )
-            schwab_parser.load_categories()
-            schwab_parser.load_transactions()
-            schwab_summary_df = schwab_parser.process_transactions()
-            schwab_balance = (
-                float(schwab_summary_df["Balance"].iloc[-1])
-                if "Balance" in schwab_summary_df.columns
-                else None
-            )
-
-        # Process EverBank transactions
-        everbank_summary_df = None
-        if everbank_file_path:
-            everbank_parser = EverBankParser(
-                file_path=everbank_file_path, category_file=categories_file_path
-            )
-            everbank_parser.load_categories()
-            everbank_parser.load_transactions()
-            everbank_summary_df = everbank_parser.process_transactions()
-
-        # Process Robinhood Credit Card transactions
-        robinhood_summary_df = None
-        if robinhood_file_path:
-            robinhood_parser = RobinhoodParser(
-                file_path=robinhood_file_path, category_file=categories_file_path
-            )
-            robinhood_parser.load_categories()
-            robinhood_parser.load_transactions()
-            robinhood_summary_df = robinhood_parser.process_transactions()
-
-        # Combine and sort transactions
-        dataframes = [
-            venmo_summary_df,
-            schwab_summary_df,
-            everbank_summary_df,
-            robinhood_summary_df,
-        ]
-        valid_dfs = [df for df in dataframes if df is not None]
-        if not valid_dfs:
-            print("No transaction files were loaded. Exiting.")
+    def _raise_for_status(self, response: requests.Response) -> None:
+        if response.ok:
             return
+        detail = response.text[:800]
+        raise RuntimeError(f"Sure API {response.status_code} {response.request.method} "
+                           f"{response.request.url}: {detail}")
 
-        combined_df = pd.concat(valid_dfs).sort_values(
-            by=["Source", "Category", "Datetime"]
+    def _get(self, path: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+        response = self.session.get(self._url(path), params=params, timeout=self.timeout)
+        self._raise_for_status(response)
+        return response.json()
+
+    def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.session.post(self._url(path), json=payload, timeout=self.timeout)
+        self._raise_for_status(response)
+        return response.json()
+
+    def _put(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.session.put(self._url(path), json=payload, timeout=self.timeout)
+        self._raise_for_status(response)
+        return response.json()
+
+    def paginate(
+        self, path: str, list_key: str, extra: Optional[dict[str, Any]] = None
+    ) -> list[dict[str, Any]]:
+        """Fetch every page of a list endpoint (max 100 per page)."""
+        items: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            params = {"page": page, "per_page": 100, **(extra or {})}
+            payload = self._get(path, params=params)
+            chunk = payload.get(list_key) or []
+            items.extend(chunk)
+            pagination = payload.get("pagination") or {}
+            total_pages = int(pagination.get("total_pages") or 1)
+            if page >= total_pages:
+                break
+            page += 1
+        return items
+
+    def account_by_name(self, name: str) -> dict[str, Any]:
+        """Return the Sure account whose name matches ``name`` (case-insensitive)."""
+        accounts = self.paginate("/api/v1/accounts", "accounts")
+        for account in accounts:
+            if (account.get("name") or "").strip().lower() == name.strip().lower():
+                return account
+        names = ", ".join(a.get("name") or "?" for a in accounts)
+        raise RuntimeError(f"Sure account {name!r} not found. Available: {names}")
+
+    def categories_by_name(self) -> dict[str, str]:
+        """Map Sure category display name → id."""
+        categories = self.paginate("/api/v1/categories", "categories")
+        return {c["name"]: c["id"] for c in categories if c.get("name") and c.get("id")}
+
+    def transactions_for_account(
+        self, account_id: str, start: date, end: date
+    ) -> list[SureTxn]:
+        """List Venmo-relevant Sure transactions in an inclusive date window."""
+        raw = self.paginate(
+            "/api/v1/transactions",
+            "transactions",
+            extra={
+                "account_id": account_id,
+                "start_date": start.isoformat(),
+                "end_date": end.isoformat(),
+            },
         )
-        print("\nCombined Transactions:")
-        print(combined_df.to_string(index=False))
+        result: list[SureTxn] = []
+        for item in raw:
+            name = (item.get("name") or "").strip()
+            if name.lower() in SKIP_SURE_NAMES:
+                continue
+            category = item.get("category") or {}
+            result.append(
+                SureTxn(
+                    txn_id=str(item["id"]),
+                    txn_date=_parse_date(item.get("date")),
+                    name=name,
+                    signed_amount_cents=int(item.get("signed_amount_cents") or 0),
+                    category_name=category.get("name"),
+                    source=item.get("source"),
+                    external_id=item.get("external_id"),
+                )
+            )
+        return result
 
-        # Calculate totals for all transactions
-        print("\nTotal Amounts by Category:")
-        totals_df = (
-            combined_df.groupby("Category")["Adjusted Amount"].sum().reset_index()
+    def create_transaction(
+        self,
+        account_id: str,
+        row: VenmoRow,
+        category_id: Optional[str],
+    ) -> dict[str, Any]:
+        """Create a Sure transaction from a Venmo CSV row."""
+        body: dict[str, Any] = {
+            "account_id": account_id,
+            "date": row.txn_date.isoformat(),
+            "amount": abs(row.amount),
+            "nature": row.nature,
+            "name": row.display_name,
+            "notes": _party_note(row),
+            "external_id": row.venmo_id,
+            "source": "venmo",
+            "user_modified": True,
+        }
+        if category_id:
+            body["category_id"] = category_id
+        return self._post("/api/v1/transactions", {"transaction": body})
+
+    def update_transaction(
+        self,
+        txn_id: str,
+        row: VenmoRow,
+        category_id: Optional[str],
+    ) -> dict[str, Any]:
+        """Update name/notes/category on an existing Sure transaction."""
+        body: dict[str, Any] = {
+            "name": row.display_name,
+            "notes": _party_note(row),
+            "user_modified": True,
+        }
+        if category_id:
+            body["category_id"] = category_id
+        return self._put(f"/api/v1/transactions/{txn_id}", {"transaction": body})
+
+
+def find_latest_file_in_downloads(pattern: str) -> Optional[Path]:
+    """Return the newest file in ~/Downloads matching pattern, if any."""
+    downloads = Path.home() / "Downloads"
+    matches = list(downloads.glob(pattern))
+    if not matches:
+        return None
+    return max(matches, key=lambda path: path.stat().st_mtime)
+
+
+def previous_month_bounds(today: Optional[date] = None) -> tuple[date, date]:
+    """Inclusive first/last day of the previous calendar month."""
+    today = today or date.today()
+    first_this_month = today.replace(day=1)
+    last_prev = first_this_month - timedelta(days=1)
+    first_prev = last_prev.replace(day=1)
+    return first_prev, last_prev
+
+
+def month_bounds(year_month: str) -> tuple[date, date]:
+    """Inclusive bounds for YYYY-MM."""
+    parsed = datetime.strptime(year_month, "%Y-%m").date()
+    if parsed.month == 12:
+        next_month = parsed.replace(year=parsed.year + 1, month=1, day=1)
+    else:
+        next_month = parsed.replace(month=parsed.month + 1, day=1)
+    return parsed, next_month - timedelta(days=1)
+
+
+def clean_amount(value: str) -> float:
+    """Parse Venmo amounts like '- $58.44' or '+ $1,000.00'."""
+    if value is None:
+        return 0.0
+    text = str(value).replace("$", "").replace(",", "").replace(" ", "").strip()
+    if not text or text.startswith("="):
+        return 0.0
+    try:
+        return float(text)
+    except ValueError:
+        print(f"Warning: Could not parse amount {value!r}, using 0.0")
+        return 0.0
+
+
+def should_include_transaction(description: str, filtered_rows: list[str]) -> bool:
+    """False when description contains any filteredRows substring."""
+    if not description or not isinstance(description, str):
+        return True
+    lowered = description.lower()
+    return not any(token.lower() in lowered for token in filtered_rows)
+
+
+def categorize_transaction(note: str, category_mapping: dict[str, list]) -> str:
+    """First matching category from the JSON keyword lists. '!' prefixes exclude."""
+    if not note or not isinstance(note, str):
+        return "Other"
+    note_lower = note.lower()
+    for category, keywords in category_mapping.items():
+        include_keywords = [k for k in keywords if not k.startswith("!")]
+        exclude_keywords = [k[1:] for k in keywords if k.startswith("!")]
+        if any(keyword.lower() in note_lower for keyword in exclude_keywords):
+            continue
+        if any(keyword.lower() in note_lower for keyword in include_keywords):
+            return category
+    return "Other"
+
+
+def load_category_config(path: Path) -> tuple[dict[str, list], list[str]]:
+    """Load categories + filteredRows from transaction_categories.json."""
+    with path.open(encoding="utf-8") as handle:
+        config = json.load(handle)
+    return config.get("categories") or {}, config.get("filteredRows") or []
+
+
+def _parse_date(value: Any) -> date:
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    text = str(value)
+    if "T" in text:
+        return datetime.fromisoformat(text.replace("Z", "")).date()
+    return date.fromisoformat(text[:10])
+
+
+def _party_note(row: VenmoRow) -> str:
+    parts = [p for p in (row.from_name, row.to_name) if p]
+    if not parts:
+        return ""
+    return f"From {row.from_name} to {row.to_name}".strip()
+
+
+def _quoted_note(name: str) -> str:
+    match = QUOTED_NOTE.search(name or "")
+    return match.group(1).strip() if match else ""
+
+
+def match_score(row: VenmoRow, txn: SureTxn) -> int:
+    """Higher is better. 0 means date/amount matched with no name signal."""
+    if row.txn_date != txn.txn_date or row.amount_cents != txn.signed_amount_cents:
+        return -1
+    sure_name = txn.name.lower()
+    note = row.display_name.lower()
+    quoted = _quoted_note(txn.name).lower()
+    score = 0
+    if quoted and quoted == note:
+        score += 5
+    elif quoted and (quoted in note or note in quoted):
+        score += 4
+    elif note and note in sure_name:
+        score += 3
+    for party in (row.from_name, row.to_name):
+        if party and party.lower() in sure_name:
+            score += 1
+            break
+    return score
+
+
+def find_match(row: VenmoRow, unmatched: list[SureTxn]) -> Optional[SureTxn]:
+    """Pick the best unmatched Sure txn for this CSV row, or None."""
+    scored: list[tuple[int, SureTxn]] = []
+    for txn in unmatched:
+        score = match_score(row, txn)
+        if score >= 0:
+            scored.append((score, txn))
+    if not scored:
+        return None
+    scored.sort(key=lambda item: item[0], reverse=True)
+    best_score, best = scored[0]
+    same_score = [txn for score, txn in scored if score == best_score]
+    if best_score > 0:
+        return best
+    if len(same_score) == 1:
+        return best
+    return None
+
+
+def find_header_row(path: Path) -> int:
+    """Index of the Venmo CSV header row containing Datetime and Note."""
+    with path.open(encoding="utf-8", newline="") as handle:
+        for index, line in enumerate(handle):
+            if "Datetime" in line and "Note" in line:
+                return index
+    raise RuntimeError(f"Could not find the Venmo header row in {path}")
+
+
+def load_venmo_rows(
+    path: Path,
+    category_mapping: dict[str, list],
+    filtered_rows: list[str],
+    start: date,
+    end: date,
+) -> list[VenmoRow]:
+    """Parse, categorize, and date-filter a Venmo statement CSV."""
+    header_row = find_header_row(path)
+    rows: list[VenmoRow] = []
+    with path.open(encoding="utf-8", newline="") as handle:
+        for _ in range(header_row):
+            next(handle)
+        reader = csv.DictReader(handle)
+        for raw in reader:
+            venmo_id = (raw.get("ID") or "").strip()
+            timestamp = (raw.get("Datetime") or "").strip()
+            if not venmo_id or not timestamp:
+                continue
+            note = (raw.get("Note") or "").strip()
+            if not should_include_transaction(note, filtered_rows):
+                continue
+            amount = clean_amount(raw.get("Amount (total)") or "")
+            if amount == 0.0:
+                continue
+            txn_date = _parse_date(timestamp)
+            if txn_date < start or txn_date > end:
+                continue
+            rows.append(
+                VenmoRow(
+                    venmo_id=venmo_id,
+                    txn_date=txn_date,
+                    note=note,
+                    from_name=(raw.get("From") or "").strip(),
+                    to_name=(raw.get("To") or "").strip(),
+                    amount=amount,
+                    txn_type=(raw.get("Type") or "").strip(),
+                    category=categorize_transaction(note, category_mapping),
+                )
+            )
+    return rows
+
+
+def resolve_credentials() -> tuple[str, str, str]:
+    """Cabinet sure.api_key / sure.base_url / sure.account_name."""
+    cabinet = Cabinet()
+    api_key = cabinet.get("sure", "api_key")
+    if not api_key:
+        raise RuntimeError(
+            "Missing Cabinet sure.api_key. Create a read_write Sure API key "
+            "(Settings → API Key) and store it with "
+            "`cabinet put sure api_key --value <key>`."
         )
-        print(totals_df.to_string(index=False))
+    base_url = cabinet.get("sure", "base_url") or DEFAULT_SURE_BASE_URL
+    account_name = cabinet.get("sure", "account_name") or DEFAULT_ACCOUNT_NAME
+    return str(base_url), str(api_key), str(account_name)
 
-        # Convert totals DataFrame to CSV format (no index)
-        totals_csv = totals_df.to_csv(index=False)
 
-        # Copy the CSV to the clipboard
-        pyperclip.copy(totals_csv)
-        print("\nThe CSV output has been copied to your clipboard!")
+def _fmt_amount(row: VenmoRow) -> str:
+    return f"{row.amount:+.2f}"
 
-        # Update spreadsheet with totals and balances
-        update_spreadsheet_with_totals(
-            spreadsheet_path, totals_df, schwab_balance, venmo_balance
+
+def import_rows(
+    client: SureClient,
+    account_id: str,
+    rows: list[VenmoRow],
+    existing: list[SureTxn],
+    category_ids: dict[str, str],
+    dry_run: bool,
+) -> None:
+    """Match CSV rows to Sure, then update or create."""
+    unmatched = list(existing)
+    created = updated = skipped = 0
+
+    print(f"{'action':<8} {'date':<12} {'amount':>10}  {'category':<42} name")
+    for row in rows:
+        match = find_match(row, unmatched)
+        if match:
+            unmatched.remove(match)
+            apply_category = row.category != "Other"
+            category_id = category_ids.get(row.category) if apply_category else None
+            name_changed = match.name != row.display_name
+            cat_changed = apply_category and match.category_name != row.category
+            if not name_changed and not cat_changed:
+                action = "skip"
+                skipped += 1
+            else:
+                action = "update"
+                updated += 1
+                if not dry_run:
+                    client.update_transaction(match.txn_id, row, category_id)
+        else:
+            action = "create"
+            created += 1
+            if not dry_run:
+                client.create_transaction(
+                    account_id,
+                    row,
+                    category_ids.get(row.category) if row.category != "Other" else None,
+                )
+        print(
+            f"{action:<8} {row.txn_date.isoformat():<12} {_fmt_amount(row):>10}  "
+            f"{row.category:<42} {row.display_name}"
         )
 
-    except KeyboardInterrupt:
-        print("\nProgram interrupted by user. Exiting gracefully...")
-        exit(0)
-    except Exception as e:  # pylint: disable=broad-except
-        print(f"\nAn error occurred: {e}")
-        exit(1)
+    verb = "would be " if dry_run else ""
+    print(
+        f"\n{verb}create={created} update={updated} skip={skipped} "
+        f"csv_rows={len(rows)} unmatched_in_sure={len(unmatched)}"
+    )
+    if unmatched:
+        print("Unmatched Sure transactions (not in this CSV):")
+        for txn in unmatched:
+            print(f"  {txn.txn_date} {txn.signed_amount_cents / 100:+.2f}  {txn.name}")
+
+
+def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
+    """CLI for Venmo → Sure import."""
+    parser = argparse.ArgumentParser(
+        description="Import the latest Venmo statement into Sure (previous month by default)."
+    )
+    parser.add_argument(
+        "--file",
+        type=Path,
+        help="Venmo CSV path (default: newest VenmoStatement*.csv in ~/Downloads)",
+    )
+    parser.add_argument(
+        "--month",
+        help="Import YYYY-MM instead of the previous calendar month",
+    )
+    parser.add_argument(
+        "--categories",
+        type=Path,
+        default=DEFAULT_CATEGORIES,
+        help="Path to transaction_categories.json",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Parse and match, but do not write to Sure",
+    )
+    return parser.parse_args(list(argv) if argv is not None else None)
+
+
+def main(argv: Optional[Iterable[str]] = None) -> int:
+    """Load Venmo CSV, categorize, and import into Sure."""
+    args = parse_args(argv)
+    csv_path = args.file or find_latest_file_in_downloads(VENMO_PATTERN)
+    if csv_path is None:
+        print(
+            "No VenmoStatement*.csv found in ~/Downloads. "
+            "Download the monthly statement from Venmo and retry.",
+            file=sys.stderr,
+        )
+        return 1
+    csv_path = csv_path.expanduser()
+    if not csv_path.is_file():
+        print(f"CSV not found: {csv_path}", file=sys.stderr)
+        return 1
+
+    if not args.categories.is_file():
+        print(f"Categories JSON not found: {args.categories}", file=sys.stderr)
+        return 1
+
+    start, end = month_bounds(args.month) if args.month else previous_month_bounds()
+    category_mapping, filtered_rows = load_category_config(args.categories)
+    rows = load_venmo_rows(csv_path, category_mapping, filtered_rows, start, end)
+    print(f"Loaded {csv_path.name}: {len(rows)} row(s) for {start} → {end}")
+    if not rows:
+        print("Nothing to import.")
+        return 0
+
+    try:
+        base_url, api_key, account_name = resolve_credentials()
+        client = SureClient(base_url, api_key)
+        account = client.account_by_name(account_name)
+        category_ids = client.categories_by_name()
+        existing = client.transactions_for_account(account["id"], start, end)
+    except Exception as exc:
+        print(f"Sure API error: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Sure account {account_name!r} ({account['id']}), {len(existing)} existing txn(s)")
+    if args.dry_run:
+        print("Dry run — no writes.")
+    import_rows(client, account["id"], rows, existing, category_ids, args.dry_run)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        raise SystemExit(main())
+    except KeyboardInterrupt as exc:
+        print("\nInterrupted.", file=sys.stderr)
+        raise SystemExit(130) from exc
