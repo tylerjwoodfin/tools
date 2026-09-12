@@ -17,12 +17,6 @@ DEFAULT_CONFIG_PATHS = (
 
 
 @dataclass
-class TelegramConfig:
-    channel: str = "telegram"
-    target: str = ""
-
-
-@dataclass
 class ProactiveConfig:
     enabled: bool = True
     min_days: float = 2.0
@@ -60,7 +54,6 @@ class DiaryConfig:
     diary_dir: Path
     conversations_dir: Path
     state_dir: Path
-    telegram: TelegramConfig = field(default_factory=TelegramConfig)
     proactive: ProactiveConfig = field(default_factory=ProactiveConfig)
     conversation: ConversationConfig = field(default_factory=ConversationConfig)
     inactivity_timeout_hours: float = 3.0
@@ -121,7 +114,6 @@ def load_config(
     )
     state_dir = _expand(raw.get("state_dir") or default_state_dir())
 
-    tg_raw = raw.get("telegram") or {}
     proactive_raw = raw.get("proactive") or {}
     conversation_raw = raw.get("conversation") or {}
     history_raw = raw.get("history") or {}
@@ -131,10 +123,6 @@ def load_config(
         diary_dir=diary_dir,
         conversations_dir=conversations_dir,
         state_dir=state_dir,
-        telegram=TelegramConfig(
-            channel=str(tg_raw.get("channel") or "telegram"),
-            target=str(tg_raw.get("target") or ""),
-        ),
         proactive=ProactiveConfig(
             enabled=bool(proactive_raw.get("enabled", True)),
             min_days=float(proactive_raw.get("min_days", 2)),

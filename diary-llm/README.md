@@ -20,7 +20,7 @@ Conversational AI diary for [OpenClaw](https://docs.openclaw.ai): natural Telegr
 
 This will:
 
-1. Create a venv and install `diary-llm`
+1. Create a venv and install `diary-llm` plus local Cabinet (`telegram.target` lives there)
 2. Write `~/.config/diary-llm/config.yaml` from the example (if missing)
 3. Install the workspace skill + link the OpenClaw plugin
 4. Register an `openclaw cron` job for `diary-llm tick`
@@ -50,7 +50,7 @@ See `config.example.yaml`. Important knobs:
 | Key | Purpose |
 | --- | --- |
 | `diary_dir` | Markdown diary root |
-| `telegram.target` | Telegram chat id |
+| Cabinet `telegram.target` | Telegram chat id (`cabinet -p telegram target …`) |
 | `proactive.*` | Cadence + allowed hours |
 | `inactivity_timeout_hours` | Auto-finalize window |
 | `history.*` | How much prior diary context to feed the LLM |

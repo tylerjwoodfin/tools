@@ -4,9 +4,9 @@ diary_dir: /Users/tyler/syncthing/notes/diary
 # conversations_dir defaults to <diary_dir>/conversations
 # state_dir defaults to ~/.local/share/diary-llm
 
-telegram:
-  channel: telegram
-  target: "1234567890"
+# Telegram chat id and send path live in Cabinet (not this file):
+#   cabinet -p telegram target <chat_id>
+#   cabinet --telegram "test"
 
 proactive:
   enabled: true

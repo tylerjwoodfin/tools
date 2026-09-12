@@ -13,6 +13,9 @@ python3 -m venv "${VENV}"
 # shellcheck disable=SC1091
 source "${VENV}/bin/activate"
 pip install -U pip
+if [[ -d "${HOME}/git/cabinet" ]]; then
+  pip install -e "${HOME}/git/cabinet"
+fi
 pip install -e "${ROOT}[dev]"
 
 mkdir -p "${HOME}/.local/bin"
@@ -80,12 +83,14 @@ print(cfg.get('tick_cron', '0 */2 * * *'))
 PY
 )"
   TARGET="$(python3 - <<'PY'
-import yaml
-from pathlib import Path
-cfg = yaml.safe_load(Path.home().joinpath('.config/diary-llm/config.yaml').read_text()) or {}
-print((cfg.get('telegram') or {}).get('target') or '8974380881')
+from cabinet import Cabinet
+cab = Cabinet()
+print(cab.get("telegram", "target") or cab.get("telegram", "chat_id") or "")
 PY
 )"
+  if [[ -z "${TARGET}" ]]; then
+    echo "Warning: cabinet telegram.target is unset; cron --to will be empty"
+  fi
 
   openclaw cron add \
     --name "diary-llm-tick" \

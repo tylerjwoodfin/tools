@@ -108,11 +108,7 @@ def main(argv: list[str] | None = None) -> int:
     cfg = load_config(args.config)
 
     llm = StubLLM() if args.stub_llm else build_llm(cfg.llm)
-    sender = TelegramSender(
-        cfg.telegram,
-        openclaw_bin=cfg.llm.openclaw_bin,
-        dry_run=args.dry_run,
-    )
+    sender = TelegramSender(dry_run=args.dry_run)
     wf = DiaryWorkflow(cfg, llm=llm, sender=sender)
 
     if args.command == "status":

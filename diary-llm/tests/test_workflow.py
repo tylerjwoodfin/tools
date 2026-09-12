@@ -79,7 +79,7 @@ def test_hard_close_even_if_model_keeps_asking(tmp_cfg, fixed_now):
     wf = DiaryWorkflow(
         tmp_cfg,
         llm=ClingyLLM(),
-        sender=TelegramSender(tmp_cfg.telegram, dry_run=True),
+        sender=TelegramSender(dry_run=True),
         rng=__import__("random").Random(0),
         now_fn=fixed_now,
     )

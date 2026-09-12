@@ -1,11 +1,9 @@
-"""Telegram delivery via OpenClaw CLI."""
+"""Telegram delivery via Cabinet (OpenClaw / Bot API)."""
 
 from __future__ import annotations
 
-import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
-
-from .config import TelegramConfig
 
 
 @dataclass
@@ -14,17 +12,28 @@ class SendResult:
     output: str = ""
 
 
+def _cabinet_send(message: str) -> bool:
+    from cabinet import telegram as cabinet_telegram
+
+    return bool(cabinet_telegram(message, is_quiet=True))
+
+
 class TelegramSender:
+    """
+    Record and deliver diary Telegram messages.
+
+    Production sends go through ``cabinet.telegram`` so chat id / OpenClaw live
+    in Cabinet. Tests pass ``dry_run=True`` or a fake ``send_fn``.
+    """
+
     def __init__(
         self,
-        cfg: TelegramConfig,
         *,
-        openclaw_bin: str = "openclaw",
         dry_run: bool = False,
+        send_fn: Callable[[str], bool] | None = None,
     ) -> None:
-        self.cfg = cfg
-        self.openclaw_bin = openclaw_bin
         self.dry_run = dry_run
+        self.send_fn = send_fn
         self.sent: list[str] = []
 
     def send(self, message: str) -> SendResult:
@@ -34,28 +43,11 @@ class TelegramSender:
         self.sent.append(message)
         if self.dry_run:
             return SendResult(ok=True, output="dry-run")
-        if not self.cfg.target:
-            return SendResult(ok=False, output="telegram.target is not configured")
-        cmd = [
-            self.openclaw_bin,
-            "message",
-            "send",
-            "--channel",
-            self.cfg.channel,
-            "--target",
-            self.cfg.target,
-            "--message",
-            message,
-        ]
+        fn = self.send_fn or _cabinet_send
         try:
-            proc = subprocess.run(
-                cmd,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
+            ok = fn(message)
+        except Exception as exc:  # noqa: BLE001 - surface to workflow
             return SendResult(ok=False, output=str(exc))
-        out = (proc.stdout or proc.stderr or "").strip()
-        return SendResult(ok=proc.returncode == 0, output=out)
+        if ok:
+            return SendResult(ok=True, output="")
+        return SendResult(ok=False, output="cabinet.telegram failed")

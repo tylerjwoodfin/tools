@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from diary_llm.config import ConversationConfig, DiaryConfig, HistoryConfig, LLMConfig, ProactiveConfig, TelegramConfig, load_config
+from diary_llm.config import ConversationConfig, DiaryConfig, HistoryConfig, LLMConfig, ProactiveConfig
 from diary_llm.llm import StubLLM
 from diary_llm.telegram import TelegramSender
 from diary_llm.workflow import DiaryWorkflow
@@ -26,7 +26,6 @@ def tmp_cfg(tmp_path: Path) -> DiaryConfig:
         diary_dir=diary_dir,
         conversations_dir=conversations,
         state_dir=state_dir,
-        telegram=TelegramConfig(channel="telegram", target="123"),
         proactive=ProactiveConfig(
             enabled=True,
             min_days=2,
@@ -58,7 +57,7 @@ def fixed_now():
 @pytest.fixture
 def workflow(tmp_cfg: DiaryConfig, fixed_now) -> DiaryWorkflow:
     llm = StubLLM()
-    sender = TelegramSender(tmp_cfg.telegram, dry_run=True)
+    sender = TelegramSender(dry_run=True)
     return DiaryWorkflow(
         tmp_cfg,
         llm=llm,
@@ -77,7 +76,6 @@ def config_file(tmp_path: Path, tmp_cfg: DiaryConfig) -> Path:
                 "diary_dir": str(tmp_cfg.diary_dir),
                 "conversations_dir": str(tmp_cfg.conversations_dir),
                 "state_dir": str(tmp_cfg.state_dir),
-                "telegram": {"channel": "telegram", "target": "123"},
                 "proactive": {
                     "enabled": True,
                     "min_days": 2,
