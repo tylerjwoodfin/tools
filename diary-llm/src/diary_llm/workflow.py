@@ -68,10 +68,7 @@ class DiaryWorkflow:
         self.store = SessionStore(cfg.active_session_path, cfg.conversations_dir)
         self.llm = llm or build_llm(cfg.llm)
         self.history = history or MarkdownDiaryHistory(cfg.diary_dir)
-        self.sender = sender or TelegramSender(
-            cfg.telegram,
-            openclaw_bin=cfg.llm.openclaw_bin,
-        )
+        self.sender = sender or TelegramSender()
         self.rng = rng or random.Random()
         self.now_fn = now_fn or utc_now
 
