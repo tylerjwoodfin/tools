@@ -1,4 +1,4 @@
-"""Tests for foodlog submit gating in dailystatus (TJW-245)."""
+"""Tests for foodlog calorie block in dailystatus (no email reminder)."""
 
 import unittest
 from unittest import mock
@@ -32,7 +32,7 @@ class FoodlogSubmitTests(unittest.TestCase):
             is_foodlog_submitted("2026-07-20", {"2026-07-20": {"submitted": False}})
         )
 
-    def test_append_food_log_reminds_when_not_submitted(self):
+    def test_append_food_log_does_not_email_reminder(self):
         store = _FakeStore(
             entries=[{"food": "apple", "calories": 50}],
             submitted=False,
@@ -41,13 +41,13 @@ class FoodlogSubmitTests(unittest.TestCase):
             dt.date.today.return_value = __import__("datetime").date(2026, 7, 20)
             with mock.patch("main._foodlog_store", return_value=store):
                 with mock.patch("main.mail") as mail:
-                    email = append_food_log("", dry_run=False)
+                    email = append_food_log("")
 
-        mail.send.assert_called_once()
+        mail.send.assert_not_called()
         self.assertIn("50 calories", email)
         self.assertNotIn("submitted", email)
 
-    def test_append_food_log_skips_reminder_when_submitted(self):
+    def test_append_food_log_notes_submitted(self):
         store = _FakeStore(
             entries=[{"food": "apple", "calories": 50}],
             submitted=True,
@@ -56,20 +56,20 @@ class FoodlogSubmitTests(unittest.TestCase):
             dt.date.today.return_value = __import__("datetime").date(2026, 7, 20)
             with mock.patch("main._foodlog_store", return_value=store):
                 with mock.patch("main.mail") as mail:
-                    email = append_food_log("", dry_run=False)
+                    email = append_food_log("")
 
         mail.send.assert_not_called()
         self.assertIn("50 calories (submitted)", email)
 
-    def test_append_food_log_reminds_even_with_no_entries(self):
+    def test_append_food_log_silent_when_empty(self):
         store = _FakeStore(entries=[], submitted=False)
         with mock.patch("main.datetime") as dt:
             dt.date.today.return_value = __import__("datetime").date(2026, 7, 20)
             with mock.patch("main._foodlog_store", return_value=store):
                 with mock.patch("main.mail") as mail:
-                    email = append_food_log("base", dry_run=False)
+                    email = append_food_log("base")
 
-        mail.send.assert_called_once()
+        mail.send.assert_not_called()
         self.assertEqual(email, "base")
 
 

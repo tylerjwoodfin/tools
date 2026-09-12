@@ -1,0 +1,16 @@
+{
+  "name": "@local/food",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenClaw plugin that logs food via foodlog without the main session model",
+  "type": "module",
+  "peerDependencies": {
+    "openclaw": ">=2026.5.17"
+  },
+  "openclaw": {
+    "extensions": ["./index.js"],
+    "compat": {
+      "pluginApi": ">=2026.5.17"
+    }
+  }
+}

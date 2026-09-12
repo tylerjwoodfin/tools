@@ -1,0 +1,23 @@
+{
+  "id": "food",
+  "name": "Food log",
+  "description": "Parse /food and reminder follow-ups, then write them with foodlog.",
+  "version": "0.1.0",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "cliPath": {
+        "type": "string",
+        "description": "Path to food_cli.py"
+      },
+      "pythonPath": {
+        "type": "string",
+        "description": "Python interpreter with cabinet/foodlog deps (Homebrew 3.14, not the macOS 3.9 stub)"
+      }
+    }
+  }
+}

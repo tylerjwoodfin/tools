@@ -10,7 +10,6 @@ import socket
 import tempfile
 import urllib.error
 import urllib.request
-from tyler_python_helpers import ChatGPT
 from prompt_toolkit import print_formatted_text, HTML
 from cabinet import Cabinet
 
@@ -21,7 +20,6 @@ from store import (
 )
 
 cabinet = Cabinet()
-chatgpt = ChatGPT()
 
 # Legacy flat-file paths (used for one-time Mongo migration / optional export)
 LOG_DIR = cabinet.get("path", "cabinet", "log") or os.path.expanduser("~/.cabinet/log")
@@ -73,6 +71,27 @@ def save_json(file_path: str, data: dict) -> None:
         json.dump(data, f, indent=4)
 
 
+def day_status(day: str | None = None) -> dict:
+    """Return today's (or ``day``'s) log as a JSON-serializable dict."""
+    _ensure_migrated()
+    store = get_store()
+    target = day or datetime.date.today().isoformat()
+    entries = [
+        {
+            "food": str(e.get("food", "unknown")),
+            "calories": normalize_calories(e.get("calories", 0)),
+        }
+        for e in store.get_entries(target)
+    ]
+    return {
+        "date": target,
+        "entries": entries,
+        "total_calories": day_total_calories(entries),
+        "entry_count": len(entries),
+        "submitted": store.is_day_submitted(target),
+    }
+
+
 def is_day_submitted(day: str, submitted_data: dict | None = None) -> bool:
     """Return True if ``foodlog submit`` has been run for ``day`` (ISO date)."""
     if submitted_data is not None:
@@ -86,7 +105,7 @@ def is_day_submitted(day: str, submitted_data: dict | None = None) -> bool:
 
 def mark_day_submitted(day: str | None = None) -> str:
     """
-    Mark a day as submitted so dailystatus skips the foodlog reminder email.
+    Mark a day as submitted (Grafana / daily email calorie total).
 
     Returns the ISO date that was marked.
     """
@@ -237,11 +256,12 @@ def update_food_lookup(food_name: str, calories: int) -> None:
     food_name_lower = food_name.lower()
 
     if food_name_lower in lookup_data:
-        if lookup_data[food_name_lower]["calories"] != calories:
+        existing = lookup_data[food_name_lower]["calories"]
+        if existing != calories:
             print_formatted_text(
                 HTML(
-                    f'<yellow>Warning:</yellow> <yellow>{food_name}</yellow> has <yellow>{\
-                    lookup_data[food_name_lower]["calories"]} cal</yellow>.'
+                    f"<yellow>Warning:</yellow> <yellow>{food_name}</yellow> "
+                    f"has <yellow>{existing} cal</yellow>."
                 )
             )
             print_formatted_text(
@@ -359,9 +379,11 @@ def get_calories(food_name: str, lookup_data: dict) -> int:
 
 def query_chatgpt(food_name: str) -> str:
     """Query ChatGPT for the calorie count of a food item."""
+    from tyler_python_helpers import ChatGPT
+
     query = f"What is the calorie count of {food_name}? \
         Only output your best guess as a number, no other text."
-    return chatgpt.query(query)
+    return ChatGPT().query(query)
 
 
 def classify_food(food_names: list[str]) -> dict[str, str]:
@@ -381,7 +403,9 @@ food2: healthy
 food3: junk
 """
 
-    response = chatgpt.query(prompt)
+    from tyler_python_helpers import ChatGPT
+
+    response = ChatGPT().query(prompt)
 
     classifications = {}
     for line in response.split("\n"):
@@ -525,8 +549,7 @@ def submit_day(day: str | None = None) -> None:
     day = mark_day_submitted(day)
     print_formatted_text(
         HTML(
-            f"<green>Submitted</green> food log for <yellow>{day}</yellow>. "
-            "Daily status will skip the foodlog reminder."
+            f"<green>Submitted</green> food log for <yellow>{day}</yellow>."
         )
     )
     display_daily_calories(datetime.date.fromisoformat(day))
@@ -548,6 +571,13 @@ def main() -> None:
             yesterday = datetime.date.today() - datetime.timedelta(days=1)
             display_daily_calories(yesterday)
             sys.exit(0)
+
+    if sys.argv[1] == "--json":
+        target = datetime.date.today()
+        if is_yesterday:
+            target = target - datetime.timedelta(days=1)
+        print(json.dumps(day_status(target.isoformat()), indent=2))
+        sys.exit(0)
 
     if sys.argv[1] in ("submit", "--submit"):
         submit_day()

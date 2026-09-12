@@ -15,7 +15,7 @@ Conversational AI diary for [OpenClaw](https://docs.openclaw.ai): natural Telegr
 ## Install
 
 ```bash
-~/git/tools/diary-llm/scripts/install_openclaw.sh
+~/git/tools/openclaw/diary/scripts/install_openclaw.sh
 ```
 
 This will:
@@ -59,7 +59,7 @@ See `config.example.yaml`. Important knobs:
 ## Tests
 
 ```bash
-cd ~/git/tools/diary-llm
+cd ~/git/tools/openclaw/diary
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e '.[dev]'
 pytest
