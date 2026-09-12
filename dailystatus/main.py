@@ -140,22 +140,12 @@ def is_foodlog_submitted(day: str, submitted_data: dict | None = None) -> bool:
         return False
 
 
-def append_food_log(email, dry_run=False):
-    """
-    Append today's calorie total when food was logged.
+def append_food_log(email):
+    """Append today's calorie total when food was logged.
 
-    Sends the foodlog reminder email only if ``foodlog submit`` has not been
-    run for today (logging alone does not suppress the reminder).
+    Food-log nudges are Telegram-only (OpenClaw ``food-log-remind``).
     """
     today_str = datetime.date.today().isoformat()
-
-    if not is_foodlog_submitted(today_str):
-        if not dry_run:
-            mail.send(
-                "🍊 Log food for today!",
-                "Food log not submitted for today. "
-                "Log your food, then run `foodlog submit` when done.",
-            )
 
     try:
         store = _foodlog_store()
@@ -760,7 +750,7 @@ if __name__ == "__main__":
     status_email, log_issues, log_issue_source = append_sre_scorecard(status_email)
 
     # check if food has been logged today
-    status_email = append_food_log(status_email, dry_run=args.dry_run)
+    status_email = append_food_log(status_email)
 
     # weekly nutrition summary (Saturdays only)
     if today.weekday() == 5:

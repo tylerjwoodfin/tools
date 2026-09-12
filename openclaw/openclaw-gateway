@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Prefer the Gateway-bundled OpenClaw CLI so plugin/cron/config calls match the
+# running Gateway version (Homebrew openclaw can lag and reject the config).
+set -euo pipefail
+
+NODE="${OPENCLAW_NODE:-$HOME/.openclaw/tools/node-v24.19.0/bin/node}"
+ENTRY="${OPENCLAW_ENTRY:-$HOME/.openclaw/tools/node-v24.19.0/lib/node_modules/openclaw/dist/index.js}"
+
+if [[ -x "$NODE" && -f "$ENTRY" ]]; then
+  exec "$NODE" "$ENTRY" "$@"
+fi
+
+exec openclaw "$@"

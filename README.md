@@ -6,6 +6,9 @@
 ## Recommended: Cabinet
 - If you intend to run any of this in any meaningful way, you'll need [cabinet](https://pypi.org/project/cabinet/), my utility for storing and managing variables across projects.
 
+## OpenClaw
+- [`openclaw/`](openclaw/) — personal OpenClaw skills: conversational diary (`/diary`) and food logging (`/food`).
+
 ## Life-ops MCP
 - [`lifeops-mcp/`](lifeops-mcp/) — stdio MCP server exposing Cabinet, RemindMail, foodlog, milestone, and Immich search to Cursor.
 

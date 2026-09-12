@@ -55,6 +55,24 @@ class FoodlogHelpersTests(unittest.TestCase):
         payload = json.loads(stream["values"][0][1])
         self.assertEqual(payload["total_calories"], 100)
 
+    def test_day_status_shape(self):
+        store = mock.Mock()
+        store.get_entries.return_value = [
+            {"food": "taco", "calories": 100},
+            {"food": "weird", "calories": {"calories": 50}},
+        ]
+        store.is_day_submitted.return_value = False
+        with (
+            mock.patch.object(foodlog, "get_store", return_value=store),
+            mock.patch.object(foodlog, "_ensure_migrated"),
+        ):
+            status = foodlog.day_status("2026-09-11")
+        self.assertEqual(status["date"], "2026-09-11")
+        self.assertEqual(status["total_calories"], 150)
+        self.assertEqual(status["entry_count"], 2)
+        self.assertFalse(status["submitted"])
+        self.assertEqual(status["entries"][0], {"food": "taco", "calories": 100})
+
     def test_push_event_to_loki_noop_without_url(self):
         with mock.patch.object(foodlog, "_loki_base_url", return_value=None):
             self.assertFalse(

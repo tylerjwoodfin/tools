@@ -9,7 +9,7 @@ A simple command-line tool for logging food entries and tracking calories. Data 
 - Visual summary of daily calorie intake with healthy/junk breakdown
 - Food lookup database to remember calorie counts
 - AI-powered calorie suggestions for unknown foods
-- `foodlog submit` to mark the day done (skips the dailystatus reminder email)
+- `foodlog submit` to mark the day done (daily email calorie total shows submitted)
 - Grafana: MongoDB datasource + Foodlog dashboard; optional Loki sync
 
 ## Usage
@@ -34,16 +34,17 @@ foodlog "apple" 50 // "banana" 60 --yesterday
 ### View Today's Log
 ```bash
 foodlog
+foodlog --json
 ```
 
-### Submit the day (disable dailystatus reminder)
+### Submit the day
 ```bash
 foodlog submit
 # or
 foodlog --submit
 ```
 
-Daily status sends the “log food” reminder only if today has **not** been submitted.
+Marks the day done for Grafana and the daily status calorie line. Evening “log food” nudges are Telegram-only (`food-log-remind`).
 
 ### Migrate legacy flat files → Mongo
 ```bash

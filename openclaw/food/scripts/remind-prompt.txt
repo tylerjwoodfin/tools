@@ -1,0 +1,7 @@
+Check Tyler's food log and maybe remind him. This is a main-session system event so he can reply in this same Telegram chat.
+
+1. Run: python3 "$HOME/git/tools/foodlog/main.py" --json
+2. If total_calories >= 1000 or submitted is true, reply exactly: NO_REPLY
+3. If nothing is logged, or total_calories < 1000, send a short gentle Telegram reminder to log food (or finish logging) for today. Write a fresh message every time — never a canned phrase. One or two sentences, no lecture. Invite him to just reply with what he ate (no /food needed). If some food is already logged, mention the current total. If the command fails, reply NO_REPLY.
+
+Follow-ups in this chat are food logs: parse them with the food skill until he clearly changes the subject.

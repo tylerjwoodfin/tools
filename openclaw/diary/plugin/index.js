@@ -13,7 +13,7 @@ function resolveCli(api) {
   if (typeof cfg.cliPath === "string" && cfg.cliPath.trim()) {
     return cfg.cliPath.trim();
   }
-  return join(homedir(), "git", "tools", "diary-llm", ".venv", "bin", "diary-llm");
+  return join(homedir(), "git", "tools", "openclaw", "diary", ".venv", "bin", "diary-llm");
 }
 
 function resolveConfigPath(api) {

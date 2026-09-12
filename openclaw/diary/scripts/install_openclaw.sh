@@ -29,6 +29,17 @@ if [[ ! -f "${CONFIG_PATH}" ]]; then
   echo "Created ${CONFIG_PATH}"
 else
   echo "Keeping existing ${CONFIG_PATH}"
+  python3 - <<'PY'
+from pathlib import Path
+p = Path.home() / ".config/diary-llm/config.yaml"
+text = p.read_text()
+home = Path.home()
+old = str(home / "git/tools/diary-llm/scripts/openclaw-gateway")
+new = str(home / "git/tools/openclaw/diary/scripts/openclaw-gateway")
+if old in text:
+    p.write_text(text.replace(old, new))
+    print(f"Updated openclaw_bin path in {p}")
+PY
 fi
 
 mkdir -p "$(python3 - <<'PY'
@@ -43,22 +54,26 @@ mkdir -p "${HOME}/.local/share/diary-llm"
 echo "==> Installing OpenClaw skill into workspace"
 mkdir -p "$(dirname "${WORKSPACE_SKILL}")"
 rm -rf "${WORKSPACE_SKILL}"
-cp -R "${ROOT}/openclaw/skill/diary" "${WORKSPACE_SKILL}"
+cp -R "${ROOT}/skill" "${WORKSPACE_SKILL}"
 
 echo "==> Linking OpenClaw plugin"
-if command -v openclaw >/dev/null 2>&1; then
-  openclaw plugins install -l --force --accept-capabilities "${ROOT}/openclaw/plugin" || \
-    openclaw plugins install --link --force "${ROOT}/openclaw/plugin" || true
-  openclaw plugins enable diary-llm || true
+OPENCLAW="$(cd "$(dirname "$0")/../.." && pwd)/openclaw-gateway"
+if [[ ! -x "${OPENCLAW}" ]]; then
+  OPENCLAW="$(command -v openclaw || true)"
+fi
+if [[ -n "${OPENCLAW}" ]]; then
+  "${OPENCLAW}" plugins install -l --force --accept-capabilities "${ROOT}/plugin" || \
+    "${OPENCLAW}" plugins install --link --force "${ROOT}/plugin" || true
+  "${OPENCLAW}" plugins enable diary-llm || true
   # Allow conversation interception for active diary sessions
-  openclaw config set plugins.entries.diary-llm.enabled true || true
-  openclaw config set plugins.entries.diary-llm.hooks.allowConversationAccess true || true
-  openclaw config set plugins.entries.diary-llm.config.cliPath "${VENV}/bin/diary-llm" || true
-  openclaw config set plugins.entries.diary-llm.config.configPath "${CONFIG_PATH}" || true
+  "${OPENCLAW}" config set plugins.entries.diary-llm.enabled true || true
+  "${OPENCLAW}" config set plugins.entries.diary-llm.hooks.allowConversationAccess true || true
+  "${OPENCLAW}" config set plugins.entries.diary-llm.config.cliPath "${VENV}/bin/diary-llm" || true
+  "${OPENCLAW}" config set plugins.entries.diary-llm.config.configPath "${CONFIG_PATH}" || true
 
   echo "==> Registering cron tick automation"
   # Remove prior job with same name if present
-  existing="$(openclaw cron list --json 2>/dev/null | python3 -c '
+  existing="$("${OPENCLAW}" cron list --json 2>/dev/null | python3 -c '
 import json,sys
 try:
   data=json.load(sys.stdin)
@@ -72,7 +87,7 @@ for j in jobs:
     break
 ' || true)"
   if [[ -n "${existing}" ]]; then
-    openclaw cron rm "${existing}" || true
+    "${OPENCLAW}" cron rm "${existing}" || true
   fi
 
   TICK_CRON="$(python3 - <<'PY'
@@ -92,7 +107,7 @@ PY
     echo "Warning: cabinet telegram.target is unset; cron --to will be empty"
   fi
 
-  openclaw cron add \
+  "${OPENCLAW}" cron add \
     --name "diary-llm-tick" \
     --description "Finalize inactive diary sessions and maybe send a proactive diary prompt" \
     --cron "${TICK_CRON}" \
