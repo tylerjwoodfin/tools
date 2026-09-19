@@ -1,0 +1,16 @@
+{
+  "name": "@local/overflow-reset",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenClaw plugin that resets a session after context overflow and retries once",
+  "type": "module",
+  "peerDependencies": {
+    "openclaw": ">=2026.5.17"
+  },
+  "openclaw": {
+    "extensions": ["./index.js"],
+    "compat": {
+      "pluginApi": ">=2026.5.17"
+    }
+  }
+}

@@ -6,6 +6,7 @@ Personal OpenClaw skills and plugins that live next to the rest of `~/git/tools`
 | --- | --- |
 | [`diary/`](diary/) | Conversational Telegram diary (`/diary`) via `diary-llm` |
 | [`food/`](food/) | Parse meals and log them with `foodlog` (`/food`) |
+| [`overflow-reset/`](overflow-reset/) | After context overflow, start a fresh session and retry once |
 
 ## Install
 
