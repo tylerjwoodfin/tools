@@ -11,11 +11,21 @@ if [[ ! -x "${PYTHON}" ]]; then
   PYTHON="$(command -v python3)"
 fi
 
-echo "==> Installing OpenClaw food skill into workspace"
-mkdir -p "$(dirname "${WORKSPACE_SKILL}")"
-rm -rf "${WORKSPACE_SKILL}"
-mkdir -p "${WORKSPACE_SKILL}"
-cp "${ROOT}/SKILL.md" "${WORKSPACE_SKILL}/SKILL.md"
+echo "==> Linking OpenClaw food skill from dotfiles (canonical)"
+DOTFILES="${DOTFILES:-$HOME/git/dotfiles}"
+LINK_AI="${DOTFILES}/scripts/link_ai_markdown.sh"
+if [[ -x "${LINK_AI}" || -f "${LINK_AI}" ]]; then
+  bash "${LINK_AI}"
+elif [[ -d "${DOTFILES}/openclaw/workspace/skills/food" ]]; then
+  mkdir -p "$(dirname "${WORKSPACE_SKILL}")"
+  ln -sfn "${DOTFILES}/openclaw/workspace/skills/food" "${WORKSPACE_SKILL}"
+else
+  echo "Warning: dotfiles openclaw food skill missing; copying from ${ROOT}/SKILL.md"
+  mkdir -p "$(dirname "${WORKSPACE_SKILL}")"
+  rm -rf "${WORKSPACE_SKILL}"
+  mkdir -p "${WORKSPACE_SKILL}"
+  cp "${ROOT}/SKILL.md" "${WORKSPACE_SKILL}/SKILL.md"
+fi
 
 # Prefer Gateway-bundled CLI when present (Homebrew openclaw often lags).
 OPENCLAW="$(cd "$(dirname "$0")/../.." && pwd)/openclaw-gateway"

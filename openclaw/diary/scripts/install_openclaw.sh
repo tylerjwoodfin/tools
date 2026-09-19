@@ -51,10 +51,20 @@ PY
 )"
 mkdir -p "${HOME}/.local/share/diary-llm"
 
-echo "==> Installing OpenClaw skill into workspace"
-mkdir -p "$(dirname "${WORKSPACE_SKILL}")"
-rm -rf "${WORKSPACE_SKILL}"
-cp -R "${ROOT}/skill" "${WORKSPACE_SKILL}"
+echo "==> Linking OpenClaw diary skill from dotfiles (canonical)"
+DOTFILES="${DOTFILES:-$HOME/git/dotfiles}"
+LINK_AI="${DOTFILES}/scripts/link_ai_markdown.sh"
+if [[ -x "${LINK_AI}" || -f "${LINK_AI}" ]]; then
+  bash "${LINK_AI}"
+elif [[ -d "${DOTFILES}/openclaw/workspace/skills/diary" ]]; then
+  mkdir -p "$(dirname "${WORKSPACE_SKILL}")"
+  ln -sfn "${DOTFILES}/openclaw/workspace/skills/diary" "${WORKSPACE_SKILL}"
+else
+  echo "Warning: dotfiles openclaw diary skill missing; copying from ${ROOT}/skill"
+  mkdir -p "$(dirname "${WORKSPACE_SKILL}")"
+  rm -rf "${WORKSPACE_SKILL}"
+  cp -R "${ROOT}/skill" "${WORKSPACE_SKILL}"
+fi
 
 echo "==> Linking OpenClaw plugin"
 OPENCLAW="$(cd "$(dirname "$0")/../.." && pwd)/openclaw-gateway"
