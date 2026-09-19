@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Amazon order automation: natural-language search → ChatGPT pick → confirm → order."""
+"""Amazon cart automation: natural-language search → ChatGPT pick → confirm → add to cart."""
 
 from __future__ import annotations
 
@@ -8,7 +8,9 @@ import json
 import os
 import re
 import socket
+import subprocess
 import sys
+import time
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
@@ -285,19 +287,86 @@ def save_storage(context: BrowserContext) -> Path:
     return path
 
 
+_previous_front_app: str | None = None
+
+
+def _macos_frontmost_process() -> str | None:
+    """Name of the focused macOS process, or None."""
+    if sys.platform != "darwin":
+        return None
+    try:
+        out = subprocess.check_output(
+            [
+                "osascript",
+                "-e",
+                (
+                    'tell application "System Events" to get name of first '
+                    "application process whose frontmost is true"
+                ),
+            ],
+            text=True,
+            timeout=2,
+        )
+        return out.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def keep_chromium_in_background() -> None:
+    """Keep Chromium visible but leave the previous app focused (macOS)."""
+    if sys.platform != "darwin" or not _previous_front_app:
+        return
+    escaped = _previous_front_app.replace("\\", "\\\\").replace('"', '\\"')
+    try:
+        subprocess.run(
+            [
+                "osascript",
+                "-e",
+                (
+                    'tell application "System Events" to set frontmost of '
+                    f'process "{escaped}" to true'
+                ),
+            ],
+            check=False,
+            timeout=2,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
+
+
+def new_page(context: BrowserContext) -> Page:
+    """Open a page without leaving Chromium in the foreground."""
+    page = context.new_page()
+    keep_chromium_in_background()
+    return page
+
+
+def goto(page: Page, url: str, **kwargs: Any) -> None:
+    """Navigate, then put the previous app back in front."""
+    page.goto(url, **kwargs)
+    keep_chromium_in_background()
+
+
 def connect_or_launch(playwright: Any, *, force_local: bool = False) -> tuple[Browser, str]:
     """
     Prefer Docker/remote Playwright server; otherwise launch local Chromium.
     Returns (browser, mode) where mode is 'remote' or 'local'.
     """
+    global _previous_front_app
     if not force_local:
         ws = playwright_ws_endpoint()
         if ws:
             cue(f"Connecting to Playwright server at {ws}")
             browser = playwright.chromium.connect(ws)
             return browser, "remote"
+    _previous_front_app = _macos_frontmost_process()
     cue("Launching local Chromium")
     browser = playwright.chromium.launch(headless=False if force_local else want_headless())
+    # Chromium activates asynchronously after launch; wait then restore focus.
+    time.sleep(0.25)
+    keep_chromium_in_background()
     return browser, "local"
 
 
@@ -305,7 +374,7 @@ def run_login() -> int:
     """Open Amazon in local headed Chromium so the user can sign in; save storage state."""
     print(
         "\nPlaywright does not use your Firefox cookies.\n"
-        "A separate Chromium window will open — sign in there once.\n"
+        "A Chromium window will open in the background — cmd-tab to it and sign in once.\n"
         f"Session will be saved to {storage_state_path()}.\n"
     )
     with sync_playwright() as playwright:
@@ -313,22 +382,31 @@ def run_login() -> int:
         browser, _mode = connect_or_launch(playwright, force_local=True)
         try:
             context = open_context(browser, headed_hint=True)
-            page = context.new_page()
+            page = new_page(context)
             cue("Opening Amazon sign-in…")
-            page.goto("https://www.amazon.com/", wait_until="domcontentloaded")
+            goto(page, "https://www.amazon.com/", wait_until="domcontentloaded")
             page.wait_for_timeout(1000)
-            sign_in = page.query_selector("#nav-link-accountList") or page.query_selector(
-                "a[href*='/ap/signin']"
-            )
+            sign_in = None
+            try:
+                sign_in = page.query_selector("#nav-link-accountList") or page.query_selector(
+                    "a[href*='/ap/signin']"
+                )
+            except Exception:  # pylint: disable=broad-exception-caught
+                sign_in = None
             if sign_in:
-                sign_in.click()
-            else:
-                page.goto(
+                try:
+                    sign_in.click()
+                except Exception:  # pylint: disable=broad-exception-caught
+                    sign_in = None
+            if not sign_in:
+                goto(
+                    page,
                     "https://www.amazon.com/ap/signin",
                     wait_until="domcontentloaded",
                 )
+            keep_chromium_in_background()
             print(
-                "\nSign in to Amazon in the Chromium window (complete 2FA if prompted).\n"
+                "\nSign in to Amazon in the Chromium window (cmd-tab to it; complete 2FA if prompted).\n"
                 "When you see your name / Account & Lists in the header, return here.\n"
             )
             if not confirm("Save this browser session now?", default_no=False):
@@ -371,6 +449,8 @@ def dismiss_noise(page: Page) -> None:
         "input#sp-cc-accept",
         "#attach-close_sideSheet-link",
         "#attachSiNoCoverage-announce",
+        "#attachSiNoCoverage",
+        "input#attachSiNoCoverage",
         "button[data-action='a-popover-close']",
     ]
     for sel in selectors:
@@ -382,15 +462,29 @@ def dismiss_noise(page: Page) -> None:
             continue
 
 
-def add_to_cart_and_checkout(page: Page, product: ProductCandidate, *, dry_run: bool) -> int:
-    """Open product page, add to cart, checkout, optionally place order."""
+def item_in_cart(page: Page, asin: str) -> bool:
+    """True when the cart page lists this ASIN."""
+    if not asin:
+        return False
+    try:
+        if page.query_selector(f'[data-asin="{asin}"]'):
+            return True
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        html = page.content()
+    except Exception:  # pylint: disable=broad-exception-caught
+        html = ""
+    return asin in html
+
+
+def add_to_cart(page: Page, product: ProductCandidate, *, dry_run: bool) -> int:
+    """Open the product page and add the item to the cart (no checkout)."""
     cue(f"Opening product: {product.title}")
-    page.goto(f"https://www.amazon.com/dp/{product.asin}", wait_until="domcontentloaded")
+    goto(page, f"https://www.amazon.com/dp/{product.asin}", wait_until="domcontentloaded")
     page.wait_for_timeout(1500)
     dismiss_noise(page)
 
-    add = None
-    buy_now = None
     try:
         page.wait_for_selector(
             "#add-to-cart-button, input#add-to-cart-button, "
@@ -402,106 +496,42 @@ def add_to_cart_and_checkout(page: Page, product: ProductCandidate, *, dry_run: 
     add = page.query_selector("#add-to-cart-button") or page.query_selector(
         "input#add-to-cart-button"
     )
-    buy_now = page.query_selector("#buy-now-button") or page.query_selector(
-        "input#buy-now-button"
-    )
 
     if dry_run:
-        if not add and not buy_now:
+        if not add:
             cue(f"Dry run note: {diagnose_missing_buybox(page)}")
         else:
-            cue("Dry run — buy box visible; stopping before cart/checkout.")
+            cue("Dry run — Add to Cart visible; stopping before adding.")
         return 0
 
-    if buy_now and buy_now.is_enabled():
-        cue("Clicking Buy Now…")
-        buy_now.click()
-    elif add:
-        cue("Adding to cart…")
-        add.click()
-        page.wait_for_timeout(2000)
-        dismiss_noise(page)
-        cue("Going to cart…")
-        page.goto("https://www.amazon.com/gp/cart/view.html", wait_until="domcontentloaded")
-        checkout = page.query_selector(
-            "input[name='proceedToRetailCheckout']"
-        ) or page.query_selector("#sc-buy-box-ptc-button input")
-        if not checkout:
-            cue("Could not find Proceed to checkout.")
-            return 1
-        cue("Proceeding to checkout…")
-        checkout.click()
-    else:
+    if not add:
         cue(diagnose_missing_buybox(page))
         return 1
 
-    page.wait_for_timeout(2500)
+    cue("Adding to cart…")
+    add.click()
+    page.wait_for_timeout(2000)
     dismiss_noise(page)
 
-    # Skip optional upsells / continue buttons when present
-    for _ in range(4):
-        cont = page.query_selector(
-            "input[name='placeYourOrder1']"
-        ) or page.query_selector("#submitOrderButtonId")
-        if cont:
-            break
-        skip = (
-            page.query_selector("input[name='continue-bottom']")
-            or page.query_selector("#prime-interstitial-nothanks-button")
-            or page.query_selector("a#prime-no-thanks")
-            or page.query_selector("input.a-button-input[type='submit']")
-        )
-        if skip and skip.is_visible():
-            try:
-                label = skip.get_attribute("aria-labelledby") or ""
-                cue(f"Clicking continue/skip control ({label or 'submit'})…")
-                skip.click(timeout=2000)
-                page.wait_for_timeout(1500)
-            except Exception:  # pylint: disable=broad-exception-caught
-                break
-        else:
-            break
-
-    place = page.query_selector("input[name='placeYourOrder1']") or page.query_selector(
-        "#submitOrderButtonId"
-    )
-    if not place:
-        cue(
-            "Could not find Place your order. Finish in the browser if checkout "
-            "needs address/payment confirmation."
-        )
-        if not confirm("Keep the browser open until you finish manually?", default_no=False):
-            return 1
-        input("Press Enter when done… ")
-        save_storage(page.context)
-        return 0
-
-    cue("Ready to place the order.")
-    if not confirm(
-        f"Place order for {product.title!r} ({product.price})?",
-        default_no=True,
-    ):
-        cue("Order cancelled.")
-        return 1
-
-    cue("Placing order…")
-    place.click()
-    page.wait_for_timeout(4000)
+    cue("Opening cart to verify…")
+    goto(page, "https://www.amazon.com/gp/cart/view.html", wait_until="domcontentloaded")
+    page.wait_for_timeout(1500)
+    dismiss_noise(page)
     save_storage(page.context)
 
-    body = page.inner_text("body")
-    order_match = re.search(r"order\s*(?:number|#)?\s*[:\s]*([0-9]{3}-[0-9]{7}-[0-9]{7})", body, re.I)
-    if order_match:
-        cue(f"Order placed — {order_match.group(1)}")
-    elif re.search(r"thank you|order placed|thanks for your order", body, re.I):
-        cue("Order placed (confirmation page detected).")
-    else:
-        cue("Place-order clicked — verify confirmation in the browser.")
-    return 0
+    if item_in_cart(page, product.asin):
+        cue(f"Added to cart: {product.title} ({product.price})")
+        return 0
+
+    cue(
+        "Clicked Add to Cart, but the item was not found in the cart. "
+        "Check https://www.amazon.com/gp/cart/view.html"
+    )
+    return 1
 
 
 def run_order(description: str, *, dry_run: bool, auto_yes: bool) -> int:
-    """Search → pick → confirm → order."""
+    """Search → pick → confirm → add to cart."""
     if not description.strip():
         print("Usage: amazon <product description>", file=sys.stderr)
         return 2
@@ -518,11 +548,11 @@ def run_order(description: str, *, dry_run: bool, auto_yes: bool) -> int:
         browser, _mode = connect_or_launch(playwright)
         try:
             context = open_context(browser, headed_hint=True)
-            page = context.new_page()
+            page = new_page(context)
             query = description.strip()
             url = AMAZON_SEARCH.format(query=urllib.parse.quote_plus(query))
             cue(f"Searching Amazon for {query!r}…")
-            page.goto(url, wait_until="domcontentloaded")
+            goto(page, url, wait_until="domcontentloaded")
             page.wait_for_timeout(1500)
             dismiss_noise(page)
 
@@ -542,11 +572,11 @@ def run_order(description: str, *, dry_run: bool, auto_yes: bool) -> int:
 
             product = candidates[pick]
             cue(f"Selected [{product.index}] {product.title} ({product.price})")
-            if not auto_yes and not confirm("Order this product?", default_no=False):
+            if not auto_yes and not confirm("Add this product to your cart?", default_no=False):
                 cue("Aborted.")
                 return 1
 
-            code = add_to_cart_and_checkout(page, product, dry_run=dry_run)
+            code = add_to_cart(page, product, dry_run=dry_run)
             context.close()
             return code
         finally:
@@ -558,8 +588,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="amazon",
         description=(
-            "Describe a product; Playwright + ChatGPT pick a match and place "
-            "an Amazon order after confirmation."
+            "Describe a product; Playwright + ChatGPT pick a match and add it "
+            "to your Amazon cart after confirmation."
         ),
     )
     parser.add_argument(
@@ -575,13 +605,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Search and select only; do not add to cart or place order",
+        help="Search and select only; do not add to cart",
     )
     parser.add_argument(
         "-y",
         "--yes",
         action="store_true",
-        help="Skip product confirmation (still confirms place-order)",
+        help="Skip the add-to-cart confirmation prompt",
     )
     parser.add_argument(
         "--version-check",

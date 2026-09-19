@@ -10,3 +10,7 @@ echo "==> Diary"
 echo
 echo "==> Food"
 "${ROOT}/food/scripts/install_openclaw.sh"
+
+echo
+echo "==> Overflow reset"
+"${ROOT}/overflow-reset/scripts/install_openclaw.sh"

@@ -1,0 +1,25 @@
+{
+  "id": "overflow-reset",
+  "name": "Overflow reset",
+  "description": "Start a fresh session when context overflow recovery is exhausted, then retry the last user message once.",
+  "version": "0.1.0",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "minMessages": {
+        "type": "integer",
+        "minimum": 2,
+        "description": "Skip auto-reset when the overflowing session has fewer messages than this. Short sessions overflow because the system prompt itself does not fit, and /new cannot fix that."
+      },
+      "cooldownSeconds": {
+        "type": "integer",
+        "minimum": 10,
+        "description": "Minimum seconds between auto-resets for the same session, to prevent a reset loop."
+      }
+    }
+  }
+}

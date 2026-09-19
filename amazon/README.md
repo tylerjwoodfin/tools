@@ -1,7 +1,7 @@
-# Amazon order automation
+# Amazon cart automation
 
 Describe a product in everyday language; Playwright searches Amazon, ChatGPT
-picks the best match, you confirm, and the order is placed on your account.
+picks the best match, you confirm, and the item is added to your Amazon cart.
 
 ## Setup
 
@@ -43,8 +43,8 @@ amazon --login
 amazon --help
 ```
 
-Each step prints a cue. You must confirm before checkout and again before
-placing the order (`--yes` skips the product confirmation only, not place-order).
+Each step prints a cue. You must confirm before the item is added to the cart
+(`--yes` skips that confirmation). Nothing is purchased.
 
 ## Cabinet (optional)
 
