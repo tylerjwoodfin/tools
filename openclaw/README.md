@@ -13,7 +13,10 @@ Personal OpenClaw skills and plugins that live next to the rest of `~/git/tools`
 ~/git/tools/openclaw/install.sh
 ```
 
-That runs each skill's `scripts/install_openclaw.sh` (venv + plugin for diary, workspace skill + 7pm reminder for food).
+That runs each skill's `scripts/install_openclaw.sh` (venv + plugin for diary,
+plugin + 7pm reminder for food). Workspace skill markdown is linked from
+`~/git/dotfiles/openclaw/workspace/skills/` via
+`~/git/dotfiles/scripts/link_ai_markdown.sh` when that repo is present.
 
 Restart the gateway if commands do not show up:
 
