@@ -112,6 +112,63 @@ def _coerce_pick_index(value: Any, count: int) -> int | None:
     return idx if 0 <= idx < count else None
 
 
+_SPONSORED_SELECTORS = (
+    ".puis-sponsored-label-text",
+    ".s-sponsored-label-text",
+    ".s-sponsored-label-info-icon",
+    "[data-component-type='sp-sponsored-result']",
+)
+
+# Merchandising chips that can sit in front of the Sponsored badge.
+_LEADING_BADGES = (
+    r"(?:overall pick|best seller|amazon's choice|limited time deal|"
+    r"editorial recommendations|climate pledge friendly)"
+)
+_SPONSORED_BADGE = re.compile(
+    rf"(?i)^(?:{_LEADING_BADGES}\s+)*sponsored(?:\s+ad)?\b"
+)
+_SPONSORED_AD_LABEL = re.compile(r"(?i)\bsponsored ad\b")
+_SPONSORED_TITLE_SUFFIX = re.compile(r"(?i)\bsponsored(?:\s+ad)?\s*$")
+
+
+def is_sponsored_result(card: Any) -> bool:
+    """True when an Amazon search card is a sponsored ad."""
+    classes = card.get_attribute("class") or ""
+    if "AdHolder" in classes.split():
+        return True
+    if (card.get_attribute("data-ad-details") or "").strip():
+        return True
+    component = (card.get_attribute("data-component-type") or "").lower()
+    if "sponsored" in component:
+        return True
+    for selector in _SPONSORED_SELECTORS:
+        try:
+            if card.query_selector(selector):
+                return True
+        except Exception:  # pylint: disable=broad-exception-caught
+            continue
+    try:
+        text = card.inner_text()
+    except Exception:  # pylint: disable=broad-exception-caught
+        text = ""
+    return text_has_sponsored_badge(text)
+
+
+def text_has_sponsored_badge(text: str) -> bool:
+    """True when card text is labeled Sponsored or Sponsored ad."""
+    collapsed = " ".join(text.split())
+    if not collapsed:
+        return False
+    if _SPONSORED_AD_LABEL.search(collapsed):
+        return True
+    return bool(_SPONSORED_BADGE.match(collapsed))
+
+
+def title_marked_sponsored(title: str) -> bool:
+    """True when a scraped title still carries Amazon's sponsored suffix."""
+    return bool(_SPONSORED_TITLE_SUFFIX.search(title.strip()))
+
+
 def parse_pick_response(raw: str, count: int) -> int | None:
     """
     Parse ChatGPT's pick: JSON {\"index\": N} or a bare integer.
@@ -165,6 +222,7 @@ Candidates (JSON):
 Pick the single best match that a reasonable shopper would buy for that request.
 Use title and snippet together (titles are sometimes just a brand name).
 Prefer correctly matching flavor/variant/size when stated, then rating and price.
+Never pick a sponsored ad. Ignore any candidate labeled "Sponsored" or "Sponsored ad".
 If nothing is a reasonable match, return index -1.
 
 Respond with ONLY a JSON object like: {{"index": 0}}
@@ -180,11 +238,15 @@ def scrape_search_results(page: Page, limit: int = 8) -> list[ProductCandidate]:
     page.wait_for_selector('[data-component-type="s-search-result"]', timeout=20000)
     cards = page.query_selector_all('[data-component-type="s-search-result"]')
     results: list[ProductCandidate] = []
+    skipped_sponsored = 0
     for card in cards:
         if len(results) >= limit:
             break
         asin = (card.get_attribute("data-asin") or "").strip()
         if not asin:
+            continue
+        if is_sponsored_result(card):
+            skipped_sponsored += 1
             continue
 
         img = card.query_selector("img.s-image")
@@ -200,7 +262,6 @@ def scrape_search_results(page: Page, limit: int = 8) -> list[ProductCandidate]:
                     or card.query_selector("h2 span")
                 )
                 title = (title_el.inner_text().strip() if title_el else "").strip()
-        title = re.sub(r"\s*sponsored\s*$", "", title, flags=re.I).strip()
         title = title.rstrip(".").strip()
         if title.endswith("..."):
             # Prefer fuller text from the card body when alt is truncated
@@ -224,6 +285,9 @@ def scrape_search_results(page: Page, limit: int = 8) -> list[ProductCandidate]:
                         flags=re.I,
                     )
                     title = cleaned[:220].strip()
+        if title_marked_sponsored(title) or text_has_sponsored_badge(title):
+            skipped_sponsored += 1
+            continue
         if not title:
             continue
 
@@ -256,6 +320,9 @@ def scrape_search_results(page: Page, limit: int = 8) -> list[ProductCandidate]:
                 snippet=snippet,
             )
         )
+    if skipped_sponsored:
+        noun = "sponsored ad" if skipped_sponsored == 1 else "sponsored ads"
+        cue(f"Skipped {skipped_sponsored} {noun}.")
     return results
 
 
