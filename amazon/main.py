@@ -95,6 +95,39 @@ def confirm(prompt: str, *, default_no: bool = True) -> bool:
     return answer in {"y", "yes"}
 
 
+def parse_manual_pick(raw: str, count: int) -> int | str:
+    """
+    Parse a manual candidate choice.
+
+    Returns a 0-based index, ``quit`` for q, or ``invalid`` when the reply
+    is not a listed number.
+    """
+    text = raw.strip().lower()
+    if text in {"q", "quit"}:
+        return "quit"
+    if not re.fullmatch(r"\d+", text):
+        return "invalid"
+    idx = _coerce_pick_index(int(text), count)
+    return idx if idx is not None else "invalid"
+
+
+def prompt_manual_pick(candidates: list[ProductCandidate]) -> ProductCandidate | None:
+    """Ask for a list number to add, or q to quit. None means quit."""
+    last = len(candidates) - 1
+    while True:
+        try:
+            answer = input(f"? Pick a number (0-{last}) to add, or q to quit: ")
+        except EOFError:
+            return None
+        parsed = parse_manual_pick(answer, len(candidates))
+        if parsed == "quit":
+            return None
+        if parsed == "invalid":
+            cue(f"Enter a number from 0 to {last}, or q to quit.")
+            continue
+        return candidates[int(parsed)]
+
+
 def extract_asin(url: str) -> str:
     """Pull ASIN from a product URL if present."""
     match = re.search(r"/(?:dp|gp/product)/([A-Z0-9]{10})", url)
@@ -640,8 +673,11 @@ def run_order(description: str, *, dry_run: bool, auto_yes: bool) -> int:
             product = candidates[pick]
             cue(f"Selected [{product.index}] {product.title} ({product.price})")
             if not auto_yes and not confirm("Add this product to your cart?", default_no=False):
-                cue("Aborted.")
-                return 1
+                product = prompt_manual_pick(candidates)
+                if product is None:
+                    cue("Aborted.")
+                    return 1
+                cue(f"Selected [{product.index}] {product.title} ({product.price})")
 
             code = add_to_cart(page, product, dry_run=dry_run)
             context.close()
