@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from main import (  # noqa: E402
     is_sponsored_result,
     item_in_cart,
+    parse_manual_pick,
     parse_pick_response,
     scrape_search_results,
     text_has_sponsored_badge,
@@ -49,6 +50,22 @@ def test_parse_pick_out_of_range() -> None:
 
 def test_parse_pick_markdown_noise() -> None:
     assert parse_pick_response('Sure\n```json\n{"index": 0}\n```', 2) == 0
+
+
+def test_parse_manual_pick_number() -> None:
+    assert parse_manual_pick("4", 8) == 4
+
+
+def test_parse_manual_pick_quit() -> None:
+    assert parse_manual_pick("q", 8) == "quit"
+    assert parse_manual_pick(" quit ", 8) == "quit"
+
+
+def test_parse_manual_pick_invalid() -> None:
+    assert parse_manual_pick("", 8) == "invalid"
+    assert parse_manual_pick("n", 8) == "invalid"
+    assert parse_manual_pick("9", 8) == "invalid"
+    assert parse_manual_pick("-1", 8) == "invalid"
 
 
 def test_item_in_cart_by_data_asin() -> None:
