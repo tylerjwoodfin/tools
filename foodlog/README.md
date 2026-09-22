@@ -74,6 +74,21 @@ Exports days to a temp JSON, opens your Cabinet editor, then re-imports into Mon
 foodlog "chicken salad" 500 --yesterday
 ```
 
+### Apple Health (daily total)
+
+`foodlog-health.service` listens on `192.168.1.101:8754` and returns that day's calorie total (no individual foods):
+
+```bash
+curl 'http://192.168.1.101:8754/calories'
+curl 'http://192.168.1.101:8754/calories?date=2026-09-21'
+```
+
+```json
+{"date": "2026-09-21", "total_calories": 1840, "unit": "kcal"}
+```
+
+`date` is optional and defaults to yesterday. A missing log is `total_calories: 0`. The port is open on the LAN and WireGuard only.
+
 ## Data Storage
 
 **MongoDB** (same URI as Cabinet `mongodb_connection_string`, database name `foodlog`):

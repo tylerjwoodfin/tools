@@ -1,0 +1,19 @@
+[Unit]
+Description=Foodlog daily calorie total for Apple Health
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/tyler/git/tools/foodlog
+ExecStart=/usr/bin/python3 /home/tyler/git/tools/foodlog/health_api.py
+Restart=always
+RestartSec=5
+User=tyler
+Environment=HOME=/home/tyler
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/tyler/.local/bin
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
