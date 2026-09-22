@@ -5,6 +5,7 @@ import json
 import unittest
 from unittest import mock
 
+import health_api
 import main as foodlog
 from store import FoodlogStore, day_total_calories, is_submitted_value
 from pymongo import MongoClient
@@ -103,6 +104,42 @@ class FoodlogHelpersTests(unittest.TestCase):
         req = urlopen.call_args[0][0]
         self.assertEqual(req.full_url, "http://loki.example:3100/loki/api/v1/push")
         self.assertEqual(req.get_method(), "POST")
+
+
+class HealthApiTests(unittest.TestCase):
+    def test_parse_day_defaults_and_rejects(self):
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        self.assertEqual(health_api.parse_day(None), yesterday)
+        self.assertEqual(health_api.parse_day("  "), yesterday)
+        self.assertEqual(health_api.parse_day("2026-09-21"), "2026-09-21")
+        with self.assertRaises(ValueError):
+            health_api.parse_day("09-21-2026")
+        with self.assertRaises(ValueError):
+            health_api.parse_day("2026-13-40")
+
+    def test_resolve_day_query_and_path(self):
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        self.assertEqual(health_api.resolve_day("/calories", "date=2026-01-02"), "2026-01-02")
+        self.assertEqual(health_api.resolve_day("/2026-01-02", ""), "2026-01-02")
+        self.assertEqual(health_api.resolve_day("/calories", ""), yesterday)
+
+    def test_calorie_total_is_day_sum_only(self):
+        with mock.patch.object(
+            foodlog,
+            "day_status",
+            return_value={
+                "date": "2026-09-21",
+                "entries": [{"food": "taco", "calories": 100}],
+                "total_calories": 100,
+                "entry_count": 1,
+                "submitted": False,
+            },
+        ):
+            payload = health_api.calorie_total("2026-09-21")
+        self.assertEqual(
+            payload,
+            {"date": "2026-09-21", "total_calories": 100, "unit": "kcal"},
+        )
 
 
 class FoodlogStoreMongoTests(unittest.TestCase):
