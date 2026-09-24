@@ -23,8 +23,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo("America/Los_Angeles")
-MIN_DAYS = 2.0
-MAX_DAYS = 4.0
+MIN_DAYS = 3.0
+MAX_DAYS = 5.0
 ALLOWED_HOURS = {17, 18, 19, 20, 21}
 CORRECT_TO_COMPLETE = 3
 REVISIT_AFTER_DAYS = 21

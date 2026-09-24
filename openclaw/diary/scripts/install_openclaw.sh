@@ -37,8 +37,13 @@ home = Path.home()
 old = str(home / "git/tools/diary-llm/scripts/openclaw-gateway")
 new = str(home / "git/tools/openclaw/diary/scripts/openclaw-gateway")
 if old in text:
-    p.write_text(text.replace(old, new))
+    text = text.replace(old, new)
+    p.write_text(text)
     print(f"Updated openclaw_bin path in {p}")
+if "min_days: 2\n" in text and "max_days: 4\n" in text:
+    text = text.replace("min_days: 2\n", "min_days: 3\n").replace("max_days: 4\n", "max_days: 5\n")
+    p.write_text(text)
+    print(f"Updated proactive cadence to 3–5 days in {p}")
 PY
 fi
 

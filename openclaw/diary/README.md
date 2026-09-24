@@ -9,7 +9,7 @@ Conversational AI diary for [OpenClaw](https://docs.openclaw.ai): natural Telegr
 - `/diary done` finishes early; inactivity (~3h, configurable) finalizes automatically
 - Sessions become first-person Markdown under `syncthing/notes/diary/YYYY/MM/`
 - Raw transcripts are kept in `diary/conversations/<session-id>.json`
-- Cron tick sends non-generic prompts every ~2–4 days during evening hours
+- Cron tick sends non-generic prompts every ~3–5 days during evening hours
 - Normal OpenClaw chats are never treated as diary entries unless a session is active
 
 ## Install

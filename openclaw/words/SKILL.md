@@ -37,5 +37,5 @@ python3 ~/git/tools/openclaw/words/scripts/words_cli.py tick
 1. `/words` or `/recall` asks for the word that matches a definition
 2. A short reply while a quiz is open is graded by the plugin
 3. Three correct recalls move the word under `## Completed`
-4. Every 2 hours the tick may send one quiz, only between 5pm and 9pm, and only after a 2–4 day gap
+4. Every 2 hours the tick may send one quiz, only between 5pm and 9pm, and only after a random 3–5 day gap. Diary is on its own 3–5 day clock.
 5. An empty active list gets one college-level word chosen for you; completed words come back about every three weeks
