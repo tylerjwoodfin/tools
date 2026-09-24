@@ -10,8 +10,8 @@ diary_dir: /Users/tyler/syncthing/notes/diary
 
 proactive:
   enabled: true
-  min_days: 2
-  max_days: 4
+  min_days: 3
+  max_days: 5
   # Local hours when proactive prompts may be sent
   allowed_hours: [17, 18, 19, 20, 21]
 

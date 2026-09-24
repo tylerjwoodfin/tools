@@ -12,5 +12,9 @@ echo "==> Food"
 "${ROOT}/food/scripts/install_openclaw.sh"
 
 echo
+echo "==> Words"
+"${ROOT}/words/scripts/install_openclaw.sh"
+
+echo
 echo "==> Overflow reset"
 "${ROOT}/overflow-reset/scripts/install_openclaw.sh"

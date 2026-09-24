@@ -19,8 +19,8 @@ DEFAULT_CONFIG_PATHS = (
 @dataclass
 class ProactiveConfig:
     enabled: bool = True
-    min_days: float = 2.0
-    max_days: float = 4.0
+    min_days: float = 3.0
+    max_days: float = 5.0
     allowed_hours: list[int] = field(default_factory=lambda: [17, 18, 19, 20, 21])
 
 
@@ -125,8 +125,8 @@ def load_config(
         state_dir=state_dir,
         proactive=ProactiveConfig(
             enabled=bool(proactive_raw.get("enabled", True)),
-            min_days=float(proactive_raw.get("min_days", 2)),
-            max_days=float(proactive_raw.get("max_days", 4)),
+            min_days=float(proactive_raw.get("min_days", 3)),
+            max_days=float(proactive_raw.get("max_days", 5)),
             allowed_hours=[
                 int(h) for h in (proactive_raw.get("allowed_hours") or [17, 18, 19, 20, 21])
             ],
