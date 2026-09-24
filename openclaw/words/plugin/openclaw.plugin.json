@@ -1,0 +1,23 @@
+{
+  "id": "words",
+  "name": "Word recall",
+  "description": "Quiz definitions from words_to_remember.md, on demand and every few evenings.",
+  "version": "0.1.0",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "cliPath": {
+        "type": "string",
+        "description": "Path to words_cli.py"
+      },
+      "pythonPath": {
+        "type": "string",
+        "description": "Python interpreter used to run words_cli.py"
+      }
+    }
+  }
+}
