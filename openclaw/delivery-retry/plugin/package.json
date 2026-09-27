@@ -1,0 +1,16 @@
+{
+  "name": "@local/delivery-retry",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Resend a Telegram reply after OpenClaw gives up on an ambiguous send",
+  "type": "module",
+  "peerDependencies": {
+    "openclaw": ">=2026.5.17"
+  },
+  "openclaw": {
+    "extensions": ["./index.js"],
+    "compat": {
+      "pluginApi": ">=2026.5.17"
+    }
+  }
+}

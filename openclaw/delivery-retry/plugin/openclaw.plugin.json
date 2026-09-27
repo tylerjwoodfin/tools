@@ -1,0 +1,20 @@
+{
+  "id": "delivery-retry",
+  "name": "Delivery retry",
+  "description": "Resend a Telegram reply when OpenClaw abandons an ambiguous send.",
+  "version": "0.1.0",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "maxAttempts": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "How many times to resend the same text after OpenClaw gives up."
+      }
+    }
+  }
+}
