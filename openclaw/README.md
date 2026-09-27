@@ -9,6 +9,7 @@ Personal OpenClaw skills and plugins that live next to the rest of `~/git/tools`
 | [`words/`](words/) | Quiz definitions from `words_to_remember.md` (`/words`) |
 | [`overflow-reset/`](overflow-reset/) | After context overflow, start a fresh session and retry once |
 | [`delivery-retry/`](delivery-retry/) | Resend a Telegram reply OpenClaw dropped after an ambiguous send |
+| [`media/`](media/) | Movies, TV, and music via Radarr, Sonarr, qBittorrent, and Sockseek |
 
 ## Install
 
