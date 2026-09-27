@@ -22,3 +22,7 @@ echo "==> Overflow reset"
 echo
 echo "==> Delivery retry"
 "${ROOT}/delivery-retry/scripts/install_openclaw.sh"
+
+echo
+echo "==> Media"
+"${ROOT}/media/scripts/install_openclaw.sh"
