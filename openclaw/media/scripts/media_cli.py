@@ -2,20 +2,17 @@
 """Narrow media control for Cherry.
 
 Movies go to Radarr, shows to Sonarr, torrent status to qBittorrent, and music
-to the Sockseek daemon. On the Mac this opens an SSH tunnel to cloud's
-loopback ports. It does not shell into the download clients.
+to the Sockseek daemon. The stack runs on this machine. The CLI calls the
+loopback HTTP APIs and does not shell into the download clients.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
-import socket
 import subprocess
 import sys
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -25,7 +22,6 @@ SONARR_PORT = 8989
 RADARR_PORT = 7878
 QBIT_PORT = 8080
 SOCKSEEK_PORT = 5030
-LOCAL_BASE = 18000
 
 OUTCOMES = (
     "added",
@@ -111,22 +107,6 @@ def parse_music_query(query: str) -> tuple[str | None, str]:
     return None, query.strip()
 
 
-def ssh_target_from_which(text: str) -> tuple[str, str] | None:
-    match = re.search(r"ssh(?:\s+-o\s+\S+)*\s+(\S+@\S+)\s+-p\s+(\d+)", text)
-    if not match:
-        return None
-    return match.group(1), match.group(2)
-
-
-def on_media_host() -> bool:
-    flag = os.environ.get("MEDIA_ON_HOST")
-    if flag == "1":
-        return True
-    if flag == "0":
-        return False
-    return Path("/mnt/syncthing-e/video").is_dir()
-
-
 class ApiError(Exception):
     def __init__(self, outcome: str, message: str):
         super().__init__(message)
@@ -144,13 +124,10 @@ class Api:
 
     def _key(self, kind: str) -> str:
         filename = "sonarr" if kind == "sonarr" else "radarr"
-        if on_media_host():
-            path = Path.home() / f"git/docker/{filename}/config/config.xml"
-            if not path.exists():
-                raise ApiError("backend_unavailable", f"{kind} config is missing")
-            text = path.read_text(encoding="utf-8")
-        else:
-            text = _remote_text(f"~/git/docker/{filename}/config/config.xml")
+        path = Path.home() / f"git/docker/media/config/{filename}/config.xml"
+        if not path.exists():
+            raise ApiError("backend_unavailable", f"{kind} config is missing")
+        text = path.read_text(encoding="utf-8")
         match = re.search(r"<ApiKey>([^<]+)</ApiKey>", text or "")
         if not match:
             raise ApiError("backend_unavailable", f"{kind} API key is missing")
@@ -217,9 +194,11 @@ class Api:
             with urllib.request.urlopen(req, timeout=20) as resp:
                 body = resp.read().decode().strip()
                 cookie = resp.headers.get("Set-Cookie", "").split(";", 1)[0]
+                status = resp.status
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise ApiError(self._download_outcome(), "qBittorrent is not reachable") from exc
-        if body != "Ok." or not cookie:
+        # qBittorrent 4 returned "Ok."; 5 returns 204 with an empty body.
+        if status not in (200, 204) or (body and body != "Ok.") or not cookie:
             raise ApiError("backend_unavailable", "qBittorrent login failed")
         self._qbit_cookie = cookie
 
@@ -269,20 +248,6 @@ def gluetun_health() -> str:
         "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}",
         "media-gluetun",
     ]
-    if not on_media_host():
-        target = _ssh_target()
-        if not target:
-            return "unknown"
-        user_host, port = target
-        command = [
-            "ssh",
-            "-o",
-            "ConnectTimeout=8",
-            "-p",
-            port,
-            user_host,
-            "docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' media-gluetun",
-        ]
     try:
         proc = subprocess.run(command, capture_output=True, text=True, timeout=20, check=False)
     except (OSError, subprocess.TimeoutExpired):
@@ -292,107 +257,13 @@ def gluetun_health() -> str:
     return (proc.stdout or "").strip() or "unknown"
 
 
-def _which(name: str) -> str:
-    proc = subprocess.run(
-        ["zsh", "-lic", f"which {name}"],
-        capture_output=True,
-        text=True,
-        timeout=15,
-        check=False,
+def local_api() -> Api:
+    return Api(
+        f"http://127.0.0.1:{SONARR_PORT}",
+        f"http://127.0.0.1:{RADARR_PORT}",
+        f"http://127.0.0.1:{QBIT_PORT}",
+        f"http://127.0.0.1:{SOCKSEEK_PORT}",
     )
-    return proc.stdout or ""
-
-
-def _remote_text(path: str) -> str:
-    target = _ssh_target()
-    if not target:
-        raise ApiError("backend_unavailable", "could not resolve the cloud SSH target")
-    user_host, port = target
-    proc = subprocess.run(
-        ["ssh", "-o", "ConnectTimeout=8", "-p", port, user_host, "cat", path],
-        capture_output=True,
-        text=True,
-        timeout=20,
-        check=False,
-    )
-    if proc.returncode != 0 or not proc.stdout:
-        raise ApiError("backend_unavailable", f"could not read {path} on the media host")
-    return proc.stdout
-
-
-def _ssh_target() -> tuple[str, str] | None:
-    for name in ("cloud", "rainbow"):
-        found = ssh_target_from_which(_which(name))
-        if found:
-            return found
-    return None
-
-
-class Tunnel:
-    def __init__(self):
-        self.proc: subprocess.Popen | None = None
-        self.base = {
-            "sonarr": f"http://127.0.0.1:{SONARR_PORT}",
-            "radarr": f"http://127.0.0.1:{RADARR_PORT}",
-            "qbit": f"http://127.0.0.1:{QBIT_PORT}",
-            "sockseek": f"http://127.0.0.1:{SOCKSEEK_PORT}",
-        }
-
-    def __enter__(self) -> Tunnel:
-        if on_media_host():
-            return self
-        target = _ssh_target()
-        if not target:
-            raise ApiError("backend_unavailable", "could not resolve the cloud SSH target")
-        user_host, port = target
-        forwards = []
-        mapping = {
-            "sonarr": SONARR_PORT,
-            "radarr": RADARR_PORT,
-            "qbit": QBIT_PORT,
-            "sockseek": SOCKSEEK_PORT,
-        }
-        self.base = {}
-        for name, remote in mapping.items():
-            local = LOCAL_BASE + remote
-            forwards += ["-L", f"127.0.0.1:{local}:127.0.0.1:{remote}"]
-            self.base[name] = f"http://127.0.0.1:{local}"
-        self.proc = subprocess.Popen(
-            [
-                "ssh",
-                "-N",
-                "-o",
-                "ExitOnForwardFailure=yes",
-                "-o",
-                "ConnectTimeout=8",
-                "-p",
-                port,
-                user_host,
-                *forwards,
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
-        deadline = time.time() + 15
-        probe = ("127.0.0.1", LOCAL_BASE + SONARR_PORT)
-        while time.time() < deadline:
-            if self.proc.poll() is not None:
-                err = (self.proc.stderr.read() if self.proc.stderr else b"").decode()[:300]
-                raise ApiError("backend_unavailable", f"SSH tunnel exited: {err}")
-            try:
-                with socket.create_connection(probe, timeout=0.3):
-                    return self
-            except OSError:
-                time.sleep(0.2)
-        raise ApiError("backend_unavailable", "SSH tunnel did not open")
-
-    def __exit__(self, *_args) -> None:
-        if self.proc and self.proc.poll() is None:
-            self.proc.terminate()
-            try:
-                self.proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.proc.kill()
 
 
 def _quality_profile_id(profiles: list[dict]) -> int:
@@ -637,25 +508,24 @@ def run(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     as_json = args.json
     try:
-        with Tunnel() as tunnel:
-            api = Api(tunnel.base["sonarr"], tunnel.base["radarr"], tunnel.base["qbit"], tunnel.base["sockseek"])
-            if args.command == "health":
-                result = health(api)
-            elif args.command == "status":
-                result = status(api)
-            elif args.command == "search-movie":
-                result = search_movie(api, args.query)
-            elif args.command == "search-series":
-                result = search_series(api, args.query)
-            elif args.command == "add-movie":
-                result = add_movie(api, args.query)
-            elif args.command == "add-series":
-                result = add_series(api, args.query)
-            elif args.command == "add-music":
-                result = add_music(api, args.query, album=bool(args.album))
-            else:
-                parser.error(f"unknown command {args.command}")
-                return 2
+        api = local_api()
+        if args.command == "health":
+            result = health(api)
+        elif args.command == "status":
+            result = status(api)
+        elif args.command == "search-movie":
+            result = search_movie(api, args.query)
+        elif args.command == "search-series":
+            result = search_series(api, args.query)
+        elif args.command == "add-movie":
+            result = add_movie(api, args.query)
+        elif args.command == "add-series":
+            result = add_series(api, args.query)
+        elif args.command == "add-music":
+            result = add_music(api, args.query, album=bool(args.album))
+        else:
+            parser.error(f"unknown command {args.command}")
+            return 2
     except ApiError as exc:
         result = _result(exc.outcome, f"{exc.outcome.replace('_', ' ')}: {exc.message}")
     return emit(result, as_json)

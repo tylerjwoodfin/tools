@@ -78,13 +78,14 @@ def test_parse_music_query():
     assert media_cli.parse_music_query("Discovery") == (None, "Discovery")
 
 
-def test_ssh_target_from_cloud_function():
-    text = """
-cloud () {
-    ssh -o ConnectTimeout=4 tyler@192.168.1.101 -p 62561 -t zsh -cil "'$@'"
-}
-"""
-    assert media_cli.ssh_target_from_which(text) == ("tyler@192.168.1.101", "62561")
+def test_stack_is_local_to_ice():
+    compose = (Path.home() / "git/docker/media/docker-compose.yml").read_text(encoding="utf-8")
+    configure = (Path.home() / "git/docker/media/scripts/configure.py").read_text(encoding="utf-8")
+    cli = (SCRIPTS / "media_cli.py").read_text(encoding="utf-8")
+    assert "SYNCTHING_DIR" in compose
+    assert "/mnt/syncthing-e" not in compose
+    assert "video-to-cloud" in configure
+    assert "ssh" not in cli
 
 
 def test_rewrite_jackett_url():
