@@ -8,6 +8,7 @@ Personal OpenClaw skills and plugins that live next to the rest of `~/git/tools`
 | [`food/`](food/) | Parse meals and log them with `foodlog` (`/food`) |
 | [`words/`](words/) | Quiz definitions from `words_to_remember.md` (`/words`) |
 | [`overflow-reset/`](overflow-reset/) | After context overflow, start a fresh session and retry once |
+| [`delivery-retry/`](delivery-retry/) | Resend a Telegram reply OpenClaw dropped after an ambiguous send |
 
 ## Install
 

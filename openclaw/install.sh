@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install personal OpenClaw skills (diary + food).
+# Install personal OpenClaw skills (diary, food, words, overflow reset, delivery retry).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -18,3 +18,7 @@ echo "==> Words"
 echo
 echo "==> Overflow reset"
 "${ROOT}/overflow-reset/scripts/install_openclaw.sh"
+
+echo
+echo "==> Delivery retry"
+"${ROOT}/delivery-retry/scripts/install_openclaw.sh"
