@@ -282,7 +282,25 @@ def _queue_has(records: list[dict], key: str, value) -> bool:
     return any(row.get(key) == value for row in records)
 
 
-def add_series(api: Api, query: str) -> dict:
+def parse_episode_spec(text: str) -> list[int]:
+    numbers: list[int] = []
+    for part in text.split(","):
+        piece = part.strip()
+        if not piece:
+            continue
+        if "-" in piece:
+            start, end = piece.split("-", 1)
+            numbers.extend(range(int(start), int(end) + 1))
+        else:
+            numbers.append(int(piece))
+    return numbers
+
+
+def add_series(api: Api, query: str, *, season: str = "current", episodes: str | None = None) -> dict:
+    if episodes:
+        if season == "current":
+            raise ApiError("backend_unavailable", "a specific season is required with --episodes")
+        return add_episodes(api, query, int(season), parse_episode_spec(episodes))
     found = api.sonarr_get("/series/lookup", {"term": query}) or []
     chosen = pick_best(found, query)
     if not chosen:
@@ -321,6 +339,58 @@ def add_series(api: Api, query: str) -> dict:
     if outcome == "downloading":
         return _result("downloading", f"downloading: {title} is already in the queue")
     return _result("already_monitored", f"already monitored: {title}")
+
+
+def add_episodes(api: Api, query: str, season_no: int, numbers: list[int]) -> dict:
+    if not numbers:
+        raise ApiError("backend_unavailable", "no episode numbers were given")
+    found = api.sonarr_get("/series/lookup", {"term": query}) or []
+    chosen = pick_best(found, query)
+    if not chosen:
+        return _result("no_results", f'no series matched "{query}"')
+    title = chosen.get("title") or query
+    library = api.sonarr_get("/series") or []
+    existing = next((row for row in library if row.get("tvdbId") == chosen.get("tvdbId")), None)
+    if existing is None:
+        body = dict(chosen)
+        body.pop("id", None)
+        body["qualityProfileId"] = _quality_profile_id(api.sonarr_get("/qualityprofile") or [])
+        body["rootFolderPath"] = _root_folder(api.sonarr_get("/rootfolder") or [])
+        body["monitored"] = True
+        body["seasonFolder"] = True
+        body["addOptions"] = {"monitor": "none", "searchForMissingEpisodes": False}
+        existing = api.sonarr_send("POST", "/series", body)
+    episodes = api.sonarr_get(
+        "/episode",
+        {"seriesId": existing["id"], "seasonNumber": season_no},
+    ) or []
+    by_number = {int(row.get("episodeNumber") or 0): row for row in episodes}
+    missing = [number for number in numbers if number not in by_number]
+    if missing:
+        listed = ", ".join(f"E{number}" for number in missing)
+        return _result("no_results", f"no results: {title} S{season_no} has no {listed}")
+    wanted = [by_number[number] for number in numbers]
+    label = _episode_label(season_no, numbers)
+    if all(row.get("hasFile") for row in wanted):
+        return _result("completed", f"completed: {title} {label} is already on disk")
+    need = [row for row in wanted if not row.get("hasFile")]
+    api.sonarr_send(
+        "PUT",
+        "/episode/monitor",
+        {"episodeIds": [row["id"] for row in need], "monitored": True},
+    )
+    api.sonarr_send(
+        "POST",
+        "/command",
+        {"name": "EpisodeSearch", "episodeIds": [row["id"] for row in need]},
+    )
+    return _result("added", f"added: {title} {label} is monitored and searching")
+
+
+def _episode_label(season_no: int, numbers: list[int]) -> str:
+    if len(numbers) == 1:
+        return f"S{season_no}E{numbers[0]}"
+    return f"S{season_no}E{numbers[0]}-E{numbers[-1]}"
 
 
 def _monitor_season(api: Api, series: dict, season_no: int) -> None:
@@ -493,7 +563,8 @@ def build_parser() -> argparse.ArgumentParser:
         add = sub.add_parser(f"add-{name}")
         add.add_argument("query")
         if name == "series":
-            add.add_argument("--season", default="current", choices=["current"])
+            add.add_argument("--season", default="current")
+            add.add_argument("--episodes", help="Episode numbers, such as 16-18 or 16,18")
 
     music = sub.add_parser("add-music")
     music.add_argument("query")
@@ -520,7 +591,7 @@ def run(argv: list[str] | None = None) -> int:
         elif args.command == "add-movie":
             result = add_movie(api, args.query)
         elif args.command == "add-series":
-            result = add_series(api, args.query)
+            result = add_series(api, args.query, season=args.season, episodes=args.episodes)
         elif args.command == "add-music":
             result = add_music(api, args.query, album=bool(args.album))
         else:
