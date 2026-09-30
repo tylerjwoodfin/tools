@@ -43,7 +43,7 @@ Created immediately before `borg create`, then deleted after backup. They **are*
 | Immich | `docker/immich/database-backup/immich-database.sql` | `docker/immich/postgres/` |
 | Authentik | `docker/authentik/database-backup/authentik-database.sql` | `postgresql/`, `redis/` |
 | Miniflux | `docker/miniflux/database-backup/miniflux-database.sql` | postgres data dir |
-| Taiga | `docker/taiga-docker/taiga-backup/taiga_db.sql`, `media/`, `static/` | named volumes |
+| Vikunja | `docker/vikunja/database-backup/vikunja-snapshot.db` | live `db/vikunja.db*` |
 | MongoDB | `docker/mongodb/database-backup/mongodump.archive.gz` | `docker/mongodb/data/` |
 | Vaultwarden | `docker/vaultwarden/database-backup/vaultwarden-snapshot.db` | live `db.sqlite3*` |
 | RustDesk | `docker/rustdesk/database-backup/hbbs-snapshot.db` | live `db_v2.sqlite3*` |
@@ -60,6 +60,7 @@ Notable excludes from `main.sh`:
 - `**/.git`, `**/.github` under `~/git`
 - Live Postgres data dirs (Immich, Authentik, Miniflux, generic `pgdata`)
 - `docker/mongodb/data`
+- `docker/vikunja/db/vikunja.db*`
 - `docker/vaultwarden/data/db.sqlite3*`
 - `docker/rustdesk/data/db_v2.sqlite3*`
 - `docker/uptime-kuma/data/mariadb`

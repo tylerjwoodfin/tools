@@ -30,7 +30,7 @@ Dependencies matter: tunnels, databases, and auth before apps that rely on them.
 2. Start **databases and auth** before apps that depend on them:
    - MongoDB (if apps need it)
    - Authentik
-   - Postgres-backed stacks (Immich, Miniflux, Taiga, Dawarich)
+   - Postgres-backed stacks (Immich, Miniflux, Dawarich)
 3. Restore DB **from snapshots** before or right after first container start — see [services.md](services.md).
 
 ## Phase 4 — Application stacks
@@ -42,7 +42,7 @@ Start order (loose; adjust per stack README):
 3. Immich, media stacks
 4. RustDesk (`docker compose up -d` in `~/git/docker/rustdesk`)
 5. RustDesk **client** systemd service: `sudo systemctl enable --now rustdesk`
-6. Remaining compose projects (Loki, Kuma, Vaultwarden, Taiga, sure.am, …)
+6. Remaining compose projects (Loki, Kuma, Vaultwarden, Vikunja, sure.am, …)
 
 ## Phase 5 — Validation
 
