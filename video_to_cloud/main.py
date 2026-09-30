@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Watch ~/syncthing/documents/video-to-cloud and move completed files into
-~/syncthing/video, then email a success notice via Cabinet Mail.
+~/syncthing/video, then confirm through Cherry (Telegram via Cabinet).
 
 Syncthing-friendly behavior:
   - Only moves files (never removes parent folders during a move).
@@ -14,13 +14,16 @@ Syncthing-friendly behavior:
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
+import subprocess
 import time
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
-from cabinet import Cabinet, Mail
+from cabinet import Cabinet
+from cabinet import telegram as cabinet_telegram
 
 WATCH_DIR = Path.home() / "syncthing" / "documents" / "video-to-cloud"
 DEST_DIR = Path.home() / "syncthing" / "video"
@@ -42,6 +45,21 @@ IGNORE_NAMES = {
 }
 IGNORE_PREFIXES = (".syncthing.", ".~", ".sync-conflict-")
 IGNORE_SUFFIXES = (".tmp", ".part", ".partial", ".download", ".crdownload")
+VIDEO_SUFFIXES = {
+    ".avi",
+    ".flv",
+    ".m2ts",
+    ".m4v",
+    ".mkv",
+    ".mov",
+    ".mp4",
+    ".mpeg",
+    ".mpg",
+    ".ts",
+    ".webm",
+    ".wmv",
+}
+PROBE_TIMEOUT = 20
 
 
 @dataclass
@@ -54,7 +72,6 @@ class FileSnapshot:
 
 
 cabinet = Cabinet()
-mail = Mail()
 
 
 def should_ignore(path: Path) -> bool:
@@ -131,17 +148,106 @@ def move_file(src: Path, watch_dir: Path, dest_dir: Path) -> Path | None:
     return dest
 
 
-def send_success_email(moved: Path) -> None:
-    """Email a short success notice naming the moved file."""
-    subject = f"Video moved: {moved.name}"
-    body = (
-        f"<p>Moved to cloud video library:</p>"
-        f"<p><code>{moved}</code></p>"
-    )
-    if mail.send(subject, body):
-        cabinet.log(f"Success email sent for {moved.name}")
+def _tag_title(tags: object) -> str | None:
+    """Return a cleaned ``title`` tag, ignoring case and blank values."""
+    if not isinstance(tags, dict):
+        return None
+    for key, value in tags.items():
+        if str(key).lower() != "title":
+            continue
+        text = " ".join(str(value).split())
+        if text:
+            return text
+    return None
+
+
+def title_from_probe(data: dict) -> str | None:
+    """
+    Prefer the container title, then a video-stream title.
+
+    Audio-track titles are skipped so a language label is not treated as the movie.
+    """
+    fmt = data.get("format")
+    if isinstance(fmt, dict):
+        title = _tag_title(fmt.get("tags"))
+        if title:
+            return title
+
+    streams = data.get("streams")
+    if not isinstance(streams, list):
+        return None
+    for stream in streams:
+        if not isinstance(stream, dict) or stream.get("codec_type") != "video":
+            continue
+        title = _tag_title(stream.get("tags"))
+        if title:
+            return title
+    return None
+
+
+def probe_json(path: Path) -> dict | None:
+    """Read container tags with ffprobe. Missing ffprobe yields no metadata."""
+    if path.suffix.lower() not in VIDEO_SUFFIXES:
+        return None
+    binary = shutil.which("ffprobe")
+    if not binary:
+        return None
+    try:
+        proc = subprocess.run(
+            [
+                binary,
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_entries",
+                "format_tags=title:stream=codec_type:stream_tags=title",
+                str(path),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=PROBE_TIMEOUT,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        cabinet.log(f"ffprobe failed for {path.name}: {exc}", level="warn")
+        return None
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return None
+    try:
+        data = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        cabinet.log(f"ffprobe returned non-JSON for {path.name}", level="warn")
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def media_title(path: Path) -> str | None:
+    """Embedded title from video metadata, or None when it is absent."""
+    data = probe_json(path)
+    if data is None:
+        return None
+    return title_from_probe(data)
+
+
+def confirmation_message(label: str) -> str:
+    """Conversational notice Cherry sends after a file lands in the library."""
+    return f"I moved {label} into the cloud video library."
+
+
+def send_confirmation(moved: Path) -> None:
+    """Tell Cherry the file arrived, naming the embedded title when present."""
+    title = media_title(moved)
+    label = title or moved.name
+    if title:
+        cabinet.log(f"Using embedded title for {moved.name}: {title}")
     else:
-        cabinet.log(f"Failed to send success email for {moved.name}", level="error")
+        cabinet.log(f"No embedded title for {moved.name}; using file name")
+    message = confirmation_message(label)
+    if cabinet_telegram(message, is_quiet=True):
+        cabinet.log(f"Cherry confirmation sent for {label}")
+    else:
+        cabinet.log(f"Failed to send Cherry confirmation for {label}", level="error")
 
 
 def cleanup_empty_dirs(watch_dir: Path) -> int:
@@ -224,7 +330,7 @@ def process_stable_files(
         if dest is None:
             continue
 
-        send_success_email(dest)
+        send_confirmation(dest)
         moved_count += 1
 
     # Drop snapshots for files that disappeared (moved elsewhere / deleted).

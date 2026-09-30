@@ -1,7 +1,7 @@
 # Video to Cloud
 
 Watches `~/syncthing/documents/video-to-cloud` for new files, moves them into
-`~/syncthing/video`, and emails a success notice via [Cabinet](https://github.com/tylerjwoodfin/cabinet) Mail.
+`~/syncthing/video`, and confirms through Cherry (Telegram via [Cabinet](https://github.com/tylerjwoodfin/cabinet)).
 
 ## Why polling + empty-dir sweep?
 
@@ -17,7 +17,8 @@ Drop a file or a nested folder of files into `video-to-cloud`; relative paths ar
 ## Dependencies
 
 - Python 3.12+
-- [cabinet](https://pypi.org/project/cabinet/) (with Mail configured)
+- [cabinet](https://pypi.org/project/cabinet/) with `telegram.target` set (Cherry's chat)
+- `ffprobe` (optional) — reads an embedded title for the confirmation
 
 ## Usage
 
@@ -49,8 +50,10 @@ sudo systemctl status video-to-cloud.service
 
 Logs append to `~/syncthing/log/video-to-cloud.log`.
 
-## Email
+## Cherry
 
-Uses Cabinet Mail defaults (`cabinet -> email -> to`). Subject looks like:
+After a move, Cabinet sends a Telegram message on Cherry's channel. The line uses the embedded title when `ffprobe` finds one, and the file name otherwise:
 
-`Video moved: Family Guy S24E11 ….mkv`
+`I moved The Grand Budapest Hotel into the cloud video library.`
+
+`I moved Family.Guy.S24E11.mkv into the cloud video library.`
