@@ -75,14 +75,16 @@ Restore before relying on SSO for Grafana, Immich proxy, etc. See `authentik/REA
 
 ---
 
-## Taiga
+## Vikunja
 
-| Export | `taiga-docker/taiga-backup/taiga_db.sql`, `media/`, `static/` |
+| Export | `vikunja/database-backup/vikunja-snapshot.db` |
 
 ```bash
-cd ~/git/docker/taiga-docker
-# Restore DB via compose exec; restore media/static into named volumes using
-# docker run -v volume:/data -v $(pwd)/taiga-backup/media:/backup alpine cp -a /backup/. /data/
+cd ~/git/docker/vikunja
+docker compose stop vikunja 2>/dev/null || true
+cp database-backup/vikunja-snapshot.db db/vikunja.db
+rm -f db/vikunja.db-wal db/vikunja.db-shm
+docker compose up -d
 ```
 
 ---

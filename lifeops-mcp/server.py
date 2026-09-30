@@ -81,7 +81,7 @@ def _redact(value: Any) -> Any:
 
 @mcp.tool()
 def cabinet_get(path: str) -> str:
-    """Get a Cabinet value by space- or dot-separated path (e.g. 'taiga api_root' or 'quality.cloud').
+    """Get a Cabinet value by space- or dot-separated path (e.g. 'vikunja api_root' or 'quality.cloud').
 
     Sensitive keys (token, password, secret, api_key, auth, …) are redacted in the response.
     """

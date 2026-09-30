@@ -8,7 +8,7 @@ What Borg **does not** fully capture, or what may need operator action after res
 |------|------------|
 | Installed OS packages | Reinstall apt packages; use dotfiles/ansible |
 | `docker image` layers | Re-pull on `docker compose up` (custom builds: `docker compose build`) |
-| Docker named volumes without export | See Dawarich, some Taiga data (Taiga media/static **are** exported when backup ran) |
+| Docker named volumes without export | See Dawarich |
 | Running container memory state | Restart containers |
 | External DNS at registrar | Cloudflare dashboard |
 | TLS certs from Let's Encrypt (non-cloudflared) | Re-issue |
@@ -24,7 +24,7 @@ What Borg **does not** fully capture, or what may need operator action after res
 | `/root/.config/rustdesk` | Same |
 | `database-backup/*` | Only if container was **running** at backup time |
 | Pi-hole `pihole-etc.tar.gz` | Only if `etc-pihole` dir existed |
-| Taiga media/static | Only if Taiga was up during backup |
+| Vikunja SQLite snapshot | Only if Vikunja was up during backup |
 
 Check backup logs: `~/.cabinet/log/borg-errors/` on a restored system (if that path was in Syncthing/git).
 
@@ -34,6 +34,7 @@ Check backup logs: `~/.cabinet/log/borg-errors/` on a restored system (if that p
 |-----------|-------------|
 | `docker/*/postgres` data dirs | `database-backup/*.sql` |
 | `docker/mongodb/data` | `mongodump.archive.gz` |
+| `docker/vikunja/db/vikunja.db*` | `vikunja-snapshot.db` |
 | `docker/vaultwarden/data/db.sqlite3*` | `vaultwarden-snapshot.db` |
 | `docker/rustdesk/data/db_v2.sqlite3*` | `hbbs-snapshot.db` + `id_ed25519*` |
 | `docker/pihole/*/etc-pihole` | `pihole-backup/pihole-etc.tar.gz` |

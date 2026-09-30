@@ -12,8 +12,8 @@
 ## Life-ops MCP
 - [`lifeops-mcp/`](lifeops-mcp/) — stdio MCP server exposing Cabinet, RemindMail, foodlog, milestone, and Immich search to Cursor.
 
-## Taiga / GitHub agent helpers
-- [`taiga/ticket.py`](taiga/ticket.py) — fetch/list/finish TJW tickets (`get`, `ls`, `finish`, `resolve-api`); prefers `http://127.0.0.1:8000/api/v1` and auto-heals stale Docker bridge `api_root` after reboot.
+## Vikunja / GitHub agent helpers
+- [`vikunja/ticket.py`](vikunja/ticket.py) — fetch/list/finish TJW tickets (`get`, `ls`, `finish`) via `http://127.0.0.1:3456/api/v1`.
 - [`github/ensure_gh_auth.py`](github/ensure_gh_auth.py) — sync Cabinet `backloggist.github_token` into `gh` auth.
 
 ## Amazon order (Playwright)

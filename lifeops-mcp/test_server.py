@@ -25,7 +25,7 @@ class RedactTests(unittest.TestCase):
         self.assertEqual(out["nested"]["password"], "***REDACTED***")
 
     def test_looks_sensitive(self):
-        self.assertTrue(server._looks_sensitive(["taiga", "auth_token"]))
+        self.assertTrue(server._looks_sensitive(["vikunja", "api_token"]))
         self.assertFalse(server._looks_sensitive(["quality", "cloud"]))
 
 
@@ -37,7 +37,7 @@ class ToolTests(unittest.TestCase):
 
     @patch.object(server, "_run", return_value="sekrit")
     def test_cabinet_get_redacts_sensitive_path(self, _mock):
-        out = server.cabinet_get("taiga auth_token")
+        out = server.cabinet_get("vikunja api_token")
         self.assertEqual(out, "***REDACTED***")
 
     @patch.object(server, "_run", return_value="saved")

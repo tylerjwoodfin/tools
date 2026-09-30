@@ -335,27 +335,30 @@ else
             fi
         fi
 
-        # Export Taiga Docker data for backup (DB, media, static)
-        # Data is normally in named volumes - we export to a dir under git so it gets backed up
-        TAIGA_DIR="$HOME/git/docker/taiga-docker"
-        TAIGA_BACKUP_DIR="$TAIGA_DIR/taiga-backup"
-        if [ -d "$TAIGA_DIR" ] && command -v docker >/dev/null 2>&1; then
-            mkdir -p "$TAIGA_BACKUP_DIR"
-            if docker compose -f "$TAIGA_DIR/docker-compose.yml" ps taiga-db 2>/dev/null | grep -q Up; then
-                if docker compose -f "$TAIGA_DIR/docker-compose.yml" exec -T taiga-db pg_dump -U taiga taiga > "$TAIGA_BACKUP_DIR/taiga_db.sql" 2>/dev/null; then
-                    debug "Taiga database dumped to taiga-backup/"
-                else
-                    warning "Failed to dump Taiga database"
-                fi
-                # Export media and static volumes
-                for vol_suffix in media static; do
-                    vol_name="taiga-docker_taiga-${vol_suffix}-data"
-                    if docker run --rm -v "$vol_name:/data" -v "$TAIGA_BACKUP_DIR/$vol_suffix:/backup" alpine cp -a /data/. /backup/ 2>/dev/null; then
-                        debug "Taiga $vol_suffix exported"
+        # Hot SQLite snapshot for Vikunja (task tracker)
+        VIKUNJA_DIR="$HOME/git/docker/vikunja"
+        VIKUNJA_BACKUP_DIR="$VIKUNJA_DIR/database-backup"
+        if [ -d "$VIKUNJA_DIR" ] && [ -f "$VIKUNJA_DIR/db/vikunja.db" ] && command -v docker >/dev/null 2>&1; then
+            mkdir -p "$VIKUNJA_BACKUP_DIR"
+            if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^vikunja$'; then
+                if command -v sqlite3 >/dev/null 2>&1; then
+                    if ! sqlite3 "$VIKUNJA_DIR/db/vikunja.db" ".backup $VIKUNJA_BACKUP_DIR/vikunja-snapshot.db" 2>/dev/null; then
+                        warning "Failed sqlite3 .backup for Vikunja (host)"
+                    else
+                        debug "Vikunja SQLite snapshot written to database-backup/"
                     fi
-                done
+                else
+                    if ! docker run --rm \
+                        -v "$VIKUNJA_DIR/db:/data:ro" \
+                        -v "$VIKUNJA_BACKUP_DIR:/out" \
+                        alpine:3.20 sh -c "apk add -q sqlite && sqlite3 /data/vikunja.db '.backup /out/vikunja-snapshot.db'" 2>/dev/null; then
+                        warning "Failed sqlite3 .backup for Vikunja (alpine container)"
+                    else
+                        debug "Vikunja SQLite snapshot written to database-backup/ (alpine)"
+                    fi
+                fi
             else
-                warning "Taiga not running, skipping Taiga data export"
+                debug "Vikunja not running, skipping SQLite snapshot"
             fi
         fi
 
@@ -513,6 +516,9 @@ else
             --exclude 'sh:**/docker/miniflux/postgres' \
             --exclude 'sh:**/docker/mongodb/data' \
             --exclude 'sh:**/docker/uptime-kuma/data/mariadb' \
+            --exclude 'sh:**/docker/vikunja/db/vikunja.db' \
+            --exclude 'sh:**/docker/vikunja/db/vikunja.db-wal' \
+            --exclude 'sh:**/docker/vikunja/db/vikunja.db-shm' \
             --exclude 'sh:**/docker/vaultwarden/data/db.sqlite3' \
             --exclude 'sh:**/docker/vaultwarden/data/db.sqlite3-wal' \
             --exclude 'sh:**/docker/vaultwarden/data/db.sqlite3-shm' \
