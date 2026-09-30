@@ -73,6 +73,11 @@ def test_pick_best_prefers_exact_title():
     assert media_cli.pick_best(items, "the simpsons")["title"] == "The Simpsons"
 
 
+def test_parse_episode_spec():
+    assert media_cli.parse_episode_spec("16-18") == [16, 17, 18]
+    assert media_cli.parse_episode_spec("16,18") == [16, 18]
+
+
 def test_parse_music_query():
     assert media_cli.parse_music_query("Daft Punk - Discovery") == ("Daft Punk", "Discovery")
     assert media_cli.parse_music_query("Discovery") == (None, "Discovery")
