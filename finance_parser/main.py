@@ -205,6 +205,10 @@ class SureClient:
             body["category_id"] = category_id
         return self._put(f"/api/v1/transactions/{txn_id}", {"transaction": body})
 
+    def post_transaction(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Create a Sure transaction from an API body. ``amount`` is positive."""
+        return self._post("/api/v1/transactions", {"transaction": body})
+
 
 def find_latest_file_in_downloads(pattern: str) -> Optional[Path]:
     """Return the newest file in ~/Downloads matching pattern, if any."""
