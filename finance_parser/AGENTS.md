@@ -25,6 +25,22 @@ Looks for the newest `~/Downloads/VenmoStatement*.csv`. If none exist, tell the 
 
 Exit `0` with a create/update/skip summary means it worked.
 
+## Amazon orders
+
+```bash
+cd ~/git/tools/finance_parser
+python3 amazon.py              # previous month: Firefox exporter → Sure API
+python3 amazon.py --dry-run
+python3 amazon.py --month 2026-08
+python3 amazon.py --file ~/Downloads/amazon-orders-2026-08-01.csv
+```
+
+Playwright opens a dedicated Firefox profile (not the daily profile) with the Order History Exporter extension copied from this machine. It arms that extension on Amazon order history for the previous calendar month and writes a CSV from the orders the extension parses. Amazon cookies are read from the daily Firefox profile that has the extension installed.
+
+Import goes to the Sure API on Cabinet `sure.base_url` (cloud compose, default `http://192.168.1.101:3006`), account `Amazon Credit Card [Ally Checking]` (override `sure.amazon_account_name`). Do not drive the Authentik UI at `sure.tyler.cloud`. Collapse rules are in **CSV shape notes** below.
+
+`launchd/com.tyler.amazon-sure.plist` runs `amazon.py` at 03:00 local time on the 1st. The Mac must be awake. Cherry sends a Telegram note when the run finishes or fails. `--file` skips Firefox and imports an exporter CSV that already exists.
+
 ## Other CSVs (Sure API)
 
 `main.py` is Venmo-only until it grows. For anything else, import via the LAN Sure API (do not wait on a parser rewrite unless the user asks). Typical Downloads globs:
