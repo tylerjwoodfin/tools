@@ -30,6 +30,9 @@ CORRECT_TO_COMPLETE = 3
 REVISIT_AFTER_DAYS = 21
 COMPLETED_PICK_CHANCE = 0.2
 FUZZY_RATIO = 0.86
+# Short lists repeat the same card. Below this size, quiz a new word with
+# probability (LIST_TARGET - count) * 10% (8 words → 20%).
+LIST_TARGET = 10
 
 NOTES_PATH = Path.home() / "syncthing/notes/words_to_remember.md"
 STATE_PATH = Path.home() / ".local/share/word-recall/state.json"
@@ -200,6 +203,13 @@ def _oldest(items: list[WordItem], state: dict) -> WordItem:
     return sorted(items, key=sort_key)[0]
 
 
+def generated_pick_chance(word_count: int) -> float:
+    shortfall = LIST_TARGET - word_count
+    if shortfall <= 0:
+        return 0.0
+    return shortfall * 0.10
+
+
 def choose_word(
     items: list[WordItem],
     state: dict,
@@ -242,15 +252,26 @@ def quiz_message(item: WordItem) -> str:
     return f"What's the word?\n\n{item.definition}"
 
 
-def record_ask(state: dict, item: WordItem, moment: datetime, *, source: str) -> None:
-    stats = word_stats(state, item.word)
-    stats["last_asked"] = moment.isoformat()
+def record_ask(
+    state: dict,
+    item: WordItem,
+    moment: datetime,
+    *,
+    source: str,
+    generated: bool = False,
+) -> None:
+    # A generated word is not on the list until it is graded, so a skip
+    # leaves no stats entry behind.
+    if not generated:
+        stats = word_stats(state, item.word)
+        stats["last_asked"] = moment.isoformat()
     state["pending"] = {
         "word": item.word,
         "definition": item.definition,
         "section": item.section,
         "asked_at": moment.isoformat(),
-        "source": source,
+        "source": "generated" if generated else source,
+        "generated": generated,
     }
 
 
@@ -271,6 +292,13 @@ def proactive_due(state: dict, moment: datetime) -> bool:
     return moment >= nxt
 
 
+def completed_message(word: str) -> str:
+    return (
+        f"Yes — **{word}**. That's {CORRECT_TO_COMPLETE} of {CORRECT_TO_COMPLETE}, "
+        "so I'm moving it to completed. I'll only bring it back occasionally."
+    )
+
+
 def apply_grade(
     items: list[WordItem],
     state: dict,
@@ -282,12 +310,29 @@ def apply_grade(
     word = str(pending.get("word") or "")
     definition = str(pending.get("definition") or "")
     section = str(pending.get("section") or "active")
+    generated = bool(pending.get("generated"))
     state["pending"] = None
     if not word:
         return items, "No quiz is waiting."
 
+    on_list = any(word_key(item.word) == word_key(word) for item in items)
     stats = word_stats(state, word)
-    if not is_correct(guess, word):
+    correct = is_correct(guess, word)
+    if generated and not on_list:
+        stats["last_asked"] = str(pending.get("asked_at") or moment.isoformat())
+        stats["last_answered"] = moment.isoformat()
+        if not correct:
+            stats["last_result"] = "wrong"
+            stats["correct"] = 0
+            items.append(WordItem(word=word, definition=definition, section="active"))
+            return items, f"That was **{word}** — {definition}"
+        stats["last_result"] = "correct"
+        stats["correct"] = CORRECT_TO_COMPLETE
+        stats["completed_at"] = moment.isoformat()
+        items.append(WordItem(word=word, definition=definition, section="completed"))
+        return items, completed_message(word)
+
+    if not correct:
         stats["last_result"] = "wrong"
         stats["last_answered"] = moment.isoformat()
         return items, f"That was **{word}** — {definition}"
@@ -307,11 +352,7 @@ def apply_grade(
             item.section = "completed"
             break
     stats["completed_at"] = moment.isoformat()
-    return (
-        items,
-        f"Yes — **{word}**. That's {CORRECT_TO_COMPLETE} of {CORRECT_TO_COMPLETE}, "
-        "so I'm moving it to completed. I'll only bring it back occasionally.",
-    )
+    return items, completed_message(word)
 
 
 def add_word(items: list[WordItem], word: str, definition: str) -> tuple[list[WordItem], str]:
@@ -406,10 +447,13 @@ def infer_text(prompt: str) -> str:
     return _extract_infer_text(proc.stdout)
 
 
-def generate_word(infer_fn=infer_text) -> WordItem:
-    prompt = """Pick one English word that a college-educated adult sometimes uses in everyday speech.
+def generate_word(infer_fn=infer_text, avoid: set[str] | None = None) -> WordItem:
+    banned = ""
+    if avoid:
+        banned = "\nDo not pick any of these words: " + ", ".join(sorted(avoid)) + "."
+    prompt = f"""Pick one English word that a college-educated adult sometimes uses in everyday speech.
 Not slang, not a proper noun, not technical jargon, not an everyday word like "happy" or "because".
-Return ONLY JSON: {"word":"lowercase","definition":"one short sentence that does not contain the word"}"""
+Return ONLY JSON: {{"word":"lowercase","definition":"one short sentence that does not contain the word"}}{banned}"""
     raw = infer_fn(prompt)
     start = raw.find("{")
     end = raw.rfind("}")
@@ -423,6 +467,17 @@ Return ONLY JSON: {"word":"lowercase","definition":"one short sentence that does
     if word_key(word) in word_key(definition):
         definition = re.sub(re.escape(word), "this", definition, flags=re.IGNORECASE).strip()
     return WordItem(word=word, definition=definition, section="active")
+
+
+def generate_fresh_word(items: list[WordItem], infer_fn=infer_text, attempts: int = 3) -> WordItem:
+    known = {word_key(item.word) for item in items}
+    item: WordItem | None = None
+    for _ in range(attempts):
+        item = generate_word(infer_fn, avoid=known)
+        if word_key(item.word) not in known:
+            return item
+    picked = item.word if item is not None else ""
+    raise RuntimeError(f"generated word already on the list: {picked}")
 
 
 def looks_like_answer(text: str) -> bool:
@@ -472,23 +527,32 @@ def start_quiz(
             ),
         }
 
-    item = choose_word(items, state, moment=moment, rng=rng, force=force)
     generated = False
+    item: WordItem | None = None
+    chance = generated_pick_chance(len(items))
+    if chance > 0 and rng.random() < chance:
+        try:
+            item = generate_fresh_word(items, infer_fn)
+            generated = True
+        except Exception as exc:  # noqa: BLE001
+            if not items:
+                return {"ok": False, "action": "error", "message": f"Could not choose a word: {exc}"}
+    if item is None:
+        item = choose_word(items, state, moment=moment, rng=rng, force=force)
     if item is None and not any(entry.section == "active" for entry in items):
         if any(entry.section == "completed" for entry in items) and not force:
             return {"ok": True, "action": "skip", "message": None}
         try:
-            item = generate_word(infer_fn)
+            item = generate_fresh_word(items, infer_fn)
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "action": "error", "message": f"Could not choose a word: {exc}"}
-        items.append(item)
         generated = True
     if item is None:
         return {"ok": True, "action": "skip", "message": None}
 
     if force and state.get("pending"):
         state["pending"] = None
-    record_ask(state, item, moment, source="generated" if generated else source)
+    record_ask(state, item, moment, source=source, generated=generated)
     if source == "proactive":
         schedule_next(state, moment, rng)
     elif force:

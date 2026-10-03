@@ -38,4 +38,4 @@ python3 ~/git/tools/openclaw/words/scripts/words_cli.py tick
 2. A short reply while a quiz is open is graded by the plugin
 3. Three correct recalls move the word under `## Completed`
 4. Every 2 hours the tick may send one quiz, only between 5pm and 9pm, and only after a random 3–5 day gap. Diary is on its own 3–5 day clock.
-5. An empty active list gets one college-level word chosen for you; completed words come back about every three weeks
+5. If the list has fewer than 10 words, there is a (10 − count) × 10% chance of a new college-level word instead of one already on the list (8 words → 20%). Getting that word right on the first try marks it completed (3/3). A miss adds it under Active at 0/3. Completed words still come back about every three weeks.
