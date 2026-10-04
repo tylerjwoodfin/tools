@@ -1,0 +1,36 @@
+{
+  "id": "local-model",
+  "name": "Local model",
+  "description": "Load Cherry's LM Studio model before a turn so a cold or unloaded Gemma does not fall back to OpenAI.",
+  "version": "0.1.0",
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "identifier": {
+        "type": "string",
+        "description": "LM Studio API identifier OpenClaw requests (lmstudio/<identifier>)."
+      },
+      "modelKey": {
+        "type": "string",
+        "description": "Key passed to lms load. Matches the folder name under ~/.lmstudio/models."
+      },
+      "contextLength": {
+        "type": "integer",
+        "minimum": 8192,
+        "description": "Context length to load. Must cover Cherry's prompt; 8192 falls back once the transcript exceeds it."
+      },
+      "weightsPath": {
+        "type": "string",
+        "description": "GGUF path on the external volume. When this file is missing, the plugin leaves OpenAI fallback in place."
+      },
+      "modelLink": {
+        "type": "string",
+        "description": "Symlink LM Studio indexes. Nudged when the catalog still has a stale missing-file error."
+      }
+    }
+  }
+}

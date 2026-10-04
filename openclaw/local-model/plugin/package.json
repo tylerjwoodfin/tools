@@ -1,0 +1,16 @@
+{
+  "name": "@local/local-model",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenClaw plugin that loads Cherry's local LM Studio model before a turn",
+  "type": "module",
+  "peerDependencies": {
+    "openclaw": ">=2026.5.17"
+  },
+  "openclaw": {
+    "extensions": ["./index.js"],
+    "compat": {
+      "pluginApi": ">=2026.5.17"
+    }
+  }
+}
