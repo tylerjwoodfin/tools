@@ -26,3 +26,7 @@ echo "==> Delivery retry"
 echo
 echo "==> Media"
 "${ROOT}/media/scripts/install_openclaw.sh"
+
+echo
+echo "==> Local model"
+"${ROOT}/local-model/scripts/install_openclaw.sh"
