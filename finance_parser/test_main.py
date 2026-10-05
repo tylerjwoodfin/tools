@@ -4,21 +4,34 @@
 
 from __future__ import annotations
 
+import io
+import os
 import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
 
 from main import (
+    RobinhoodRow,
     SureTxn,
     VenmoRow,
+    arrow_select,
+    move_menu_index,
     categorize_transaction,
     clean_amount,
+    INSTITUTIONS,
+    confirm_choices,
+    csv_menu_options,
     find_match,
+    pick_account,
+    format_csv_choice,
+    import_window,
+    load_robinhood_rows,
     load_venmo_rows,
     match_score,
     month_bounds,
     previous_month_bounds,
+    recent_csvs,
     should_include_transaction,
 )
 
@@ -164,6 +177,179 @@ Account Activity
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].note, "Toll")
         self.assertEqual(rows[0].category, "Transit/Clipper/Rentals/Tolls/Ridehshares")
+
+
+ROBINHOOD_CSV = """Date,Time,Cardholder,Amount,Points,Balance,Status,Type,Merchant,Description
+2026-09-30,"3:21 PM","Tyler Woodfin",738.88,2217,3408.97,Posted,Purchase,Agoda,"AGODA.COM APA HOTEL New York NY"
+2026-09-28,"2:48 PM","Tyler Woodfin",73.61,221,2670.09,Posted,Purchase,"Troops Mowing","TROOPS MOWING WWW.TROOPSMOWTX"
+2026-09-27,"1:40 PM","Tyler Woodfin",10.00,30,2596.48,Posted,Purchase,"SAN FRANCISCO STREET FA","SAN FRANCISCO STREET FA OAKLAND CA"
+2026-09-26,"9:00 AM","Tyler Woodfin",-12.50,0,2586.48,Posted,Refund,Agoda,"AGODA.COM REFUND"
+2026-09-26,"8:00 AM","Tyler Woodfin",4.00,0,2599.00,Pending,Purchase,Cafe,"CAFE"
+2026-09-25,"8:00 AM","Tyler Woodfin",0.00,0,2599.00,Posted,Purchase,Zero,"ZERO"
+"""
+
+
+class RobinhoodCsvTests(unittest.TestCase):
+    mapping = {"Vacation Flights, Hotels, and Activities": ["agoda", "hotel"]}
+
+    def _load(self, filtered: list[str] | None = None) -> list[RobinhoodRow]:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "card.csv"
+            path.write_text(ROBINHOOD_CSV, encoding="utf-8")
+            return load_robinhood_rows(
+                path,
+                self.mapping,
+                filtered or [],
+                start=date.min,
+                end=date.max,
+            )
+
+    def test_posted_purchases_are_expenses(self) -> None:
+        rows = self._load()
+        self.assertEqual(len(rows), 4)
+        hotel = rows[0]
+        self.assertEqual(hotel.txn_date, date(2026, 9, 30))
+        self.assertEqual(hotel.display_name, "Agoda")
+        self.assertEqual(hotel.notes, "AGODA.COM APA HOTEL New York NY")
+        self.assertEqual(hotel.amount, -738.88)
+        self.assertEqual(hotel.nature, "expense")
+        self.assertEqual(hotel.amount_cents, -73888)
+        self.assertEqual(hotel.category, "Vacation Flights, Hotels, and Activities")
+        self.assertEqual(hotel.source, "robinhood_cc")
+
+    def test_refund_is_income_and_pending_and_zero_are_skipped(self) -> None:
+        rows = self._load()
+        refund = rows[-1]
+        self.assertEqual(refund.amount, 12.50)
+        self.assertEqual(refund.nature, "income")
+        self.assertTrue(all(row.display_name != "Cafe" for row in rows))
+        self.assertTrue(all(row.display_name != "Zero" for row in rows))
+
+    def test_external_id_is_stable_and_matches(self) -> None:
+        first = self._load()[0]
+        second = self._load()[0]
+        self.assertEqual(first.external_id, second.external_id)
+        txn = SureTxn(
+            txn_id="sure-rh",
+            txn_date=first.txn_date,
+            name="Something else",
+            signed_amount_cents=first.amount_cents,
+            category_name=None,
+            source="robinhood_cc",
+            external_id=first.external_id,
+        )
+        self.assertEqual(find_match(first, [txn]), txn)
+
+    def test_filtered_description(self) -> None:
+        rows = self._load(filtered=["street fa"])
+        self.assertTrue(all("STREET" not in row.display_name for row in rows))
+
+    def test_rejects_venmo_header(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "venmo.csv"
+            path.write_text("ID,Datetime,Note\n", encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                load_robinhood_rows(path, {}, [], date.min, date.max)
+
+
+class PickerTests(unittest.TestCase):
+    def test_recent_csvs_keeps_five_newest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            for index in range(7):
+                path = folder / f"f{index}.csv"
+                path.write_text("a", encoding="utf-8")
+                os.utime(path, (index, 1_700_000_000 + index))
+            (folder / "notes.txt").write_text("no", encoding="utf-8")
+            names = [path.name for path in recent_csvs(folder)]
+        self.assertEqual(names, ["f6.csv", "f5.csv", "f4.csv", "f3.csv", "f2.csv"])
+
+    def test_format_includes_name_and_modified_time(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "card.csv"
+            path.write_text("a", encoding="utf-8")
+            os.utime(path, (1_700_000_000, 1_700_000_000))
+            label = format_csv_choice(path)
+        self.assertIn("card.csv", label)
+        self.assertRegex(label, r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}")
+
+    def test_menu_offers_skip_under_the_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "card.csv"
+            path.write_text("a", encoding="utf-8")
+            options = csv_menu_options([path], skip_label="skip Robinhood")
+        self.assertEqual(options[0][1], path)
+        self.assertEqual(options[1], ("skip Robinhood", None))
+        self.assertEqual(len(options), 2)
+
+    def test_institutions_are_a_registry(self) -> None:
+        self.assertEqual([item.label for item in INSTITUTIONS], ["Robinhood", "Venmo"])
+        self.assertEqual(
+            [item.skip_label for item in INSTITUTIONS],
+            ["skip Robinhood", "skip Venmo"],
+        )
+        self.assertEqual(
+            [item.prompt for item in INSTITUTIONS],
+            ["Robinhood CSV?", "Venmo CSV?"],
+        )
+
+    def test_arrow_select_moves_then_confirms(self) -> None:
+        keys = iter(["down", "enter"])
+        output = io.StringIO()
+        choice = arrow_select(
+            "Robinhood CSV?",
+            [("one", "a"), ("two", "b")],
+            read_key=lambda: next(keys),
+            write=output.write,
+        )
+        self.assertEqual(choice, "b")
+        self.assertIn("Robinhood CSV?", output.getvalue())
+        self.assertIn("> two", output.getvalue())
+
+    def test_arrow_up_on_a_csv_menu_wraps_to_the_bottom(self) -> None:
+        keys = iter(["up", "enter"])
+        choice = arrow_select(
+            "Robinhood CSV?",
+            [("one.csv", "a"), ("two.csv", "b"), ("skip Robinhood", None)],
+            read_key=lambda: next(keys),
+            write=io.StringIO().write,
+            wrap=True,
+        )
+        self.assertIsNone(choice)
+        self.assertEqual(move_menu_index(0, "up", 3, wrap=False), 0)
+
+    def test_confirm_choices_include_rerun(self) -> None:
+        labels = [label for label, _ in confirm_choices()]
+        self.assertEqual(labels, ["Keep", "Undo", "Re-run Categories"])
+        self.assertEqual(confirm_choices()[2][1], "rerun")
+        without_keep = [label for label, _ in confirm_choices(include_keep=False)]
+        self.assertEqual(without_keep, ["Undo", "Re-run Categories"])
+
+    def test_import_window(self) -> None:
+        start, end = import_window(None, legacy_previous_month=False)
+        self.assertEqual(start, date.min)
+        self.assertEqual(end, date.max)
+        start, end = import_window("2026-09", legacy_previous_month=False)
+        self.assertEqual((start, end), month_bounds("2026-09"))
+
+
+class AccountMatchTests(unittest.TestCase):
+    accounts = [
+        {"id": "venmo", "name": "Venmo"},
+        {"id": "card", "name": "Robinhood Credit Card **4696"},
+        {"id": "broker", "name": "Robinhood Investments"},
+    ]
+
+    def test_exact_name(self) -> None:
+        self.assertEqual(pick_account(self.accounts, "Venmo")["id"], "venmo")
+
+    def test_robinhood_card_prefix(self) -> None:
+        chosen = pick_account(self.accounts, "Robinhood Credit Card")
+        self.assertEqual(chosen["id"], "card")
+
+    def test_investments_does_not_match_the_card(self) -> None:
+        chosen = pick_account(self.accounts, "Robinhood Investments")
+        self.assertEqual(chosen["id"], "broker")
 
 
 if __name__ == "__main__":

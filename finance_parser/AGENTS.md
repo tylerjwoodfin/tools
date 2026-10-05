@@ -2,7 +2,7 @@
 
 Import bank, card, Venmo, and other CSVs into self-hosted Sure (`https://sure.tyler.cloud`).
 
-`main.py` currently automates **Venmo** (latest `VenmoStatement*.csv` → previous calendar month). For other institutions, import with the Sure API using the same conventions below. Do **not** update a spreadsheet. Do **not** invent a second budget system.
+`main.py` imports **Robinhood Credit Card** and **Venmo** CSVs. With no arguments it lists the five newest `~/Downloads/*.csv` files (name and last modified) and asks `Robinhood CSV?`, then `Venmo CSV?`. Arrow keys select; either prompt can be skipped. After the preview, Keep writes to Sure, Undo leaves Sure unchanged, and Re-run Categories reloads `transaction_categories.json` and shows the preview again. Reapplying Sure's own category rules stays the `syncsure` command, outside this importer. For other institutions, import with the Sure API using the same conventions below. Do **not** update a spreadsheet. Do **not** invent a second budget system.
 
 Household facts (pay, property, debt, last month’s numbers) live **only** in the private file `~/git/backend/finances/AGENTS.md`. Do **not** copy balances, salary, addresses, loan rates, or people’s names into this file.
 
@@ -11,29 +11,32 @@ Household facts (pay, property, debt, last month’s numbers) live **only** in t
 - **Import:** the user asks to import transactions, load a statement CSV, or sync a download into Sure / the budget — Venmo, EverBank, Robinhood Credit Card, Amazon orders, or another CSV they name. If they point at a specific file, use that file. Otherwise pick the newest matching download in `~/Downloads`.
 - **Monthly recap:** the user asks to summarize finances, recap a month, or review Sure spending. Read `~/git/backend/finances/AGENTS.md` first, then follow **Monthly recap** below. After the recap, update that file’s **Last snapshot**.
 
-## Venmo (parser)
+## Venmo and Robinhood (parser)
 
 ```bash
 cd ~/git/tools/finance_parser
-python3 main.py              # previous calendar month → Sure Venmo
+python3 main.py              # pick Robinhood CSV, then Venmo CSV
 python3 main.py --dry-run
-python3 main.py --file /path/to/VenmoStatement_….csv
+python3 main.py --robinhood ~/Downloads/<uuid>.csv --venmo ~/Downloads/VenmoStatement_….csv
+python3 main.py --file /path/to/VenmoStatement_….csv   # Venmo only; previous month unless --month
 python3 main.py --month YYYY-MM
 ```
 
-Looks for the newest `~/Downloads/VenmoStatement*.csv`. If none exist, tell the user to download the monthly statement from Venmo (Activity → statements) into Downloads. Do not open a file picker.
+The menu reads `~/Downloads`. If a statement is missing, tell the user to download it into Downloads (Venmo: Activity → statements). Do not open a GUI file picker.
 
-Exit `0` with a create/update/skip summary means it worked.
+Interactive runs import every posted/complete row in the chosen files. `--file` alone still limits Venmo to the previous calendar month. `--month YYYY-MM` limits whichever files are chosen.
+
+Exit `0` after Keep, or after Undo (nothing written), means the run finished. A create/update/skip summary is printed before the prompt.
 
 ## Other CSVs (Sure API)
 
-`main.py` is Venmo-only until it grows. For anything else, import via the LAN Sure API (do not wait on a parser rewrite unless the user asks). Typical Downloads globs:
+EverBank and Amazon are not in `main.py` yet. Import those via the LAN Sure API (do not wait on a parser rewrite unless the user asks). Typical Downloads globs:
 
 | Source | Typical file | Sure account |
 |--------|----------------|--------------|
 | Venmo | `VenmoStatement*.csv` | `Venmo` |
 | EverBank | `Transactions_*.csv` (cols: Date, Check#, Transaction Type, Description, Debits(-), Credits(+)) | `Everbank` |
-| Robinhood CC | UUID-named CSV with `Cardholder,Amount,Points,Balance,Status,Type,Merchant,Description` | `Robinhood Credit Card` |
+| Robinhood CC | UUID-named CSV with `Cardholder,Amount,Points,Balance,Status,Type,Merchant,Description` | name starts with `Robinhood Credit Card` (live: `Robinhood Credit Card **4696`) |
 | Amazon orders | `amazon-orders-*.csv` (line items) | `Amazon Credit Card [Ally Checking]` |
 
 List accounts with `GET /api/v1/accounts` and match by name (do not hard-code IDs).
