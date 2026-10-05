@@ -10,6 +10,7 @@ import json
 import os
 import re
 import select
+import shutil
 import sys
 import termios
 import tty
@@ -733,6 +734,10 @@ def read_navigation_key() -> str:
             return "up"
         if sequence in ("[B", "OB"):
             return "down"
+        if sequence in ("[C", "OC"):
+            return "right"
+        if sequence in ("[D", "OD"):
+            return "left"
         return "esc"
     finally:
         termios.tcsetattr(fd, termios.TCSANOW, old)
@@ -900,10 +905,9 @@ def plan_rows(
     existing: list[SureTxn],
     category_ids: dict[str, str],
 ) -> tuple[list[Planned], list[SureTxn]]:
-    """Match CSV rows to Sure and print the plan. Does not write."""
+    """Match CSV rows to Sure. Does not print or write."""
     unmatched = list(existing)
     planned: list[Planned] = []
-    print(f"{'action':<8} {'date':<12} {'amount':>10}  {'category':<42} name")
     for row in rows:
         match = find_match(row, unmatched)
         if match:
@@ -921,11 +925,356 @@ def plan_rows(
             action = "create"
             category_id = category_ids.get(row.category) if row.category != "Other" else None
         planned.append(Planned(action, row, match, category_id))
-        print(
-            f"{action:<8} {row.txn_date.isoformat():<12} {_fmt_amount(row.amount):>10}  "
-            f"{row.category:<42} {row.display_name}"
-        )
     return planned, unmatched
+
+
+@dataclass
+class PreviewLine:
+    """One planned row plus the Sure account it belongs to."""
+
+    account_name: str
+    planned: Planned
+
+
+def cycle_sort(
+    column: str, directions: dict[str, bool], target: str
+) -> tuple[str, dict[str, bool]]:
+    """Switch to ``target``. Choosing the active column flips its direction."""
+    updated = dict(directions)
+    if column == target:
+        updated[target] = not updated[target]
+    return target, updated
+
+
+def sort_preview_lines(
+    lines: list[PreviewLine], column: str, reverse: bool
+) -> list[PreviewLine]:
+    """Sort by date or category. Ties stay in date, then name, order."""
+
+    def full_key(line: PreviewLine) -> tuple[Any, ...]:
+        row = line.planned.row
+        if column == "category":
+            return (row.category.casefold(), row.txn_date, row.display_name.casefold())
+        return (row.txn_date, row.display_name.casefold())
+
+    ordered = sorted(lines, key=full_key)
+    if not reverse:
+        return ordered
+
+    def primary(line: PreviewLine) -> Any:
+        row = line.planned.row
+        if column == "category":
+            return row.category.casefold()
+        return row.txn_date
+
+    return sorted(ordered, key=primary, reverse=True)
+
+
+def clip_cell(text: str, width: int) -> str:
+    """Fit ``text`` in ``width`` columns."""
+    if width <= 0:
+        return ""
+    if len(text) <= width:
+        return text
+    if width == 1:
+        return "…"
+    return text[: width - 1] + "…"
+
+
+def preview_column_widths(width: int, *, show_account: bool) -> tuple[int, int, int]:
+    """Category, name, and account widths for the current terminal."""
+    account_width = 16 if show_account else 0
+    # mark, date, amount, category, optional account, name, and the gaps between them
+    field_count = 5 if show_account else 4
+    used = 2 + 10 + 10 + account_width + 2 * (field_count - 1)
+    rest = max(20, width - used)
+    category_width = max(10, min(28, rest // 2))
+    name_width = max(8, rest - category_width)
+    return category_width, name_width, account_width
+
+
+def preview_body(
+    date_text: str,
+    amount_text: str,
+    category: str,
+    name: str,
+    account: str,
+    *,
+    category_width: int,
+    name_width: int,
+    account_width: int,
+) -> str:
+    """One table row without the update marker."""
+    fields = [
+        f"{date_text:<10}",
+        f"{amount_text:>10}",
+        f"{clip_cell(category, category_width):<{category_width}}",
+    ]
+    if account_width:
+        fields.append(f"{clip_cell(account, account_width):<{account_width}}")
+    fields.append(clip_cell(name, name_width))
+    return "  ".join(fields)
+
+
+def format_preview_row(
+    planned: Planned,
+    *,
+    category_width: int,
+    name_width: int,
+    account_width: int = 0,
+    account_name: str = "",
+    color: bool = True,
+    selected: bool = False,
+) -> str:
+    """Table row. A red asterisk marks an update. New rows have no action word."""
+    if planned.action == "update":
+        mark = "\033[31m*\033[0m" if color else "*"
+    else:
+        mark = " "
+    body = preview_body(
+        planned.row.txn_date.isoformat(),
+        _fmt_amount(planned.row.amount),
+        planned.row.category,
+        planned.row.display_name,
+        account_name,
+        category_width=category_width,
+        name_width=name_width,
+        account_width=account_width,
+    )
+    if color and selected:
+        body = f"\033[7m{body}\033[0m"
+    elif color and planned.action == "skip":
+        body = f"\033[2m{body}\033[0m"
+    return f"{mark} {body}"
+
+
+def format_preview_header(
+    column: str,
+    reverse: bool,
+    *,
+    category_width: int,
+    name_width: int,
+    account_width: int,
+) -> str:
+    """Column titles. The active sort shows ↑ or ↓."""
+
+    def title(label: str, key: str) -> str:
+        if column != key:
+            return label
+        return f"{label} {'↓' if reverse else '↑'}"
+
+    return "  " + preview_body(
+        title("date", "date"),
+        title("amount", "amount"),
+        title("category", "category"),
+        title("name", "name"),
+        title("account", "account"),
+        category_width=category_width,
+        name_width=name_width,
+        account_width=account_width,
+    )
+
+
+def preview_summary(lines: list[PreviewLine]) -> str:
+    """Counts for the table footer. New rows are unmarked in the table."""
+    new = sum(1 for line in lines if line.planned.action == "create")
+    updated = sum(1 for line in lines if line.planned.action == "update")
+    unchanged = sum(1 for line in lines if line.planned.action == "skip")
+    return f"* updates existing txns    {new} new    {updated} updates    {unchanged} unchanged"
+
+
+def show_preview(
+    lines: list[PreviewLine],
+    unmatched: list[tuple[str, SureTxn]],
+    account_names: list[str],
+    *,
+    interactive: bool,
+) -> bool:
+    """Show the plan. Return False when the user cancels before posting."""
+    if interactive:
+        return _browse_preview(lines, unmatched, account_names)
+    _print_preview(lines, unmatched, account_names, color=sys.stdout.isatty())
+    return True
+
+
+def _preview_title(account_names: list[str], column: str, reverse: bool) -> str:
+    names = ", ".join(account_names) if account_names else "Transactions"
+    arrow = "↓" if reverse else "↑"
+    label = "date" if column == "date" else "category"
+    return f"{names}    sorted by {label} {arrow}"
+
+
+def _print_preview(
+    lines: list[PreviewLine],
+    unmatched: list[tuple[str, SureTxn]],
+    account_names: list[str],
+    *,
+    color: bool,
+    column: str = "date",
+    reverse: bool = True,
+) -> None:
+    """Print the whole table without taking over the terminal."""
+    show_account = len(account_names) > 1
+    width = shutil.get_terminal_size(fallback=(100, 24)).columns
+    category_width, name_width, account_width = preview_column_widths(
+        width, show_account=show_account
+    )
+    print(_preview_title(account_names, column, reverse))
+    print(
+        format_preview_header(
+            column,
+            reverse,
+            category_width=category_width,
+            name_width=name_width,
+            account_width=account_width,
+        )
+    )
+    for line in sort_preview_lines(lines, column, reverse):
+        print(
+            format_preview_row(
+                line.planned,
+                category_width=category_width,
+                name_width=name_width,
+                account_width=account_width,
+                account_name=line.account_name,
+                color=color,
+            )
+        )
+    if unmatched:
+        print("Not in this CSV")
+        for account_name, txn in unmatched:
+            print(
+                "  "
+                + preview_body(
+                    txn.txn_date.isoformat(),
+                    f"{txn.signed_amount_cents / 100:+.2f}",
+                    txn.category_name or "",
+                    txn.name,
+                    account_name,
+                    category_width=category_width,
+                    name_width=name_width,
+                    account_width=account_width,
+                )
+            )
+    print(preview_summary(lines))
+
+
+def _browse_preview(
+    lines: list[PreviewLine],
+    unmatched: list[tuple[str, SureTxn]],
+    account_names: list[str],
+    *,
+    read_key: Optional[Callable[[], str]] = None,
+) -> bool:
+    """Scrollable table. Left sorts by date, right by category. Enter continues."""
+    fetch = read_key or read_navigation_key
+    column = "date"
+    directions = {"date": True, "category": False}
+    cursor = 0
+    top = 0
+    show_account = len(account_names) > 1
+    sys.stdout.write("\033[?1049h\033[?25l")
+    try:
+        while True:
+            reverse = directions[column]
+            ordered = sort_preview_lines(lines, column, reverse)
+            items: list[tuple[str, Any]] = [("txn", line) for line in ordered]
+            if unmatched:
+                items.append(("gap", None))
+                items.extend(("sure", item) for item in unmatched)
+            size = shutil.get_terminal_size(fallback=(100, 24))
+            body_rows = max(1, size.lines - 4)
+            if items:
+                cursor = min(cursor, len(items) - 1)
+            else:
+                cursor = 0
+            if cursor < top:
+                top = cursor
+            elif cursor >= top + body_rows:
+                top = cursor - body_rows + 1
+            category_width, name_width, account_width = preview_column_widths(
+                size.columns, show_account=show_account
+            )
+            screen = [
+                clip_cell(_preview_title(account_names, column, reverse), size.columns),
+                format_preview_header(
+                    column,
+                    reverse,
+                    category_width=category_width,
+                    name_width=name_width,
+                    account_width=account_width,
+                ),
+            ]
+            window = items[top : top + body_rows]
+            if not window:
+                screen.append("No transactions.")
+            for offset, item in enumerate(window):
+                selected = top + offset == cursor
+                kind, payload = item
+                if kind == "gap":
+                    text = "Not in this CSV"
+                    if selected:
+                        text = f"\033[7m{text}\033[0m"
+                elif kind == "sure":
+                    account_name, txn = payload
+                    text = "  " + preview_body(
+                        txn.txn_date.isoformat(),
+                        f"{txn.signed_amount_cents / 100:+.2f}",
+                        txn.category_name or "",
+                        txn.name,
+                        account_name,
+                        category_width=category_width,
+                        name_width=name_width,
+                        account_width=account_width,
+                    )
+                    if selected:
+                        text = f"\033[7m{text}\033[0m"
+                else:
+                    text = format_preview_row(
+                        payload.planned,
+                        category_width=category_width,
+                        name_width=name_width,
+                        account_width=account_width,
+                        account_name=payload.account_name,
+                        color=True,
+                        selected=selected,
+                    )
+                screen.append(text)
+            while len(screen) < size.lines - 2:
+                screen.append("")
+            screen.append(clip_cell(preview_summary(lines), size.columns))
+            screen.append(
+                clip_cell(
+                    "↑↓ scroll   ← date   → category   again reverses   "
+                    "enter continues   q cancels",
+                    size.columns,
+                )
+            )
+            sys.stdout.write("\033[H")
+            for row in screen[: size.lines]:
+                sys.stdout.write(f"\033[2K{row}\n")
+            sys.stdout.write("\033[J")
+            sys.stdout.flush()
+            key = fetch()
+            if key == "up" and items:
+                cursor = max(0, cursor - 1)
+            elif key == "down" and items:
+                cursor = min(len(items) - 1, cursor + 1)
+            elif key in ("left", "d", "D"):
+                column, directions = cycle_sort(column, directions, "date")
+                cursor = 0
+                top = 0
+            elif key in ("right", "c", "C"):
+                column, directions = cycle_sort(column, directions, "category")
+                cursor = 0
+                top = 0
+            elif key == "enter":
+                return True
+            elif key in ("quit", "esc"):
+                return False
+    finally:
+        sys.stdout.write("\033[?1049l\033[?25h")
+        sys.stdout.flush()
 
 
 def transaction_id(payload: dict[str, Any]) -> str:
@@ -1107,10 +1456,15 @@ def preview_accounts(
     loaded: list[tuple[CsvSelection, list[StatementRow]]],
     configured_account: str,
     category_ids: dict[str, str],
-) -> tuple[list[tuple[str, list[Planned]]], int]:
-    """Match parsed rows to Sure and print the plan. Return plans and write count."""
+    *,
+    interactive: bool,
+) -> tuple[list[tuple[str, list[Planned]]], int, bool]:
+    """Match parsed rows to Sure and show the table. Return plans, writes, and cancel."""
     ready: list[tuple[str, list[Planned]]] = []
-    created = updated = skipped = 0
+    lines: list[PreviewLine] = []
+    unmatched_rows: list[tuple[str, SureTxn]] = []
+    account_names: list[str] = []
+    to_write = 0
     for selection, rows in loaded:
         if not rows:
             continue
@@ -1119,29 +1473,16 @@ def preview_accounts(
         row_start = min(row.txn_date for row in rows)
         row_end = max(row.txn_date for row in rows)
         existing = client.transactions_for_account(account["id"], row_start, row_end)
-        print(
-            f"\n{account_name} ({account['id']}), "
-            f"{len(existing)} existing txn(s)"
-        )
         planned, unmatched = plan_rows(rows, existing, category_ids)
-        _print_unmatched(unmatched)
         ready.append((str(account["id"]), planned))
-        created += sum(1 for item in planned if item.action == "create")
-        updated += sum(1 for item in planned if item.action == "update")
-        skipped += sum(1 for item in planned if item.action == "skip")
-    print(
-        f"\ncreate={created} update={updated} skip={skipped} "
-        f"csv_rows={created + updated + skipped}"
+        account_names.append(account_name)
+        lines.extend(PreviewLine(account_name, item) for item in planned)
+        unmatched_rows.extend((account_name, txn) for txn in unmatched)
+        to_write += sum(1 for item in planned if item.action in ("create", "update"))
+    continued = show_preview(
+        lines, unmatched_rows, account_names, interactive=interactive
     )
-    return ready, created + updated
-
-
-def _print_unmatched(unmatched: list[SureTxn]) -> None:
-    if not unmatched:
-        return
-    print("Unmatched Sure transactions (not in this CSV):")
-    for txn in unmatched:
-        print(f"  {txn.txn_date} {txn.signed_amount_cents / 100:+.2f}  {txn.name}")
+    return ready, to_write, not continued
 
 
 def run_import(args: argparse.Namespace, selections: list[CsvSelection]) -> int:
@@ -1203,9 +1544,16 @@ def run_import(args: argparse.Namespace, selections: list[CsvSelection]) -> int:
         else:
             try:
                 category_ids = client.categories_by_name()
-                ready, to_write = preview_accounts(
-                    client, loaded, configured_account, category_ids
+                ready, to_write, cancelled = preview_accounts(
+                    client,
+                    loaded,
+                    configured_account,
+                    category_ids,
+                    interactive=sys.stdin.isatty() and not args.yes,
                 )
+                if cancelled:
+                    print("Undone. Sure was not changed.")
+                    return 0
             except Exception as exc:
                 print(f"Sure API error: {exc}", file=sys.stderr)
                 return 1

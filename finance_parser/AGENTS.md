@@ -117,7 +117,7 @@ First matching category in JSON object order wins. After editing the JSON, copy 
 ~/git/docker/sure.am/scripts/sync-category-rules.sh
 ```
 
-Dry run: `DRY_RUN=1`; skip re-applying to existing txns: `APPLY_RULES=0`. Sync creates/updates rules from JSON and **prunes keyword rules** whose names are no longer in the JSON. It does **not** delete removed **categories** — do that in Rails (reassign `Transaction.category_id`, rewrite/destroy rules, then `category.destroy!`).
+Dry run: `DRY_RUN=1`; skip re-applying to existing txns: `APPLY_RULES=0`. When it does re-apply, only transactions from the past 60 days are updated (`APPLY_WINDOW_DAYS` overrides that). Sync creates/updates rules from JSON and **prunes keyword rules** whose names are no longer in the JSON. It does **not** delete removed **categories** — do that in Rails (reassign `Transaction.category_id`, rewrite/destroy rules, then `category.destroy!`).
 
 `sure-web` runs on the LAN host in `sure.base_url` (SSH there if this Mac has no container). Copy the JSON if Syncthing has not caught up, then run the script on that host.
 

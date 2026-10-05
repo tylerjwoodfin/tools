@@ -20,7 +20,12 @@ from main import (
     categorize_transaction,
     clean_amount,
     INSTITUTIONS,
+    Planned,
+    PreviewLine,
     confirm_choices,
+    cycle_sort,
+    format_preview_row,
+    sort_preview_lines,
     csv_menu_options,
     find_match,
     pick_account,
@@ -331,6 +336,67 @@ class PickerTests(unittest.TestCase):
         self.assertEqual(end, date.max)
         start, end = import_window("2026-09", legacy_previous_month=False)
         self.assertEqual((start, end), month_bounds("2026-09"))
+
+
+class PreviewTableTests(unittest.TestCase):
+    def _line(self, day: int, category: str, name: str, action: str = "create") -> PreviewLine:
+        row = VenmoRow(
+            venmo_id=name,
+            txn_date=date(2026, 9, day),
+            note=name,
+            from_name="",
+            to_name="",
+            amount=-10.0,
+            txn_type="Payment",
+            category=category,
+        )
+        return PreviewLine("Venmo", Planned(action, row, None, None))
+
+    def test_sort_by_date_and_category(self) -> None:
+        lines = [
+            self._line(18, "Restaurants", "Coffee"),
+            self._line(17, "Games/Apps", "Steam"),
+            self._line(18, "Cursor", "IDE"),
+        ]
+        by_date = sort_preview_lines(lines, "date", reverse=True)
+        self.assertEqual(
+            [line.planned.row.display_name for line in by_date],
+            ["Coffee", "IDE", "Steam"],
+        )
+        by_category = sort_preview_lines(lines, "category", reverse=False)
+        self.assertEqual(
+            [line.planned.row.category for line in by_category],
+            ["Cursor", "Games/Apps", "Restaurants"],
+        )
+
+    def test_same_column_reverses_direction(self) -> None:
+        directions = {"date": True, "category": False}
+        column, directions = cycle_sort("date", directions, "date")
+        self.assertEqual(column, "date")
+        self.assertFalse(directions["date"])
+        column, directions = cycle_sort(column, directions, "category")
+        self.assertEqual(column, "category")
+        self.assertFalse(directions["category"])
+        column, directions = cycle_sort(column, directions, "category")
+        self.assertTrue(directions["category"])
+
+    def test_update_is_a_star_and_new_rows_have_no_action_word(self) -> None:
+        new = format_preview_row(
+            self._line(18, "Restaurants", "Coffee").planned,
+            category_width=20,
+            name_width=20,
+            color=False,
+        )
+        update = format_preview_row(
+            self._line(17, "Other", "BILL PAYMENT", action="update").planned,
+            category_width=20,
+            name_width=20,
+            color=True,
+        )
+        self.assertNotIn("create", new)
+        self.assertTrue(new.startswith(" "))
+        self.assertIn("\033[31m*\033[0m", update)
+        self.assertNotIn("update", update.split("BILL", 1)[0])
 
 
 class AccountMatchTests(unittest.TestCase):
