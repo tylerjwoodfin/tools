@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -107,6 +108,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     cfg = load_config(args.config)
 
+    # Cron announce posts stdout/stderr. A missing external volume must stay
+    # silent instead of texting a mkdir traceback every tick.
+    if args.command in {"tick", "proactive"} and not _storage_mounted(cfg):
+        print("NO_REPLY")
+        return 0
+
     llm = StubLLM() if args.stub_llm else build_llm(cfg.llm)
     sender = TelegramSender(dry_run=args.dry_run)
     wf = DiaryWorkflow(cfg, llm=llm, sender=sender)
@@ -188,6 +195,18 @@ def main(argv: list[str] | None = None) -> int:
 
     parser.error(f"Unknown command: {args.command}")
     return 2
+
+
+def _storage_mounted(cfg) -> bool:
+    """False when diary files live on an external volume that is not mounted."""
+    for path in (cfg.diary_dir, cfg.conversations_dir):
+        resolved = path.resolve()
+        parts = resolved.parts
+        if len(parts) >= 3 and parts[1] == "Volumes":
+            mount = Path(parts[0]) / parts[1] / parts[2]
+            if not (mount.is_dir() and os.path.ismount(mount)):
+                return False
+    return True
 
 
 def _format_status(payload: dict) -> str:

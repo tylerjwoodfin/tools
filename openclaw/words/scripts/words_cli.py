@@ -376,6 +376,20 @@ def _extract_infer_text(raw: str) -> str:
     return raw
 
 
+def _request_auth_watch(error: str) -> None:
+    """Ask the auth watch to message Cherry if this failure is an OpenAI sign-in problem."""
+    lowered = error.lower()
+    if "auth" not in lowered and "subscription" not in lowered:
+        return
+    script = Path(__file__).resolve().parents[2] / "auth-watch" / "scripts" / "auth_watch.py"
+    if not script.is_file():
+        return
+    try:
+        subprocess.run([sys.executable, str(script), "tick"], check=False, timeout=45)
+    except (OSError, subprocess.TimeoutExpired):
+        return
+
+
 def infer_text(prompt: str) -> str:
     binary = str(OPENCLAW_BIN if OPENCLAW_BIN.exists() else "openclaw")
     cmd = [
@@ -480,6 +494,7 @@ def start_quiz(
         try:
             item = generate_word(infer_fn)
         except Exception as exc:  # noqa: BLE001
+            _request_auth_watch(str(exc))
             return {"ok": False, "action": "error", "message": f"Could not choose a word: {exc}"}
         items.append(item)
         generated = True

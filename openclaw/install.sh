@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install personal OpenClaw skills (diary, food, words, overflow reset, delivery retry).
+# Install personal OpenClaw skills (diary, food, words, overflow reset, delivery retry, auth watch).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -26,3 +26,7 @@ echo "==> Delivery retry"
 echo
 echo "==> Media"
 "${ROOT}/media/scripts/install_openclaw.sh"
+
+echo
+echo "==> OpenAI auth watch"
+"${ROOT}/auth-watch/scripts/install_openclaw.sh"

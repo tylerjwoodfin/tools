@@ -6,6 +6,8 @@ import json
 from datetime import timedelta
 from pathlib import Path
 
+import yaml
+
 from diary_llm.config import load_config
 from diary_llm.llm import StubLLM
 from diary_llm.models import DiaryEntry
@@ -189,6 +191,29 @@ def test_handle_slash_diary_and_done(workflow: DiaryWorkflow):
     workflow.handle_user_message("Thinking about travel plans.")
     done = workflow.handle_user_message("/diary done")
     assert done.action == "finalized"
+
+
+def test_cli_tick_stays_quiet_when_diary_volume_is_unmounted(tmp_path: Path, capsys):
+    from diary_llm.cli import main
+
+    config = tmp_path / "config.yaml"
+    missing = Path("/Volumes/not-mounted-diary-test/notes/diary")
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "diary_dir": str(missing),
+                "conversations_dir": str(missing / "conversations"),
+                "state_dir": str(tmp_path / "state"),
+                "llm": {"backend": "stub"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    code = main(["--config", str(config), "--stub-llm", "tick"])
+    captured = capsys.readouterr()
+    assert code == 0
+    assert captured.out.strip() == "NO_REPLY"
+    assert captured.err == ""
 
 
 def test_cli_tick_is_silent_when_nothing_to_announce(config_file: Path, capsys):

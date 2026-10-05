@@ -128,6 +128,20 @@ def _extract_infer_text(raw: str) -> str:
     return raw
 
 
+def _request_auth_watch(error: str) -> None:
+    """Ask the auth watch to message Cherry if this failure is an OpenAI sign-in problem."""
+    lowered = error.lower()
+    if "auth" not in lowered and "subscription" not in lowered:
+        return
+    script = Path(__file__).resolve().parents[2] / "auth-watch" / "scripts" / "auth_watch.py"
+    if not script.is_file():
+        return
+    try:
+        subprocess.run([sys.executable, str(script), "tick"], check=False, timeout=45)
+    except (OSError, subprocess.TimeoutExpired):
+        return
+
+
 def infer_text(prompt: str) -> str:
     binary = str(OPENCLAW_BIN if OPENCLAW_BIN.exists() else "openclaw")
     cmd = [
@@ -233,6 +247,7 @@ def cmd_handle(text: str, *, force: bool = False) -> dict:
     try:
         items = parse_items(text)
     except Exception as exc:  # noqa: BLE001
+        _request_auth_watch(str(exc))
         return {"ok": False, "action": "error", "message": f"Could not parse food: {exc}"}
     if not items:
         if force:
@@ -270,6 +285,7 @@ Return only the message text."""
     try:
         message = infer_text(prompt).strip()
     except Exception as exc:  # noqa: BLE001
+        _request_auth_watch(str(exc))
         return {"ok": False, "action": "error", "message": None, "error": str(exc)}
     message = message.strip().strip('"')
     if not message or message.upper() == "NO_REPLY":
