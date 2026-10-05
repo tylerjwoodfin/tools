@@ -10,6 +10,7 @@ Personal OpenClaw skills and plugins that live next to the rest of `~/git/tools`
 | [`overflow-reset/`](overflow-reset/) | After context overflow, start a fresh session and retry once |
 | [`delivery-retry/`](delivery-retry/) | Resend a Telegram reply OpenClaw dropped after an ambiguous send |
 | [`media/`](media/) | Movies, TV, and music via Radarr, Sonarr, qBittorrent, and Sockseek |
+| [`local-model/`](local-model/) | Load Gemma in LM Studio before a Cherry turn so chat does not fall back to OpenAI |
 | [`auth-watch/`](auth-watch/) | Telegram Cherry when OpenAI subscription auth expires, with the repair steps |
 
 ## Install
