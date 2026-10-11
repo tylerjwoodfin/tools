@@ -62,7 +62,7 @@ Summary:
 
 - **All hosts:** `$HOME/.config`, `$HOME/.openclaw`, `$HOME/.ssh`, `$HOME/.gnupg`, shell rc files, diary-llm state
 - **Linux (cloud):** also `$HOME/syncthing`, `$HOME/git`, plus staged crontab / cloudflared / RustDesk / DB exports
-- **macOS (ice):** also `~/Library/LaunchAgents` (skips Syncthing and `~/git` — accept unpushed work as at-risk)
+- **macOS (ice):** also `~/Library/LaunchAgents` (skips Syncthing and `~/git` — accept unpushed work as at-risk). Cron’s PATH is `/usr/bin:/bin`; the script adds `/opt/homebrew/bin` so `borg` and `cabinet` resolve, then replicates to the host-scoped rainbow path (`…-ice`)
 - Archives named `{hostname}-{timestamp}`; prune is limited to `{hostname}-*`
 - Offsite rainbow replica is host-scoped (`…/syncthing-backups-borg-repo` for cloud; `…-ice` etc. for other hosts) so `rsync --delete` cannot wipe another machine’s copy
 - Compression: LZ4; exclusions for live DB trees, caches, and `.openclaw/tools` — details in `main.sh` and docs
