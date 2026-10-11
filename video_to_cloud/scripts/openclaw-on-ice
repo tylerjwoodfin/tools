@@ -1,0 +1,42 @@
+#!/bin/bash
+# Cherry's OpenClaw gateway runs on ice. The video-to-cloud watcher runs on
+# the cloud host, which has no gateway, so Cabinet uses this script as
+# telegram.openclaw_bin. Arguments are OpenClaw CLI args
+# (message send --channel ... --target ... --message ...).
+
+set -euo pipefail
+
+network="${HOME}/git/backend/zsh/network.zsh"
+if [[ ! -f "$network" ]]; then
+  echo "openclaw-on-ice: missing ${network}" >&2
+  exit 1
+fi
+
+target=$(awk '
+  /^ice\(\)/ { in_ice = 1 }
+  in_ice && /ssh -o ConnectTimeout/ { print; exit }
+' "$network")
+
+if [[ -z "$target" ]]; then
+  echo "openclaw-on-ice: could not read the ice ssh target" >&2
+  exit 1
+fi
+
+host=$(sed -n 's/.*tyler@\([^[:space:]]*\).*/\1/p' <<<"$target")
+port=$(sed -n 's/.*-p \([0-9][0-9]*\).*/\1/p' <<<"$target")
+
+if [[ -z "$host" || -z "$port" ]]; then
+  echo "openclaw-on-ice: could not parse host or port" >&2
+  exit 1
+fi
+
+# Prefer ice's gateway-bundled CLI. Homebrew openclaw can be older than
+# Cherry's state database and will refuse to start.
+remote_cmd="exec \"\$HOME/git/tools/openclaw/diary/scripts/openclaw-gateway\" $(printf '%q ' "$@")"
+
+exec ssh \
+  -o ConnectTimeout=4 \
+  -o BatchMode=yes \
+  "tyler@${host}" \
+  -p "$port" \
+  "$remote_cmd"

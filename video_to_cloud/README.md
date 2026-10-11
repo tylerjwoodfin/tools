@@ -50,9 +50,13 @@ sudo systemctl status video-to-cloud.service
 
 Logs append to `~/syncthing/log/video-to-cloud.log`.
 
+The process loads `main.py` once and keeps that code until restart. After pulling a notifier change, run `sudo systemctl restart video-to-cloud.service`.
+
 ## Cherry
 
 After a move, Cabinet sends a Telegram message on Cherry's channel. The line uses the embedded title when `ffprobe` finds one, and the file name otherwise:
+
+The watcher runs on the cloud host. Cherry's gateway runs on ice, so on cloud set Cabinet `telegram.openclaw_bin` to `~/git/tools/video_to_cloud/scripts/openclaw-on-ice`. That script reads the `ice` ssh target from `~/git/backend/zsh/network.zsh` and runs ice's gateway-bundled CLI (`~/git/tools/openclaw/diary/scripts/openclaw-gateway message send`). Homebrew `openclaw` 2026.8.2 cannot open Cherry's schema 18 state database. Cabinet config is shared, and that Linux path does not exist on ice. When the configured binary is missing, Cabinet sends with the local gateway wrapper instead, so ice jobs (including the 7pm food reminder) keep working.
 
 `I moved The Grand Budapest Hotel into the cloud video library.`
 

@@ -103,6 +103,15 @@ def test_rewrite_jackett_url():
     )
 
 
+@pytest.mark.skipif(seed_qbit is None, reason="seed_qbit.py is not checked out")
+def test_qbittorrent_seed_binds_tunnel_interface():
+    text = seed_qbit.config_text("secret")
+    assert "Session\\Interface=tun0" in text
+    assert "Session\\InterfaceName=tun0" in text
+    assert "Session\\ReannounceWhenAddressChanged=true" in text
+    assert "Session\\InterfaceAddress=" not in text
+
+
 def test_qbit_shares_gluetun_namespace():
     compose = Path.home() / "git/docker/media/docker-compose.yml"
     text = compose.read_text(encoding="utf-8")
