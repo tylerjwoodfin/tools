@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from datetime import date
 from pathlib import Path
 
@@ -142,6 +143,10 @@ def _request_auth_watch(error: str) -> None:
         return
 
 
+def _state_lifecycle_busy(text: str) -> bool:
+    return "owns state-lifecycle" in text
+
+
 def infer_text(prompt: str) -> str:
     binary = str(OPENCLAW_BIN if OPENCLAW_BIN.exists() else "openclaw")
     cmd = [
@@ -159,17 +164,34 @@ def infer_text(prompt: str) -> str:
         prompt,
     ]
     env = {**os.environ, "FOOD_CLI_INTERNAL": "1", "DIARY_LLM_INTERNAL": "1"}
-    proc = subprocess.run(
-        cmd,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=INFER_TIMEOUT + 15,
-        env=env,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "openclaw infer failed")
-    return _extract_infer_text(proc.stdout)
+    deadline = time.monotonic() + INFER_TIMEOUT
+    delay = 0.5
+    last_error = "openclaw infer failed"
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 1:
+            break
+        try:
+            proc = subprocess.run(
+                cmd,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=remaining,
+                env=env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"openclaw infer timed out after {INFER_TIMEOUT}s") from exc
+        if proc.returncode == 0:
+            return _extract_infer_text(proc.stdout)
+        last_error = proc.stderr.strip() or proc.stdout.strip() or "openclaw infer failed"
+        if not _state_lifecycle_busy(last_error):
+            raise RuntimeError(last_error)
+        if time.monotonic() + delay >= deadline:
+            break
+        time.sleep(delay)
+        delay = min(delay * 2, 5)
+    raise RuntimeError(last_error)
 
 
 def parse_with_llm(text: str) -> list[dict]:

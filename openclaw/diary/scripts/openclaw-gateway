@@ -1,13 +1,7 @@
 #!/usr/bin/env bash
-# Prefer the Gateway-bundled OpenClaw CLI so message/agent calls match the
-# running Gateway version (Homebrew openclaw can be older and fail state locks).
+# Same CLI as ~/git/tools/openclaw/openclaw-gateway. Cabinet and cloud's
+# openclaw-on-ice call this path.
 set -euo pipefail
 
-NODE="${OPENCLAW_NODE:-$HOME/.openclaw/tools/node-v24.19.0/bin/node}"
-ENTRY="${OPENCLAW_ENTRY:-$HOME/.openclaw/tools/node-v24.19.0/lib/node_modules/openclaw/dist/index.js}"
-
-if [[ -x "$NODE" && -f "$ENTRY" ]]; then
-  exec "$NODE" "$ENTRY" "$@"
-fi
-
-exec openclaw "$@"
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+exec "$root/openclaw-gateway" "$@"

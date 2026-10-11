@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
-# Prefer the Gateway-bundled OpenClaw CLI so plugin/cron/config calls match the
-# running Gateway version (Homebrew openclaw can lag and reject the config).
+# Run the Gateway-bundled OpenClaw CLI so it matches the state database.
+# ~/.openclaw/tools/node is the gateway's current Node. Homebrew/npm openclaw
+# can be older than that database and will refuse to start.
 set -euo pipefail
 
-NODE="${OPENCLAW_NODE:-$HOME/.openclaw/tools/node-v24.19.0/bin/node}"
-ENTRY="${OPENCLAW_ENTRY:-$HOME/.openclaw/tools/node-v24.19.0/lib/node_modules/openclaw/dist/index.js}"
+tools="${OPENCLAW_TOOLS:-$HOME/.openclaw/tools}"
+node="${OPENCLAW_NODE:-$tools/node/bin/node}"
+entry="${OPENCLAW_ENTRY:-$tools/node/lib/node_modules/openclaw/dist/index.js}"
 
-if [[ -x "$NODE" && -f "$ENTRY" ]]; then
-  exec "$NODE" "$ENTRY" "$@"
+if [[ -x "$node" && -f "$entry" ]]; then
+  exec "$node" "$entry" "$@"
 fi
 
-exec openclaw "$@"
+echo "openclaw-gateway: gateway CLI not found at $entry" >&2
+echo "Refusing to run Homebrew openclaw; it can be older than the state database." >&2
+exit 1
