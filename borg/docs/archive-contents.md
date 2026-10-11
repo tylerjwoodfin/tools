@@ -7,7 +7,7 @@ Source: `~/git/tools/borg/main.sh`. Archives use compression `lz4`.
 | Path | Notes |
 |------|--------|
 | `$HOME/.config` | App configs (incl. diary-llm example links, rustdesk, etc.) |
-| `$HOME/.openclaw` | OpenClaw config/workspace/state (**`tools`/`npm`/`cache` excluded**) |
+| `$HOME/.openclaw` | OpenClaw settings, workspace, and state (`openclaw.json`, `credentials/`, `agents/`, `service-env/`). **`tools`/`npm`/`cache`/`tmp`/`media` excluded** |
 | `$HOME/.ssh` | SSH keys and config |
 | `$HOME/.gnupg` | GPG keyring (if present) |
 | `$HOME/.zshrc` (+ `.zprofile` / `.zshenv`) | Shell config |

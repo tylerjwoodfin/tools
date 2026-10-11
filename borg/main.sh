@@ -11,8 +11,9 @@ if [ -z "$HOME" ]; then
 fi
 
 # Set up PATH to include common binary locations
-# Cron jobs run with minimal PATH, so we need to set it explicitly
-export PATH="/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin:$HOME/bin:$PATH"
+# Cron jobs run with minimal PATH (/usr/bin:/bin on macOS), so we need to set it explicitly.
+# Homebrew on Apple Silicon installs borg and cabinet under /opt/homebrew/bin.
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin:$HOME/bin:$PATH"
 
 # Short hostname for archive names, prune globs, and offsite path scoping.
 # Borg's {hostname} placeholder uses the same idea; keep them aligned.
@@ -42,6 +43,8 @@ date_ymd_last_month() {
 BORG_CMD=""
 if command -v borg >/dev/null 2>&1; then
     BORG_CMD="borg"
+elif [ -x "/opt/homebrew/bin/borg" ]; then
+    BORG_CMD="/opt/homebrew/bin/borg"
 elif [ -x "/usr/local/bin/borg" ]; then
     BORG_CMD="/usr/local/bin/borg"
 elif [ -x "$HOME/.local/bin/borg" ]; then
@@ -61,8 +64,19 @@ if [ "$1" = "--replicate-only" ]; then
     REPLICATE_ONLY=true
 fi
 
-# Define paths
-CABINET="$HOME/.local/bin/cabinet"
+# Define paths. Cabinet is ~/.local/bin/cabinet on cloud and Homebrew on ice.
+CABINET=""
+if command -v cabinet >/dev/null 2>&1; then
+    CABINET=$(command -v cabinet)
+elif [ -x "$HOME/.local/bin/cabinet" ]; then
+    CABINET="$HOME/.local/bin/cabinet"
+elif [ -x "/opt/homebrew/bin/cabinet" ]; then
+    CABINET="/opt/homebrew/bin/cabinet"
+else
+    echo "Error: cabinet command not found." >&2
+    echo "Expected ~/.local/bin/cabinet (cloud) or /opt/homebrew/bin/cabinet (macOS)." >&2
+    exit 1
+fi
 
 # Fetch Borg repo and passphrase securely
 BORG_REPO=$("$CABINET" -g "keys" "borg" "repo") || {
