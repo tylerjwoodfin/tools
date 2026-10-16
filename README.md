@@ -16,6 +16,9 @@
 - [`vikunja/ticket.py`](vikunja/ticket.py) — fetch/list/finish TJW tickets (`get`, `ls`, `finish`) via `http://127.0.0.1:3456/api/v1`.
 - [`github/ensure_gh_auth.py`](github/ensure_gh_auth.py) — sync Cabinet `backloggist.github_token` into `gh` auth.
 
+## Vocab
+- [`vocab/`](vocab/) — `vocab <word>` adds a word to Cherry's list at `~/syncthing/network/vocab.json`.
+
 ## Amazon order (Playwright)
 - [`amazon/`](amazon/) — `amazon <description>` searches Amazon, uses ChatGPT to pick a match, confirms, and places the order. Optional browser server: `~/git/docker/playwright`.
 
