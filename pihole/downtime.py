@@ -336,15 +336,17 @@ class PiHoleDowntime:
             self.execute_pihole_command(["pihole", "--regex", "-d", domain])
             self.execute_pihole_command(["pihole", "--wild", "-d", domain])
 
-    def block_domains(self, mode: str):
+    def block_domains(self, mode: str, force: bool = False):
         """
         Block domains for the specified mode.
 
         Args:
             mode: The mode (e.g., 'afternoon', 'overnight')
+            force: Block without the evening holiday check. Early bedtime sets
+                this after it has already checked today's holiday list.
         """
         # Check if blocking should proceed
-        if not self.should_block():
+        if not force and not self.should_block():
             print("Skipping blocking functions due to holiday/time restrictions")
             return
 
@@ -364,13 +366,14 @@ class PiHoleDowntime:
             print(f"Blocking: {domain}")
             self.execute_pihole_command(["pihole", "--wild", domain])
 
-    def run(self, action: str, mode: str):
+    def run(self, action: str, mode: str, force: bool = False):
         """
         Main execution method.
 
         Args:
             action: 'allow' or 'block'
             mode: The mode (e.g., 'afternoon', 'overnight')
+            force: Passed through to block. Allow ignores it.
         """
         print("starting")
 
@@ -389,7 +392,7 @@ class PiHoleDowntime:
         if action == "allow":
             self.allow_domains(mode)
         elif action == "block":
-            self.block_domains(mode)
+            self.block_domains(mode, force=force)
         else:
             print(f"Invalid argument: {action}. Use 'allow' or 'block'.")
             sys.exit(1)
@@ -402,6 +405,11 @@ def main():
     parser = argparse.ArgumentParser(description="Manage Pi-hole domain blocking")
     parser.add_argument("action", choices=["allow", "block"], help="Action to perform")
     parser.add_argument("mode", help="Mode (e.g., 'afternoon', 'overnight')")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Block without the evening holiday check",
+    )
 
     args = parser.parse_args()
 
@@ -412,7 +420,7 @@ def main():
 
     # Create and run the downtime manager
     downtime = PiHoleDowntime()
-    downtime.run(args.action, args.mode)
+    downtime.run(args.action, args.mode, force=args.force)
 
 
 if __name__ == "__main__":

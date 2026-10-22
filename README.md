@@ -19,6 +19,9 @@
 ## Vocab
 - [`vocab/`](vocab/) — `vocab <word>` adds a word to Cherry's list at `~/syncthing/network/vocab.json`.
 
+## Early bedtime
+- [`bedtime/`](bedtime/) — at noon, if Apple Health sleep last night was under 7 hours and today is not a holiday, send an Early Bedtime reminder and block Pi-hole at 8:30pm.
+
 ## Amazon order (Playwright)
 - [`amazon/`](amazon/) — `amazon <description>` searches Amazon, uses ChatGPT to pick a match, confirms, and places the order. Optional browser server: `~/git/docker/playwright`.
 

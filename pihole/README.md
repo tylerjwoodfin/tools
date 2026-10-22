@@ -7,7 +7,7 @@ hours.
 
 ## usage
 For my use case:
-- `zsh downtime.sh block overnight` is run at a predetermined time in the evening
+- `python3 downtime.py block afternoon` is run at 9:30pm (Sun–Thu) from the cloud crontab. Early bedtime runs that same list at 8:30pm; see `~/git/tools/bedtime/`.
 - `zsh downtime.sh allow overnight` is run at at a predetermined time overnight such that I
 can wake up without restrictions.
 
