@@ -8,11 +8,18 @@ Do Not Disturb on only when the answer is early.
 Personal automations are stored on the iPhone, so the shortcut files do not
 include the 12:00pm and 8:30pm schedules. Those are created once in the
 Shortcuts app. See bedtime/README.md.
+
+The Shortcuts app only imports signed files. On a Mac, this script signs with
+``shortcuts sign --mode people-who-know-me``, which stays on the Mac and
+imports on your devices. The ``anyone`` mode would send a copy to Apple.
 """
 
 from __future__ import annotations
 
 import plistlib
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -285,7 +292,7 @@ def _workflow(name: str, actions: list[dict]) -> dict:
 
 
 def write_shortcuts(directory: Path | None = None) -> tuple[Path, Path]:
-    """Write both shortcut plists. Returns the check path and the DND path."""
+    """Write both unsigned shortcut plists. Returns the check path and the DND path."""
     folder = directory or ROOT
     check_path = folder / CHECK_PATH.name
     dnd_path = folder / DND_PATH.name
@@ -298,7 +305,69 @@ def write_shortcuts(directory: Path | None = None) -> tuple[Path, Path]:
     return check_path, dnd_path
 
 
+def sign_file(path: Path) -> Path:
+    """Replace an unsigned shortcut plist with a signed file. Mac only.
+
+    The output keeps ``path``'s filename, which is the name Shortcuts uses on
+    import. Signing uses ``people-who-know-me`` so the file stays local.
+    """
+    if sys.platform != "darwin":
+        raise OSError("The shortcuts CLI can sign files only on macOS")
+    binary = shutil.which("shortcuts")
+    if binary is None:
+        raise OSError("The shortcuts CLI is not installed")
+
+    workflow = plistlib.loads(path.read_bytes())
+    unsigned = path.with_name(f".{path.name}.unsigned")
+    backup = path.with_name(f".{path.name}.backup")
+    with unsigned.open("wb") as handle:
+        plistlib.dump(workflow, handle, fmt=plistlib.FMT_BINARY)
+    path.replace(backup)
+    try:
+        subprocess.run(
+            [
+                binary,
+                "sign",
+                "--mode",
+                "people-who-know-me",
+                "--input",
+                str(unsigned),
+                "--output",
+                str(path),
+            ],
+            check=True,
+        )
+    except Exception:
+        if not path.exists():
+            backup.replace(path)
+        raise
+    else:
+        backup.unlink(missing_ok=True)
+    finally:
+        unsigned.unlink(missing_ok=True)
+    return path
+
+
+def sign_shortcuts(paths: tuple[Path, Path]) -> tuple[Path, Path]:
+    """Sign both shortcuts in place. Returns the same paths."""
+    for path in paths:
+        sign_file(path)
+    return paths
+
+
+def main() -> None:
+    paths = write_shortcuts()
+    for path in paths:
+        print(path)
+    if sys.platform == "darwin" and shutil.which("shortcuts"):
+        sign_shortcuts(paths)
+        return
+    print(
+        "These files are unsigned, so the Shortcuts app will not import them.\n"
+        "On the Mac, from this directory, run: python3 shortcuts.py",
+        file=sys.stderr,
+    )
+
+
 if __name__ == "__main__":
-    check_path, dnd_path = write_shortcuts()
-    print(check_path)
-    print(dnd_path)
+    main()

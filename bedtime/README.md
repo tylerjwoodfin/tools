@@ -21,7 +21,7 @@ The `if` keeps the job quiet until the file is present.
 
 ## Shortcuts
 
-`shortcuts.py` writes two shortcut files. Import both on the Mac so they sync to the phone:
+`shortcuts.py` writes two shortcut files. The Shortcuts app rejects the unsigned plists, so run the script on the Mac: it signs them with `shortcuts sign --mode people-who-know-me` (local, your devices only) and then you can import both so they sync to the phone:
 
 - **Early Bedtime Check** — personal automation, every day at 12:00pm, run immediately. Allow Shortcuts to read Sleep in Health.
 - **Early Bedtime Do Not Disturb** — personal automation, every day at 8:30pm, run immediately.
