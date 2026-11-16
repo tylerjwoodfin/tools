@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add words to Cherry's vocabulary list.
+"""List, add, and remove words on Cherry's vocabulary list.
 
 The list is a JSON array at ~/syncthing/network/vocab.json. Each entry has
 name, times_asked, and times_correct. The first run copies words from
@@ -172,6 +172,43 @@ def add_word(entries: list[dict], name: str) -> bool:
     return True
 
 
+def remove_word(entries: list[dict], name: str) -> bool:
+    """Drop a word. Return False when it is not listed."""
+    key = name.casefold()
+    kept = [entry for entry in entries if str(entry["name"]).casefold() != key]
+    if len(kept) == len(entries):
+        return False
+    entries[:] = kept
+    return True
+
+
+def format_list(entries: list[dict]) -> str:
+    """One line per word, with how often Cherry has asked it."""
+    if not entries:
+        return "No words yet."
+    return "\n".join(
+        f"{entry['name']} (asked {entry['times_asked']}, correct {entry['times_correct']})"
+        for entry in entries
+    )
+
+
+def command_from_args(args: list[str]) -> tuple[str, str]:
+    """Return (list|add|remove|usage, word)."""
+    if not args:
+        return "usage", ""
+    head, rest = args[0], args[1:]
+    if head in {"--list", "-l"}:
+        return "list", ""
+    if head in {"-rm", "--rm", "--remove"}:
+        return "remove", clean_name(" ".join(rest))
+    if head in {"--add", "-a"}:
+        return "add", clean_name(" ".join(rest))
+    return "add", clean_name(" ".join(args))
+
+
+USAGE = "Usage: vocab [--list | --add <word> | -rm <word> | <word>]"
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -179,7 +216,7 @@ def main(
     notes_path: Path | None = None,
     state_path: Path | None = None,
 ) -> int:
-    """Add one word, creating the list from the old notes file on first use."""
+    """List, add, or remove a word. The first run copies the old notes file."""
     args = list(sys.argv[1:] if argv is None else argv)
     path = vocab_path or VOCAB_PATH
     notes = notes_path or NOTES_PATH
@@ -192,9 +229,9 @@ def main(
     if migrated is not None:
         print(f"Migrated {migrated} words to {path}")
 
-    name = clean_name(" ".join(args))
-    if not name:
-        print("Usage: vocab <word>", file=sys.stderr)
+    action, name = command_from_args(args)
+    if action == "usage":
+        print(USAGE, file=sys.stderr)
         return 1
 
     try:
@@ -202,6 +239,20 @@ def main(
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+
+    if action == "list":
+        print(format_list(entries))
+        return 0
+    if not name:
+        print(USAGE, file=sys.stderr)
+        return 1
+    if action == "remove":
+        if not remove_word(entries, name):
+            print(f"{name} is not on the list.", file=sys.stderr)
+            return 1
+        save_vocab(path, entries)
+        print(f"Removed {name}.")
+        return 0
     if not add_word(entries, name):
         print(f"{name} is already on the list.")
         return 0

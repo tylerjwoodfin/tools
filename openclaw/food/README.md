@@ -8,7 +8,7 @@ OpenClaw **plugin** that turns any meal description into a `foodlog` entry witho
 - `matcha should be 200` (or a reply to the 7pm nudge) is parsed locally and logged
 - Freeform meals (`I had 2 taco bell tacos…`) are parsed with a cloud `openclaw infer` call, then written with `foodlog`
 - `/food` with no args shows today's log
-- At 7pm America/Los_Angeles, if nothing is logged or the day is under 1000 calories, `food_cli.py tick` sends a **fresh** Telegram nudge. Replies are claimed by the plugin.
+- At 7pm America/Los_Angeles, if nothing is logged or the day is under 1000 calories, `food_cli.py tick` sends a **fresh** Telegram nudge. The nudge is written by the local Gemma model, with OpenAI as a backup. If both fail, a short plain question still goes out and the command exits 0, so OpenClaw does not disable `food-log-remind`. Replies are claimed by the plugin.
 
 Logged format matches `foodlog`:
 

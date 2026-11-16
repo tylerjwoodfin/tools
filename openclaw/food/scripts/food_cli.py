@@ -138,7 +138,13 @@ def _request_auth_watch(error: str) -> None:
     if not script.is_file():
         return
     try:
-        subprocess.run([sys.executable, str(script), "tick"], check=False, timeout=45)
+        subprocess.run(
+            [sys.executable, str(script), "tick"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
     except (OSError, subprocess.TimeoutExpired):
         return
 
@@ -147,7 +153,11 @@ def _state_lifecycle_busy(text: str) -> bool:
     return "owns state-lifecycle" in text
 
 
-def infer_text(prompt: str) -> str:
+def infer_text(prompt: str, model: str | None = None) -> str:
+    return _infer_once(prompt, model or INFER_MODEL)
+
+
+def _infer_once(prompt: str, model: str) -> str:
     binary = str(OPENCLAW_BIN if OPENCLAW_BIN.exists() else "openclaw")
     cmd = [
         binary,
@@ -159,7 +169,7 @@ def infer_text(prompt: str) -> str:
         "--thinking",
         "off",
         "--model",
-        INFER_MODEL,
+        model,
         "--prompt",
         prompt,
     ]
@@ -291,31 +301,68 @@ def cmd_handle(text: str, *, force: bool = False) -> dict:
     }
 
 
-def cmd_tick(*, send: bool = True) -> dict:
-    foodlog = _load_foodlog()
-    status = foodlog.day_status()
+def nudge_models() -> list[str]:
+    """Local Gemma writes the 7pm nudge. OpenAI is only a backup."""
+    primary = os.environ.get("FOOD_NUDGE_MODEL", "lmstudio/gemma4-26b")
+    models = [primary]
+    if INFER_MODEL not in models:
+        models.append(INFER_MODEL)
+    return models
+
+
+def fallback_nudge(total: int) -> str:
+    if total:
+        return (
+            f"You've logged {total} calories today. "
+            "What else did you eat? Reply with the meal and I'll log it."
+        )
+    return "What did you eat today? Reply with the meal and I'll log it."
+
+
+def compose_nudge(prompt: str, total: int, infer_fn=None) -> str:
+    """A reminder string. Model failure still returns a nudge so the cron stays enabled."""
+    if infer_fn is not None:
+        try:
+            message = infer_fn(prompt).strip().strip('"')
+        except Exception as exc:  # noqa: BLE001
+            _request_auth_watch(str(exc))
+            message = ""
+        if message and message.upper() != "NO_REPLY":
+            return message
+        return fallback_nudge(total)
+    for model in nudge_models():
+        try:
+            message = infer_text(prompt, model=model).strip().strip('"')
+        except Exception as exc:  # noqa: BLE001
+            _request_auth_watch(str(exc))
+            continue
+        if message and message.upper() != "NO_REPLY":
+            return message
+    return fallback_nudge(total)
+
+
+def cmd_tick(*, send: bool = True, infer_fn=None, send_fn=None, status: dict | None = None) -> dict:
+    if status is None:
+        status = _load_foodlog().day_status()
     if status.get("total_calories", 0) >= 1000 or status.get("submitted"):
         return {"ok": True, "action": "skip", "message": None}
     set_pending()
-    total = status.get("total_calories", 0)
+    total = int(status.get("total_calories", 0) or 0)
     prompt = f"""Write a short Telegram nudge asking Tyler to log today's food.
 Facts: today has {status.get('entry_count', 0)} entries totaling {total} calories.
 Rules: one or two sentences, gentle, fresh wording (never a canned phrase), no lecture.
 Invite a reply with what he ate; he should not need /food.
 If some calories are already logged, mention the current total in passing.
 Return only the message text."""
-    try:
-        message = infer_text(prompt).strip()
-    except Exception as exc:  # noqa: BLE001
-        _request_auth_watch(str(exc))
-        return {"ok": False, "action": "error", "message": None, "error": str(exc)}
-    message = message.strip().strip('"')
-    if not message or message.upper() == "NO_REPLY":
-        return {"ok": True, "action": "skip", "message": None}
+    message = compose_nudge(prompt, total, infer_fn=infer_fn)
     if send:
-        from cabinet import telegram as cabinet_telegram
+        if send_fn is None:
+            from cabinet import telegram as cabinet_telegram
 
-        if not cabinet_telegram(message, is_quiet=True):
+            def send_fn(text: str) -> bool:
+                return bool(cabinet_telegram(text, is_quiet=True))
+
+        if not send_fn(message):
             return {"ok": False, "action": "error", "message": None, "error": "telegram send failed"}
         return {"ok": True, "action": "reminded", "message": None, "sent": message}
     return {"ok": True, "action": "reminded", "message": message, "sent": message}

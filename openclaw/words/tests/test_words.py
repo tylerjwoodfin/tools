@@ -1,3 +1,4 @@
+import json
 import random
 import sys
 from datetime import datetime
@@ -405,3 +406,155 @@ def test_generated_word_already_on_the_list_is_retried(paths):
     assert calls["n"] == 2
     assert result["generated"] is True
     assert result["word"] == "pragmatic"
+
+
+def test_unanswered_quiz_asks_again_after_the_gap(paths):
+    notes, state_path = paths
+    words_cli.save_notes(notes, "", [words_cli.WordItem("ephemeral", "brief", "active")])
+    first = words_cli.cmd_tick(
+        notes_path=notes,
+        state_path=state_path,
+        moment=evening(day=19),
+        rng=ScriptedRng(0.99),
+        send=False,
+    )
+    assert first["action"] == "asked"
+    assert words_cli.load_state(state_path)["pending"]["word"] == "ephemeral"
+    held = words_cli.cmd_tick(
+        notes_path=notes,
+        state_path=state_path,
+        moment=evening(day=20),
+        rng=ScriptedRng(0.99),
+        send=False,
+    )
+    assert held["action"] == "skip"
+    again = words_cli.cmd_tick(
+        notes_path=notes,
+        state_path=state_path,
+        moment=evening(day=26),
+        rng=ScriptedRng(0.99),
+        send=False,
+    )
+    assert again["action"] == "asked"
+
+
+def test_failed_send_does_not_block_the_next_tick(paths):
+    notes, state_path = paths
+    words_cli.save_notes(notes, "", [words_cli.WordItem("ephemeral", "brief", "active")])
+    failed = words_cli.cmd_tick(
+        notes_path=notes,
+        state_path=state_path,
+        moment=evening(),
+        rng=ScriptedRng(0.99),
+        send=True,
+        send_fn=lambda _message: False,
+    )
+    assert failed["ok"] is False
+    assert words_cli.load_state(state_path).get("pending") is None
+    retry = words_cli.cmd_tick(
+        notes_path=notes,
+        state_path=state_path,
+        moment=evening(),
+        rng=ScriptedRng(0.99),
+        send=False,
+    )
+    assert retry["action"] == "asked"
+
+
+def test_letter_prompt_hides_the_word(paths):
+    notes, state_path = paths
+    words_cli.save_notes(notes, "", [words_cli.WordItem("ephemeral", "lasting a short time", "active")])
+
+    def infer(prompt: str) -> str:
+        assert "ephemeral" in prompt.lower()
+        return "lasting for a very short time"
+
+    result = words_cli.start_quiz(
+        notes_path=notes,
+        state_path=state_path,
+        moment=evening(),
+        rng=ScriptedRng(0.99),
+        force=True,
+        source="manual",
+        infer_fn=infer,
+        style="letter",
+    )
+    assert result["message"] == "What word starting with E means lasting for a very short time?"
+    assert "ephemeral" not in result["message"].lower()
+
+
+def test_cloze_prompt_blanks_the_word(paths):
+    notes, state_path = paths
+    words_cli.save_notes(notes, "", [words_cli.WordItem("beach", "a sandy shore", "active")])
+
+    def infer(_prompt: str) -> str:
+        return "I went to the beach today to see the sand and waves"
+
+    result = words_cli.start_quiz(
+        notes_path=notes,
+        state_path=state_path,
+        moment=evening(),
+        rng=ScriptedRng(0.99),
+        force=True,
+        source="manual",
+        infer_fn=infer,
+        style="cloze",
+    )
+    assert result["message"] == "Fill in the blank: I went to the b____ today to see the sand and waves"
+    assert "beach" not in result["message"].lower()
+
+
+def test_letter_prompt_falls_back_to_the_stored_definition(paths):
+    notes, state_path = paths
+    words_cli.save_notes(notes, "", [words_cli.WordItem("ephemeral", "brief", "active")])
+
+    def infer(_prompt: str) -> str:
+        raise RuntimeError("auth lookup failed")
+
+    result = words_cli.start_quiz(
+        notes_path=notes,
+        state_path=state_path,
+        moment=evening(),
+        rng=ScriptedRng(0.99),
+        force=True,
+        source="manual",
+        infer_fn=infer,
+        style="letter",
+    )
+    assert result["action"] == "asked"
+    assert "brief" in result["message"]
+    assert result["message"].startswith("What's the word?")
+
+
+def test_vocab_word_missing_from_the_deck_can_be_quizzed(paths, tmp_path):
+    notes, state_path = paths
+    words_cli.save_notes(notes, "", [words_cli.WordItem("pragmatic", "practical", "active")])
+    state = words_cli.load_state(state_path)
+    state["words"]["pragmatic"] = {"correct": 1, "last_asked": evening(day=1).isoformat()}
+    words_cli.save_state(state_path, state)
+    vocab_path = tmp_path / "vocab.json"
+    vocab_path.write_text(
+        '[{"name": "catatonic", "times_asked": 0, "times_correct": 0}]\n',
+        encoding="utf-8",
+    )
+
+    def infer(prompt: str) -> str:
+        assert "catatonic" in prompt.lower()
+        return "awake but unable to move or respond"
+
+    result = words_cli.start_quiz(
+        notes_path=notes,
+        state_path=state_path,
+        moment=evening(),
+        rng=ScriptedRng(0.99),
+        force=True,
+        source="manual",
+        infer_fn=infer,
+        vocab_path=vocab_path,
+        style="definition",
+    )
+    assert result["word"] == "catatonic"
+    assert "unable to move" in result["message"]
+    assert "catatonic" not in result["message"].lower()
+    saved = json.loads(vocab_path.read_text(encoding="utf-8"))
+    assert saved[0]["times_asked"] == 1

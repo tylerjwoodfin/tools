@@ -37,4 +37,4 @@ Source of truth: `python3 ~/git/tools/foodlog/main.py`
 1. `/food …` or a reminder reply → plugin `before_agent_reply` → `food_cli.py handle`
 2. Simple `name calories` / `name should be N` is parsed locally (no model)
 3. Freeform meals use `openclaw infer` with the cloud model, then `foodlog`
-4. 7pm `food-log-remind` runs `food_cli.py tick` (isolated command, not the main session)
+4. 7pm `food-log-remind` runs `food_cli.py tick` (isolated command, not the main session). The nudge uses local Gemma, then OpenAI. A plain question is sent if both fail, and the tick still exits 0 so the cron job stays enabled.

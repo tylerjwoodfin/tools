@@ -27,6 +27,34 @@ def test_not_food():
     assert not food_cli.looks_like_food("anyway about that PR")
 
 
+def test_tick_still_nudges_when_the_model_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(food_cli, "PENDING_PATH", tmp_path / "pending")
+    sent = {}
+
+    def boom(_prompt):
+        raise RuntimeError('Auth lookup failed for provider "openai"')
+
+    result = food_cli.cmd_tick(
+        send=True,
+        infer_fn=boom,
+        send_fn=lambda message: sent.setdefault("message", message) or True,
+        status={"total_calories": 0, "entry_count": 0, "submitted": False},
+    )
+    assert result["ok"] is True
+    assert result["action"] == "reminded"
+    assert "eat" in sent["message"].lower()
+
+
+def test_tick_stays_quiet_once_the_day_is_logged(tmp_path, monkeypatch):
+    monkeypatch.setattr(food_cli, "PENDING_PATH", tmp_path / "pending")
+    result = food_cli.cmd_tick(
+        send=False,
+        infer_fn=lambda _prompt: "should not be called",
+        status={"total_calories": 1200, "entry_count": 2, "submitted": False},
+    )
+    assert result["action"] == "skip"
+
+
 class _Proc:
     def __init__(self, code: int, stderr: str = "", stdout: str = ""):
         self.returncode = code
