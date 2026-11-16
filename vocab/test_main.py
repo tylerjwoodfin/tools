@@ -121,7 +121,7 @@ class VocabTests(unittest.TestCase):
                 code = vocab.main([], vocab_path=dest, notes_path=notes, state_path=state)
             self.assertEqual(code, 1)
             printed = "".join(call.args[0] for call in err.write.call_args_list)
-            self.assertIn("Usage: vocab <word>", printed)
+            self.assertIn("Usage: vocab [--list", printed)
 
             code = vocab.main(
                 ["ice", "cream"], vocab_path=dest, notes_path=notes, state_path=state
@@ -131,6 +131,56 @@ class VocabTests(unittest.TestCase):
             self.assertEqual(data[0]["name"], "ice cream")
             self.assertEqual(data[0]["times_asked"], 0)
             self.assertEqual(data[0]["times_correct"], 0)
+
+    def test_list_shows_words_and_counts(self):
+        with TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "vocab.json"
+            notes = Path(tmp) / "missing.md"
+            state = Path(tmp) / "missing-state.json"
+            dest.write_text(
+                json.dumps(
+                    [
+                        {"name": "luminous", "times_asked": 2, "times_correct": 1},
+                        {"name": "nuance", "times_asked": 0, "times_correct": 0},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            with mock.patch("sys.stdout") as out:
+                code = vocab.main(
+                    ["--list"], vocab_path=dest, notes_path=notes, state_path=state
+                )
+            self.assertEqual(code, 0)
+            printed = "".join(call.args[0] for call in out.write.call_args_list)
+            self.assertIn("luminous (asked 2, correct 1)", printed)
+            self.assertIn("nuance (asked 0, correct 0)", printed)
+
+    def test_remove_word_and_reject_missing(self):
+        with TemporaryDirectory() as tmp:
+            dest = Path(tmp) / "vocab.json"
+            notes = Path(tmp) / "missing.md"
+            state = Path(tmp) / "missing-state.json"
+            vocab.main(["luminous"], vocab_path=dest, notes_path=notes, state_path=state)
+            vocab.main(["--add", "nuance"], vocab_path=dest, notes_path=notes, state_path=state)
+
+            code = vocab.main(
+                ["-rm", "Luminous"], vocab_path=dest, notes_path=notes, state_path=state
+            )
+            self.assertEqual(code, 0)
+            names = [entry["name"] for entry in json.loads(dest.read_text(encoding="utf-8"))]
+            self.assertEqual(names, ["nuance"])
+
+            with mock.patch("sys.stderr") as err:
+                code = vocab.main(
+                    ["--rm", "luminous"],
+                    vocab_path=dest,
+                    notes_path=notes,
+                    state_path=state,
+                )
+            self.assertEqual(code, 1)
+            printed = "".join(call.args[0] for call in err.write.call_args_list)
+            self.assertIn("not on the list", printed)
 
     def test_load_rejects_non_array(self):
         with TemporaryDirectory() as tmp:

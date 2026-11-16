@@ -36,8 +36,9 @@ LIST_TARGET = 10
 
 NOTES_PATH = Path.home() / "syncthing/notes/words_to_remember.md"
 STATE_PATH = Path.home() / ".local/share/word-recall/state.json"
+VOCAB_PATH = Path.home() / "syncthing/network/vocab.json"
 OPENCLAW_BIN = Path.home() / "git/tools/openclaw/openclaw-gateway"
-INFER_MODEL = os.environ.get("WORDS_INFER_MODEL", "openai/gpt-5.6-sol")
+INFER_MODEL = os.environ.get("WORDS_INFER_MODEL", "lmstudio/gemma4-26b")
 INFER_TIMEOUT = int(os.environ.get("WORDS_INFER_TIMEOUT", "60"))
 
 ITEM_RE = re.compile(
@@ -252,6 +253,174 @@ def quiz_message(item: WordItem) -> str:
     return f"What's the word?\n\n{item.definition}"
 
 
+def pick_style(rng: random.Random) -> str:
+    """definition, letter, or cloze. High rolls stay on the stored definition."""
+    roll = rng.random()
+    if roll < 1 / 3:
+        return "letter"
+    if roll < 2 / 3:
+        return "cloze"
+    return "definition"
+
+
+def letter_question(word: str, definition: str) -> str:
+    gloss = definition.strip().rstrip(".")
+    return f"What word starting with {word[:1].upper()} means {gloss}?"
+
+
+def cloze_blank(word: str) -> str:
+    if len(word) <= 1:
+        return (word[:1] or "_") + "____"
+    return word[0] + ("_" * (len(word) - 1))
+
+
+def definition_from_model(word: str, infer_fn) -> str:
+    """A one-sentence definition that does not contain the word."""
+    prompt = (
+        f'Write one short definition of the English word "{word}". '
+        "Do not include the word or a form of it. "
+        "Return only the definition, one sentence, no quotes."
+    )
+    raw = infer_fn(prompt).strip().strip('"')
+    line = next((part.strip() for part in raw.splitlines() if part.strip()), "")
+    if word and re.search(rf"\b{re.escape(word)}\b", line, flags=re.IGNORECASE):
+        line = re.sub(rf"\b{re.escape(word)}\b", "this", line, flags=re.IGNORECASE).strip()
+    if not line:
+        raise RuntimeError("empty definition")
+    return line
+
+
+def cloze_from_model(word: str, infer_fn) -> str:
+    """A fill-in-the-blank sentence with the word replaced by its first letter."""
+    blank = cloze_blank(word)
+    prompt = (
+        f'Write one short sentence that uses the word "{word}" exactly once '
+        "and hints at its meaning. "
+        f'Replace that word with "{blank}". '
+        'Return only one line starting with "Fill in the blank: ".'
+    )
+    raw = infer_fn(prompt).strip().strip('"')
+    line = next((part.strip() for part in raw.splitlines() if part.strip()), "")
+    if word and re.search(rf"\b{re.escape(word)}\b", line, flags=re.IGNORECASE):
+        line = re.sub(rf"\b{re.escape(word)}\b", blank, line, count=1, flags=re.IGNORECASE)
+    if line and not line.lower().startswith("fill in the blank"):
+        line = f"Fill in the blank: {line}"
+    if blank not in line:
+        raise RuntimeError("cloze missing blank")
+    return line
+
+
+def prompt_for(item: WordItem, style: str, infer_fn) -> tuple[str, str]:
+    """Return the question text and the definition to reveal after a miss.
+
+    Letter and cloze prompts are written at ask time. If that call fails, the
+    stored definition is used so a quiz still goes out.
+    """
+    stored = item.definition.strip()
+    if style == "definition" and stored:
+        return quiz_message(item), stored
+    try:
+        if style == "cloze":
+            message = cloze_from_model(item.word, infer_fn)
+            definition = stored or definition_from_model(item.word, infer_fn)
+            return message, definition
+        definition = definition_from_model(item.word, infer_fn)
+        if style == "letter":
+            return letter_question(item.word, definition), definition
+        return f"What's the word?\n\n{definition}", definition
+    except Exception:
+        if stored:
+            return quiz_message(item), stored
+        raise
+
+
+def pending_is_current(state: dict, moment: datetime) -> bool:
+    """An unanswered quiz blocks later ticks only until its next window."""
+    pending = state.get("pending")
+    if not isinstance(pending, dict) or not pending.get("word"):
+        return False
+    nxt = parse_iso(state.get("next_proactive_at"))
+    if nxt is not None and moment >= nxt:
+        return False
+    asked = parse_iso(pending.get("asked_at"))
+    if nxt is None and asked is not None and moment - asked >= timedelta(days=MAX_DAYS):
+        return False
+    return True
+
+
+def pending_message(pending: dict) -> str:
+    stored = str(pending.get("prompt") or "").strip()
+    if stored:
+        return stored
+    return quiz_message(
+        WordItem(
+            str(pending.get("word") or ""),
+            str(pending.get("definition") or ""),
+            str(pending.get("section") or "active"),
+        )
+    )
+
+
+def load_vocab_entries(path: Path | None) -> list[dict]:
+    if path is None or not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    entries = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        try:
+            asked = int(item.get("times_asked") or 0)
+            correct = int(item.get("times_correct") or 0)
+        except (TypeError, ValueError):
+            asked, correct = 0, 0
+        entries.append({"name": name, "times_asked": asked, "times_correct": correct})
+    return entries
+
+
+def save_vocab_entries(path: Path, entries: list[dict]) -> None:
+    _atomic_write(path, json.dumps(entries, indent=2, ensure_ascii=False) + "\n")
+
+
+def bump_vocab(path: Path | None, word: str, *, asked: int = 0, correct: int = 0) -> None:
+    """Update times_asked / times_correct when this word is on the vocab list."""
+    entries = load_vocab_entries(path)
+    if not entries or path is None:
+        return
+    key = word.casefold()
+    for entry in entries:
+        if entry["name"].casefold() != key:
+            continue
+        entry["times_asked"] = max(0, entry["times_asked"] + asked)
+        entry["times_correct"] = max(0, entry["times_correct"] + correct)
+        save_vocab_entries(path, entries)
+        return
+
+
+def with_vocab_words(items: list[WordItem], vocab_path: Path | None, state: dict) -> list[WordItem]:
+    """Add vocab.json words that are not already on the markdown deck."""
+    known = {word_key(item.word) for item in items}
+    extra: list[WordItem] = []
+    for entry in load_vocab_entries(vocab_path):
+        key = word_key(entry["name"])
+        if not key or key in known:
+            continue
+        known.add(key)
+        stats = state.get("words", {}).get(key) if isinstance(state.get("words"), dict) else None
+        correct = int(stats.get("correct") or 0) if isinstance(stats, dict) else 0
+        section = "completed" if correct >= CORRECT_TO_COMPLETE else "active"
+        extra.append(WordItem(word=entry["name"], definition="", section=section))
+    return items + extra
+
+
 def record_ask(
     state: dict,
     item: WordItem,
@@ -282,7 +451,7 @@ def schedule_next(state: dict, moment: datetime, rng: random.Random) -> None:
 
 
 def proactive_due(state: dict, moment: datetime) -> bool:
-    if state.get("pending"):
+    if pending_is_current(state, moment):
         return False
     if moment.hour not in ALLOWED_HOURS:
         return False
@@ -305,6 +474,7 @@ def apply_grade(
     guess: str,
     *,
     moment: datetime,
+    vocab_path: Path | None = None,
 ) -> tuple[list[WordItem], str]:
     pending = state.get("pending") or {}
     word = str(pending.get("word") or "")
@@ -329,6 +499,7 @@ def apply_grade(
         stats["last_result"] = "correct"
         stats["correct"] = CORRECT_TO_COMPLETE
         stats["completed_at"] = moment.isoformat()
+        bump_vocab(vocab_path, word, correct=1)
         items.append(WordItem(word=word, definition=definition, section="completed"))
         return items, completed_message(word)
 
@@ -339,6 +510,7 @@ def apply_grade(
 
     stats["last_result"] = "correct"
     stats["last_answered"] = moment.isoformat()
+    bump_vocab(vocab_path, word, correct=1)
     if section == "completed":
         return items, f"Yes — **{word}**."
 
@@ -426,12 +598,38 @@ def _request_auth_watch(error: str) -> None:
     if not script.is_file():
         return
     try:
-        subprocess.run([sys.executable, str(script), "tick"], check=False, timeout=45)
+        subprocess.run(
+            [sys.executable, str(script), "tick"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
     except (OSError, subprocess.TimeoutExpired):
         return
 
 
+def prompt_models() -> list[str]:
+    """Local Gemma first. OpenAI is the fallback when that model is down."""
+    models = [INFER_MODEL]
+    for extra in ("lmstudio/gemma4-26b", "openai/gpt-5.6-sol"):
+        if extra not in models:
+            models.append(extra)
+    return models
+
+
 def infer_text(prompt: str) -> str:
+    errors: list[str] = []
+    for model in prompt_models():
+        try:
+            return _infer_once(prompt, model)
+        except RuntimeError as exc:
+            errors.append(str(exc))
+            _request_auth_watch(str(exc))
+    raise RuntimeError(errors[-1] if errors else "openclaw infer failed")
+
+
+def _infer_once(prompt: str, model: str) -> str:
     binary = str(OPENCLAW_BIN if OPENCLAW_BIN.exists() else "openclaw")
     cmd = [
         binary,
@@ -443,7 +641,7 @@ def infer_text(prompt: str) -> str:
         "--thinking",
         "off",
         "--model",
-        INFER_MODEL,
+        model,
         "--prompt",
         prompt,
     ]
@@ -528,36 +726,39 @@ def start_quiz(
     force: bool,
     source: str,
     infer_fn=infer_text,
+    vocab_path: Path | None = None,
+    style: str | None = None,
 ) -> dict:
     preamble, items = load_notes(notes_path)
     state = load_state(state_path)
     if state.get("pending") and not force:
-        pending = state["pending"]
-        return {
-            "ok": True,
-            "action": "pending",
-            "message": quiz_message(
-                WordItem(pending["word"], pending["definition"], pending.get("section") or "active")
-            ),
-        }
+        if pending_is_current(state, moment):
+            return {
+                "ok": True,
+                "action": "pending",
+                "message": pending_message(state["pending"]),
+            }
+        state["pending"] = None
 
+    pool = with_vocab_words(items, vocab_path, state)
+    chosen_style = style or "definition"
     generated = False
     item: WordItem | None = None
-    chance = generated_pick_chance(len(items))
+    chance = generated_pick_chance(len(pool))
     if chance > 0 and rng.random() < chance:
         try:
-            item = generate_fresh_word(items, infer_fn)
+            item = generate_fresh_word(pool, infer_fn)
             generated = True
         except Exception as exc:  # noqa: BLE001
-            if not items:
+            if not pool:
                 return {"ok": False, "action": "error", "message": f"Could not choose a word: {exc}"}
     if item is None:
-        item = choose_word(items, state, moment=moment, rng=rng, force=force)
-    if item is None and not any(entry.section == "active" for entry in items):
-        if any(entry.section == "completed" for entry in items) and not force:
+        item = choose_word(pool, state, moment=moment, rng=rng, force=force)
+    if item is None and not any(entry.section == "active" for entry in pool):
+        if any(entry.section == "completed" for entry in pool) and not force:
             return {"ok": True, "action": "skip", "message": None}
         try:
-            item = generate_fresh_word(items, infer_fn)
+            item = generate_fresh_word(pool, infer_fn)
         except Exception as exc:  # noqa: BLE001
             _request_auth_watch(str(exc))
             return {"ok": False, "action": "error", "message": f"Could not choose a word: {exc}"}
@@ -565,9 +766,20 @@ def start_quiz(
     if item is None:
         return {"ok": True, "action": "skip", "message": None}
 
+    try:
+        message, definition = prompt_for(item, chosen_style, infer_fn)
+    except Exception as exc:  # noqa: BLE001
+        _request_auth_watch(str(exc))
+        if item.definition.strip():
+            message, definition = quiz_message(item), item.definition
+        else:
+            return {"ok": False, "action": "error", "message": f"Could not write a prompt: {exc}"}
+
+    asked = WordItem(word=item.word, definition=definition, section=item.section)
     if force and state.get("pending"):
         state["pending"] = None
-    record_ask(state, item, moment, source=source, generated=generated)
+    record_ask(state, asked, moment, source=source, generated=generated)
+    state["pending"]["prompt"] = message
     if source == "proactive":
         schedule_next(state, moment, rng)
     elif force:
@@ -575,13 +787,14 @@ def start_quiz(
         earliest = moment + timedelta(days=MIN_DAYS)
         if nxt is None or nxt < earliest:
             state["next_proactive_at"] = earliest.isoformat()
+    bump_vocab(vocab_path, asked.word, asked=1)
     save_notes(notes_path, preamble, items)
     save_state(state_path, state)
     return {
         "ok": True,
         "action": "asked",
-        "message": quiz_message(item),
-        "word": item.word,
+        "message": message,
+        "word": asked.word,
         "generated": generated,
     }
 
@@ -595,6 +808,7 @@ def cmd_handle(
     rng: random.Random | None = None,
     force: bool = False,
     infer_fn=infer_text,
+    vocab_path: Path | None = None,
 ) -> dict:
     moment = moment or now_local()
     rng = rng or random.Random()
@@ -618,6 +832,8 @@ def cmd_handle(
                 force=True,
                 source="manual",
                 infer_fn=infer_fn,
+                vocab_path=vocab_path,
+                style=pick_style(rng),
             )
         if lowered in {"skip", "cancel", "done"}:
             state["pending"] = None
@@ -648,7 +864,7 @@ def cmd_handle(
     if not looks_like_answer(cleaned):
         return {"ok": True, "action": "skip", "message": None}
     preamble, items = load_notes(notes_path)
-    items, message = apply_grade(items, state, cleaned, moment=moment)
+    items, message = apply_grade(items, state, cleaned, moment=moment, vocab_path=vocab_path)
     save_notes(notes_path, preamble, items)
     save_state(state_path, state)
     return {"ok": True, "action": "graded", "message": message}
@@ -663,6 +879,7 @@ def cmd_tick(
     send: bool = True,
     infer_fn=infer_text,
     send_fn=_send_telegram,
+    vocab_path: Path | None = None,
 ) -> dict:
     moment = moment or now_local()
     rng = rng or random.Random()
@@ -677,6 +894,8 @@ def cmd_tick(
         force=False,
         source="proactive",
         infer_fn=infer_fn,
+        vocab_path=vocab_path,
+        style=pick_style(rng),
     )
     if result.get("action") != "asked":
         return result
@@ -684,6 +903,11 @@ def cmd_tick(
     if not send:
         return result
     if not send_fn(message):
+        failed = load_state(state_path)
+        failed["pending"] = None
+        failed.pop("next_proactive_at", None)
+        save_state(state_path, failed)
+        bump_vocab(vocab_path, str(result.get("word") or ""), asked=-1)
         return {"ok": False, "action": "error", "message": None, "error": "telegram send failed"}
     return {"ok": True, "action": "asked", "message": None, "sent": message}
 
@@ -727,6 +951,7 @@ def main(argv: list[str] | None = None) -> int:
             notes_path=args.notes,
             state_path=args.state,
             force=args.force,
+            vocab_path=VOCAB_PATH,
         )
         return _emit(payload, as_json=args.json)
     if args.command == "tick":
@@ -734,6 +959,7 @@ def main(argv: list[str] | None = None) -> int:
             notes_path=args.notes,
             state_path=args.state,
             send=not args.no_send,
+            vocab_path=VOCAB_PATH,
         )
         return _emit(payload, as_json=args.json)
     parser.error(f"unknown command {args.command}")

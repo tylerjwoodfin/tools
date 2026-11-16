@@ -17,7 +17,7 @@
 - [`github/ensure_gh_auth.py`](github/ensure_gh_auth.py) — sync Cabinet `backloggist.github_token` into `gh` auth.
 
 ## Vocab
-- [`vocab/`](vocab/) — `vocab <word>` adds a word to Cherry's list at `~/syncthing/network/vocab.json`.
+- [`vocab/`](vocab/) — `vocab <word>` adds a word, `vocab --list` shows the list, and `vocab -rm <word>` removes one. The list is `~/syncthing/network/vocab.json`.
 
 ## Early bedtime
 - [`bedtime/`](bedtime/) — at noon, if Apple Health sleep last night was under 7 hours and today is not a holiday, send an Early Bedtime reminder and block Pi-hole at 8:30pm.

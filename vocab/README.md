@@ -1,12 +1,15 @@
 # vocab
 
-Add a word to Cherry's vocabulary list.
+Add, list, or remove a word on Cherry's vocabulary list.
 
 ```bash
 vocab luminous
+vocab --add luminous
+vocab --list
+vocab -rm luminous
 ```
 
-That appends `luminous` to `~/syncthing/network/vocab.json` with `times_asked` and `times_correct` set to 0. The file is a JSON array:
+`vocab <word>` and `vocab --add <word>` append the word to `~/syncthing/network/vocab.json` with `times_asked` and `times_correct` set to 0. `vocab --list` prints each word and those counts. `vocab -rm <word>` (also `--rm`) removes it. The file is a JSON array:
 
 ```json
 [
