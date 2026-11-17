@@ -8,11 +8,11 @@ diary_dir: /Users/tyler/syncthing/notes/diary
 #   cabinet -p telegram target <chat_id>
 #   cabinet --telegram "test"
 
+# Unsolicited diary prompts are off. /diary still starts a session.
 proactive:
-  enabled: true
+  enabled: false
   min_days: 3
   max_days: 5
-  # Local hours when proactive prompts may be sent
   allowed_hours: [17, 18, 19, 20, 21]
 
 inactivity_timeout_hours: 3

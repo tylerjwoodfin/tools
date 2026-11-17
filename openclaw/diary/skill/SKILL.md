@@ -1,6 +1,6 @@
 ---
 name: diary
-description: Conversational Telegram diary via diary-llm. Use for /diary, active diary sessions, proactive journaling, and finishing entries. Never treat normal chats as diary entries.
+description: Conversational Telegram diary via diary-llm. Use for /diary, active diary sessions, and finishing entries. Never send unsolicited diary prompts or treat normal chats as diary entries.
 user-invocable: false
 metadata:
   {
@@ -23,6 +23,7 @@ Conversational journaling is handled **only** by the `diary-llm` CLI / OpenClaw 
 - If tools are unavailable, say so plainly. Do **not** pretend the file was written.
 - Normal Telegram chats are not diary sessions.
 - Prefer `/diary` (plugin command). Do not freehand journal replies in the main agent turn.
+- Do not send unsolicited diary prompts. `/diary` is the only way a session starts.
 
 ## Commands
 

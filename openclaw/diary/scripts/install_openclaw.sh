@@ -44,6 +44,24 @@ if "min_days: 2\n" in text and "max_days: 4\n" in text:
     text = text.replace("min_days: 2\n", "min_days: 3\n").replace("max_days: 4\n", "max_days: 5\n")
     p.write_text(text)
     print(f"Updated proactive cadence to 3–5 days in {p}")
+changed = False
+out = []
+in_proactive = False
+for line in text.splitlines(keepends=True):
+    stripped = line.lstrip()
+    if line.startswith("proactive:"):
+        in_proactive = True
+    elif in_proactive and stripped and not line[0].isspace() and not stripped.startswith("#"):
+        in_proactive = False
+    if in_proactive and stripped.startswith("enabled:") and "true" in stripped.split(":", 1)[1]:
+        indent = line[: len(line) - len(stripped)]
+        newline = "\n" if line.endswith("\n") else ""
+        line = f"{indent}enabled: false{newline}"
+        changed = True
+    out.append(line)
+if changed:
+    p.write_text("".join(out))
+    print(f"Disabled unsolicited diary prompts in {p}")
 PY
 fi
 
@@ -124,7 +142,7 @@ PY
 
   "${OPENCLAW}" cron add \
     --name "diary-llm-tick" \
-    --description "Finalize inactive diary sessions and maybe send a proactive diary prompt" \
+    --description "Finalize inactive diary sessions" \
     --cron "${TICK_CRON}" \
     --tz "America/Los_Angeles" \
     --command "${VENV}/bin/diary-llm --config ${CONFIG_PATH} tick" \

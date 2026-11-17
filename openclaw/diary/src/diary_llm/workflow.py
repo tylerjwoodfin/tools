@@ -16,12 +16,10 @@ from .llm import (
     generate_entry,
     generate_followup,
     generate_parting_words,
-    generate_personalized_prompt,
 )
-from .models import DiarySession, utc_now, utc_now_iso
+from .models import DiarySession, utc_now
 from .prompts import (
     PromptTemplate,
-    choose_next_proactive_delay_days,
     format_opening,
     load_prompt_history,
     parse_iso,
@@ -107,6 +105,8 @@ class DiaryWorkflow:
         return self._start(origin="manual", prompt_text=prompt_text, send=False)
 
     def start_proactive(self, *, force: bool = False, send: bool = True) -> ActionResult:
+        """Unsolicited diary prompts are removed. ``force`` and ``send`` are ignored."""
+        del force, send
         if self.store.get_active():
             return ActionResult(
                 ok=True,
@@ -114,31 +114,12 @@ class DiaryWorkflow:
                 message="Active diary session exists; skipping proactive prompt.",
                 details={"reason": "active_session"},
             )
-        if not self.cfg.proactive.enabled and not force:
-            return ActionResult(
-                ok=True,
-                action="skip",
-                message="Proactive diary prompts disabled.",
-                details={"reason": "disabled"},
-            )
-        if not force and not self._proactive_due():
-            return ActionResult(
-                ok=True,
-                action="skip",
-                message="Proactive prompt not due yet.",
-                details={"reason": "not_due"},
-            )
-        if not force and not self._within_allowed_hours():
-            return ActionResult(
-                ok=True,
-                action="skip",
-                message="Outside allowed prompt hours.",
-                details={"reason": "outside_hours"},
-            )
-        result = self._start(origin="proactive", send=send)
-        if result.ok and result.action == "started":
-            self._mark_proactive_sent()
-        return result
+        return ActionResult(
+            ok=True,
+            action="skip",
+            message="Proactive diary prompts disabled.",
+            details={"reason": "disabled"},
+        )
 
     def handle_user_message(self, text: str) -> ActionResult:
         text = sanitize_user_text(text)
@@ -314,9 +295,6 @@ class DiaryWorkflow:
         template: PromptTemplate | None = None
         opening = prompt_text
 
-        if not opening and origin == "proactive" and self.rng.random() < 0.25:
-            opening = self._maybe_personalized_prompt(history)
-
         if not opening:
             template = select_library_prompt(history, rng=self.rng)
             opening = format_opening(template.text)
@@ -326,20 +304,6 @@ class DiaryWorkflow:
                 limit=self.cfg.history.recent_prompt_limit,
             )
             save_prompt_history(self.cfg.prompt_history_path, history)
-        elif template is None and origin == "proactive":
-            # Personalized / custom prompts still get recorded as used text ids.
-            fake = PromptTemplate(
-                id=f"custom-{self.now_fn().strftime('%Y%m%d%H%M%S')}",
-                category="retrospective",
-                text=opening,
-            )
-            history = record_prompt_use(
-                history,
-                fake,
-                limit=self.cfg.history.recent_prompt_limit,
-            )
-            save_prompt_history(self.cfg.prompt_history_path, history)
-            template = fake
 
         session = DiarySession.create(
             initial_prompt=opening,
@@ -371,26 +335,6 @@ class DiaryWorkflow:
             details={"origin": origin},
         )
 
-    def _maybe_personalized_prompt(self, history) -> str | None:
-        recent = [e.text for e in self.history.recent(self.cfg.history.recent_entries)]
-        topic = []
-        if recent:
-            # Use keywords from the newest entry for a light topical pull.
-            topic = [
-                e.text
-                for e in self.history.search(recent[0][:200], self.cfg.history.topic_entries)
-            ]
-        recent_prompts = history.recent_ids[:]
-        text = generate_personalized_prompt(
-            self.llm,
-            recent_entries=recent,
-            topic_entries=topic,
-            recent_prompts=recent_prompts,
-        )
-        if not text:
-            return None
-        return format_opening(text)
-
     def _local_now(self) -> datetime:
         now = self.now_fn()
         if now.tzinfo is None:
@@ -399,40 +343,6 @@ class DiaryWorkflow:
             return now.astimezone(ZoneInfo(self.cfg.timezone))
         except Exception:
             return now.astimezone()
-
-    def _within_allowed_hours(self) -> bool:
-        hour = self._local_now().hour
-        return hour in set(self.cfg.proactive.allowed_hours)
-
-    def _proactive_due(self) -> bool:
-        history = load_prompt_history(self.cfg.prompt_history_path)
-        next_after = parse_iso(history.next_eligible_after)
-        if next_after and self.now_fn() < next_after:
-            return False
-        if not history.last_proactive_at and not next_after:
-            # First run: allow, but only inside allowed hours (checked separately).
-            return True
-        last = parse_iso(history.last_proactive_at)
-        if not last:
-            return True
-        min_delta = timedelta(days=self.cfg.proactive.min_days)
-        return self.now_fn() - last >= min_delta
-
-    def _mark_proactive_sent(self) -> None:
-        history = load_prompt_history(self.cfg.prompt_history_path)
-        now = self.now_fn()
-        history.last_proactive_at = now.isoformat()
-        delay_days = choose_next_proactive_delay_days(self.cfg, self.rng)
-        history.next_eligible_after = (now + timedelta(days=delay_days)).isoformat()
-        save_prompt_history(self.cfg.prompt_history_path, history)
-        atomic_scheduler = {
-            "last_proactive_at": history.last_proactive_at,
-            "next_eligible_after": history.next_eligible_after,
-            "updated_at": utc_now_iso(),
-        }
-        from .atomic import atomic_write_json
-
-        atomic_write_json(self.cfg.scheduler_state_path, atomic_scheduler)
 
 
 def result_json(results: ActionResult | list[ActionResult]) -> str:
