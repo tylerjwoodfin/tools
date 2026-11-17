@@ -150,13 +150,12 @@ def test_proactive_skipped_when_active(workflow: DiaryWorkflow):
     assert len(workflow.sender.sent) == 0
 
 
-def test_proactive_sends_when_due(workflow: DiaryWorkflow):
+def test_proactive_never_sends(workflow: DiaryWorkflow):
     result = workflow.start_proactive(force=True, send=True)
-    assert result.action == "started"
-    assert result.message
-    assert workflow.sender.sent[-1] == result.message
-    assert workflow.status()["active"] is True
-    assert workflow.status()["origin"] == "proactive"
+    assert result.action == "skip"
+    assert result.details["reason"] == "disabled"
+    assert workflow.sender.sent == []
+    assert workflow.status()["active"] is False
 
 
 def test_avoid_recently_used_prompts(tmp_cfg):
@@ -219,7 +218,7 @@ def test_cli_tick_stays_quiet_when_diary_volume_is_unmounted(tmp_path: Path, cap
 def test_cli_tick_is_silent_when_nothing_to_announce(config_file: Path, capsys):
     from diary_llm.cli import main
 
-    # Default stub tick: no active session to finalize; proactive may start or skip.
+    # Default stub tick: nothing to finalize, and no unsolicited prompt.
     # With send enabled (default), stdout must be NO_REPLY so cron --announce stays quiet.
     code = main(["--config", str(config_file), "--stub-llm", "--dry-run", "tick"])
     captured = capsys.readouterr()
@@ -255,12 +254,14 @@ def test_cli_start_reply_done(config_file: Path, tmp_path: Path):
     assert convs
 
 
-def test_tick_finalizes_then_can_prompt(workflow: DiaryWorkflow, fixed_now):
+def test_tick_finalizes_without_a_new_prompt(workflow: DiaryWorkflow, fixed_now):
     workflow.start_manual(prompt_text="Random question: what changed?")
     workflow.handle_user_message("A few things at work.")
     fixed_now.set(fixed_now() + timedelta(hours=5))
     results = workflow.tick(send=True)
     actions = [r.action for r in results]
     assert "finalized" in actions
-    # After finalize, proactive may start a new session
-    assert any(a in {"started", "skip"} for a in actions)
+    assert "started" not in actions
+    skip = next(r for r in results if r.action == "skip")
+    assert skip.details["reason"] == "disabled"
+    assert workflow.status()["active"] is False

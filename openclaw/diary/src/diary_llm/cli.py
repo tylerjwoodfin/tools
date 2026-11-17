@@ -66,7 +66,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     tick = sub.add_parser(
         "tick",
-        help="Finalize inactive sessions and maybe send a proactive prompt",
+        help="Finalize inactive diary sessions",
     )
     tick.add_argument(
         "--no-send",
@@ -76,10 +76,10 @@ def build_parser() -> argparse.ArgumentParser:
     tick.add_argument(
         "--force-proactive",
         action="store_true",
-        help="Ignore cadence/hours gates for proactive prompt",
+        help="Ignored. Unsolicited diary prompts are disabled",
     )
 
-    proactive = sub.add_parser("proactive", help="Attempt a proactive diary prompt")
+    proactive = sub.add_parser("proactive", help="No-op. Unsolicited diary prompts are disabled")
     proactive.add_argument("--force", action="store_true")
     proactive.add_argument("--no-send", action="store_true")
 
@@ -142,12 +142,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if result.ok else 1
 
     if args.command == "tick":
-        if args.force_proactive:
-            timed = wf.finalize_if_inactive(send=not args.no_send)
-            results = [timed] if timed else []
-            results.append(wf.start_proactive(force=True, send=not args.no_send))
-        else:
-            results = wf.tick(send=not args.no_send)
+        results = wf.tick(send=not args.no_send)
         results = [r for r in results if r is not None]
 
         if args.json:

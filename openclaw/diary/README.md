@@ -1,6 +1,6 @@
 # diary-llm
 
-Conversational AI diary for [OpenClaw](https://docs.openclaw.ai): natural Telegram journaling, proactive reflection prompts every few days, and Markdown diary entries.
+Conversational AI diary for [OpenClaw](https://docs.openclaw.ai): natural Telegram journaling and Markdown diary entries. Cherry does not send unsolicited diary prompts.
 
 ## What it does
 
@@ -9,7 +9,7 @@ Conversational AI diary for [OpenClaw](https://docs.openclaw.ai): natural Telegr
 - `/diary done` finishes early; inactivity (~3h, configurable) finalizes automatically
 - Sessions become first-person Markdown under `syncthing/notes/diary/YYYY/MM/`
 - Raw transcripts are kept in `diary/conversations/<session-id>.json`
-- Cron tick sends non-generic prompts every ~3–5 days during evening hours
+- Cron tick finalizes sessions that have gone quiet. It does not start a new one
 - Normal OpenClaw chats are never treated as diary entries unless a session is active
 
 ## Install
@@ -51,7 +51,7 @@ See `config.example.yaml`. Important knobs:
 | --- | --- |
 | `diary_dir` | Markdown diary root |
 | Cabinet `telegram.target` | Telegram chat id (`cabinet -p telegram target …`) |
-| `proactive.*` | Cadence + allowed hours |
+| `proactive.enabled` | Kept for old configs. Unsolicited prompts stay off |
 | `inactivity_timeout_hours` | Auto-finalize window |
 | `history.*` | How much prior diary context to feed the LLM |
 | `llm.*` | Model backend (`openai`, `openclaw`, or `stub`) |
