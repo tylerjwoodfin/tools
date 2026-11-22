@@ -2,13 +2,14 @@
 """Early bedtime when last night's sleep was under 7 hours.
 
 At noon, an iPhone shortcut reads Apple Health and calls ``check``. When the
-asleep time from 6pm yesterday through noon is under 7 hours, and today is not
-in ``cabinet -g holidays``, this sends a RemindMail named Early Bedtime and
-arms 8:30pm. At 8:30pm, ``apply`` blocks the Pi-hole afternoon list (the same
-list as the 9:30pm cron) and asks Cherry to remind Tyler to be in bed by 10.
+asleep time from 6pm yesterday through noon is under 7 hours, this sends a
+RemindMail named Early Bedtime and arms 8:30pm. At 8:30pm, ``apply`` blocks the
+Pi-hole afternoon list (the same list as the 9:30pm cron) and asks Cherry to
+remind Tyler to be in bed by 10pm, or 11pm when tomorrow is a Saturday, Sunday,
+or in ``cabinet -g holidays``.
 
 No sleep samples means the watch did not report a night, so the protocol stays
-off. A holiday today clears an arm set earlier the same day.
+off.
 """
 
 from __future__ import annotations
@@ -19,17 +20,15 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 THRESHOLD_HOURS = 7.0
 WINDOW_HOURS = 18
 BLOCK_MODE = "afternoon"
 REMIND_TITLE = "Early Bedtime"
-CHERRY_MESSAGE = (
-    "Early bedtime tonight. Pi-hole is blocking now. "
-    "Start winding down so you can be in bed by 10."
-)
+WEEKDAY_BEDTIME = 22
+DAY_OFF_BEDTIME = 23
 DOWNTIME = Path(__file__).resolve().parent.parent / "pihole" / "downtime.py"
 
 ASLEEP_KEYS = {
@@ -42,6 +41,8 @@ ASLEEP_KEYS = {
     "deep",
     "rem",
 }
+STAGE_KEYS = {"core", "deep", "rem", "asleepcore", "asleepdeep", "asleeprem"}
+LIST_HEADERS = ("VALUES", "STARTS", "ENDS")
 
 
 @dataclass(frozen=True)
@@ -128,6 +129,34 @@ def parse_samples(text: str, tz) -> list[Sample]:
     return samples
 
 
+def parse_lists(text: str, tz) -> list[Sample]:
+    """Parse the shortcut's three parallel lists of values, starts, and ends.
+
+    Raises ValueError for input that would give a wrong total.
+    """
+    lists: dict[str, list[str]] = {header: [] for header in LIST_HEADERS}
+    current = None
+    for line in text.splitlines():
+        item = line.strip()
+        if item in lists:
+            current = item
+        elif item and current:
+            lists[current].append(item)
+    values, starts, ends = (lists[header] for header in LIST_HEADERS)
+    if not len(values) == len(starts) == len(ends):
+        raise ValueError(
+            f"got {len(values)} values, {len(starts)} starts, {len(ends)} ends"
+        )
+    samples: list[Sample] = []
+    for value, raw_start, raw_end in zip(values, starts, ends):
+        start, end = parse_dt(raw_start, tz), parse_dt(raw_end, tz)
+        if start is None or end is None or "T" not in raw_start or "T" not in raw_end:
+            raise ValueError(f"expected a date and time, got {raw_start!r}, {raw_end!r}")
+        if end > start:
+            samples.append(Sample(value, start, end))
+    return samples
+
+
 def night_window(now: datetime) -> tuple[datetime, datetime]:
     """Yesterday 6pm through today noon, in ``now``'s timezone."""
     if now.tzinfo is None:
@@ -190,11 +219,13 @@ def _hours(intervals: list[tuple[datetime, datetime]]) -> float:
 def sleep_hours(samples: list[Sample], now: datetime) -> float | None:
     """Hours asleep in the previous-night window.
 
-    Stage samples are unioned so a second source does not double-count.
+    Like the Watch's Time Asleep, Core + Deep + REM wins over a plain Asleep
+    from another source. Overlaps are unioned so nothing double-counts.
     With no stages, time asleep is in-bed minus awake. None means no samples
     landed in the window.
     """
     window_start, window_end = night_window(now)
+    stages: list[tuple[datetime, datetime]] = []
     asleep: list[tuple[datetime, datetime]] = []
     inbed: list[tuple[datetime, datetime]] = []
     awake: list[tuple[datetime, datetime]] = []
@@ -205,10 +236,14 @@ def sleep_hours(samples: list[Sample], now: datetime) -> float | None:
         group = kind(sample.value)
         if group == "asleep":
             asleep.append(interval)
+            if re.sub(r"[^a-z]", "", sample.value.casefold()) in STAGE_KEYS:
+                stages.append(interval)
         elif group == "inbed":
             inbed.append(interval)
         elif group == "awake":
             awake.append(interval)
+    if stages:
+        return _hours(_union(stages))
     if asleep:
         return _hours(_union(asleep))
     if inbed:
@@ -227,13 +262,6 @@ def plan_check(
     """Decide the noon outcome. ``holidays`` None means the list could not be read."""
     if holidays is None:
         return CheckPlan("holiday-unknown", state, False, hours)
-    if today in holidays:
-        cleared = state
-        if state.early_date == today:
-            cleared = replace(state, early_date="", blocked="", cherry="")
-        if hours is not None:
-            cleared = replace(cleared, sleep_hours=f"{hours:.2f}")
-        return CheckPlan("holiday", cleared, False, hours)
     if hours is None:
         return CheckPlan("no-data", state, False, None)
 
@@ -257,28 +285,70 @@ def state_before_remind(previous: State, plan: CheckPlan) -> State:
 
 
 def plan_apply(state: State, today: str, holidays: list[str] | None) -> ApplyPlan:
-    """8:30pm actions. Unknown or matching holidays do nothing."""
-    if holidays is None or today in holidays or state.early_date != today:
+    """8:30pm actions. An unreadable holiday list does nothing."""
+    if holidays is None or state.early_date != today:
         return ApplyPlan(False, False)
     return ApplyPlan(state.blocked != today, state.cherry != today)
 
 
+def bedtime_hour(today: str, holidays: list[str]) -> int:
+    """11pm before a day off (Saturday, Sunday, or a holiday), else 10pm."""
+    tomorrow = date.fromisoformat(today) + timedelta(days=1)
+    if tomorrow.weekday() >= 5 or tomorrow.isoformat() in holidays:
+        return DAY_OFF_BEDTIME
+    return WEEKDAY_BEDTIME
+
+
+def clock(hour: int) -> str:
+    """``22`` -> ``10pm``."""
+    return f"{hour - 12}pm"
+
+
+def cherry_message(hour: int) -> str:
+    """The 8:30pm Telegram nudge."""
+    return (
+        "Early bedtime tonight. Pi-hole is blocking now. "
+        f"Start winding down so you can be in bed by {clock(hour)}."
+    )
+
+
+def format_duration(hours: float) -> str:
+    """``6h 12m``. Rounds down, so 6.999 hours never reads as 7h."""
+    whole, minutes = divmod(int(hours * 60 + 1e-6), 60)
+    return f"{whole}h {minutes}m"
+
+
+def check_message(plan: CheckPlan, hour: int = WEEKDAY_BEDTIME) -> str:
+    """The text the shortcut shows as a notification."""
+    if plan.hours is None:
+        slept = "No sleep found for last night"
+    else:
+        slept = f"Slept {format_duration(plan.hours)}"
+    result = {
+        "early": f"Early bedtime tonight, in bed by {clock(hour)}",
+        "normal": "Normal bedtime",
+        "holiday-unknown": "Could not read holidays, so nothing changed",
+        "no-data": "Nothing changed",
+    }[plan.outcome]
+    return f"{slept}. {result}."
+
+
 def status_label(state: State, today: str, holidays: list[str] | None) -> str:
-    """``early`` only when today is armed and is not a holiday."""
-    if holidays is None or today in holidays:
+    """``early`` only when today is armed and the holiday list could be read."""
+    if holidays is None:
         return "normal"
     if state.early_date == today:
         return "early"
     return "normal"
 
 
-def remind_notes(hours: float) -> str:
+def remind_notes(hours: float, hour: int = WEEKDAY_BEDTIME) -> str:
     """Body of the noon Early Bedtime email."""
     shown = f"{hours:.1f}"
     return (
         f"You slept {shown} hours last night, under 7.<br>"
         "Pi-hole blocks at 8:30pm instead of 9:30pm.<br>"
-        "Cherry will remind you at 8:30pm to prepare for a 10pm bedtime."
+        f"Cherry will remind you at 8:30pm to prepare for a {clock(hour)} bedtime."
     )
 
 
@@ -342,10 +412,12 @@ def load_holidays(cab) -> list[str] | None:
     return [str(item) for item in holidays]
 
 
-def send_early_bedtime_reminder(hours: float) -> None:
+def send_early_bedtime_reminder(hours: float, hour: int) -> None:
     """Send the Early Bedtime email now, through RemindMail."""
-    notes = remind_notes(hours)
-    remind = shutil.which("remind")
+    notes = remind_notes(hours, hour)
+    # The phone's SSH session does not have ~/.local/bin on its PATH.
+    local = Path.home() / ".local" / "bin" / "remind"
+    remind = shutil.which("remind") or shutil.which(str(local))
     if remind:
         command = [
             remind,
@@ -377,16 +449,19 @@ def send_early_bedtime_reminder(hours: float) -> None:
     subprocess.run(command, check=True)
 
 
-def send_cherry() -> None:
+def send_cherry(hour: int) -> None:
     """Send the 8:30pm Telegram nudge on Cherry's chat."""
     from cabinet import telegram
 
-    if not telegram(CHERRY_MESSAGE, is_quiet=True):
+    if not telegram(cherry_message(hour), is_quiet=True):
         raise RuntimeError("Cherry reminder failed")
 
 
 def block_pihole() -> None:
-    """Block the 9:30pm distraction list. Today's holiday was already checked."""
+    """Block the 9:30pm distraction list.
+
+    ``--force`` skips downtime's own check, which never blocks before a holiday.
+    """
     subprocess.run(
         [sys.executable, str(DOWNTIME), "block", BLOCK_MODE, "--force"],
         check=True,
@@ -420,7 +495,11 @@ def parse_hours_arg(raw: str) -> float:
 
 def hours_from_text(text: str, now: datetime) -> float | None:
     """Sleep hours for sample lines, using ``now`` as the noon reference."""
-    return sleep_hours(parse_samples(text, now.tzinfo), now)
+    if LIST_HEADERS[0] in text.splitlines():
+        samples = parse_lists(text, now.tzinfo)
+    else:
+        samples = parse_samples(text, now.tzinfo)
+    return sleep_hours(samples, now)
 
 
 def cmd_check(hours: float | None, dry_run: bool) -> int:
@@ -430,8 +509,8 @@ def cmd_check(hours: float | None, dry_run: bool) -> int:
     previous = load_state(cab)
     today = _today()
     plan = plan_check(previous, today, hours, holidays)
-    shown = "-" if plan.hours is None else f"{plan.hours:.2f}"
-    print(f"{plan.outcome} {shown}")
+    hour = bedtime_hour(today, holidays or [])
+    print(check_message(plan, hour), flush=True)
     if dry_run:
         return 0
     save_state(cab, state_before_remind(previous, plan))
@@ -440,7 +519,7 @@ def cmd_check(hours: float | None, dry_run: bool) -> int:
             print("reminder skipped: no sleep hours", file=sys.stderr)
             return 1
         try:
-            send_early_bedtime_reminder(plan.hours)
+            send_early_bedtime_reminder(plan.hours, hour)
         except (OSError, subprocess.CalledProcessError) as exc:
             print(f"reminder failed: {exc}", file=sys.stderr)
             return 1
@@ -474,7 +553,7 @@ def cmd_apply(dry_run: bool) -> int:
         save_block()
     if plan.cherry:
         try:
-            send_cherry()
+            send_cherry(bedtime_hour(today, holidays or []))
         except Exception as exc:  # cabinet/telegram failures are not one type
             print(f"cherry failed: {exc}", file=sys.stderr)
             return 1
@@ -492,7 +571,7 @@ def cmd_status() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry. ``check`` reads sample lines on stdin unless ``--hours`` is set."""
+    """CLI entry. ``check`` reads sleep samples on stdin unless ``--hours`` is set."""
     parser = argparse.ArgumentParser(description="Early bedtime protocol")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -522,7 +601,12 @@ def main(argv: list[str] | None = None) -> int:
         print("Pass --hours or sample lines on stdin.", file=sys.stderr)
         return 2
     else:
-        hours = hours_from_text(sys.stdin.read(), _now())
+        try:
+            hours = hours_from_text(sys.stdin.read(), _now())
+        except ValueError as exc:
+            # stdout and exit 0, so the phone's notification shows the problem
+            print(f"Sleep check failed: {exc}. Nothing changed.")
+            return 0
     return cmd_check(hours, args.dry_run)
 
 
