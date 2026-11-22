@@ -255,22 +255,47 @@ class PiHoleDowntime:
             self.cabinet.log(f"Error reading blocklist file: {e}", level="error")
             return []
 
-    def execute_pihole_command(self, command: List[str]) -> bool:
+    def execute_pihole_command(
+        self, command: List[str], timeout: int = 60
+    ) -> bool:
         """
         Execute a Pi-hole command via Docker.
 
+        Pi-hole v6 authenticates CLI list changes via /etc/pihole/cli_pw (created on
+        FTL start). Without it, ``pihole --wild`` prompts forever and hangs cron jobs.
+
         Args:
             command: List of command arguments
+            timeout: Seconds before treating the command as stuck
 
         Returns:
             bool: True if command succeeded, False otherwise
         """
         try:
             docker_cmd = ["docker", "exec", "pihole"] + command
-            subprocess.run(docker_cmd, capture_output=True, text=True, check=True)
+            subprocess.run(
+                docker_cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=timeout,
+            )
             return True
+        except subprocess.TimeoutExpired:
+            msg = (
+                f"Pi-hole command timed out after {timeout}s: {' '.join(command)}. "
+                "If this persists, restart the pihole container so /etc/pihole/cli_pw "
+                "is regenerated (required for non-interactive v6 CLI auth)."
+            )
+            print(msg)
+            self.cabinet.log(msg, level="error")
+            return False
         except subprocess.CalledProcessError as e:
-            self.cabinet.log(f"Pi-hole command failed: {e}", level="error")
+            err = (e.stderr or e.stdout or "").strip()
+            self.cabinet.log(
+                f"Pi-hole command failed: {e}" + (f" — {err}" if err else ""),
+                level="error",
+            )
             return False
 
     def cleanup_scheduled_jobs(self, mode: str):
@@ -330,11 +355,10 @@ class PiHoleDowntime:
             print("Error: No domains found in blocklist file")
             sys.exit(1)
 
-        for domain in domains:
-            print(f"Unblocking: {domain}")
-            # Remove regex and wildcard entries
-            self.execute_pihole_command(["pihole", "--regex", "-d", domain])
-            self.execute_pihole_command(["pihole", "--wild", "-d", domain])
+        print(f"Unblocking {len(domains)} domain(s)")
+        # Batch removals — one API login per command instead of per domain
+        self.execute_pihole_command(["pihole", "--regex", "-d", *domains])
+        self.execute_pihole_command(["pihole", "--wild", "-d", *domains])
 
     def block_domains(self, mode: str, force: bool = False):
         """
@@ -362,9 +386,10 @@ class PiHoleDowntime:
             print("Error: No domains found in blocklist file")
             sys.exit(1)
 
-        for domain in domains:
-            print(f"Blocking: {domain}")
-            self.execute_pihole_command(["pihole", "--wild", domain])
+        print(f"Blocking {len(domains)} domain(s)")
+        # Batch adds — avoids N serial API logins (and N hangs if cli_pw is missing)
+        if not self.execute_pihole_command(["pihole", "--wild", *domains]):
+            sys.exit(1)
 
     def run(self, action: str, mode: str, force: bool = False):
         """

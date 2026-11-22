@@ -2351,12 +2351,16 @@ IMPORTANT: The array size must exactly match the number of songs provided or the
             config = self._get_oauth_config()
             redirect_port = config["redirect_port"]
             has_cache = self._oauth_cache_exists(config["cache_path"])
-            needs_browser_auth = not has_cache and self._should_open_browser()
 
-            if needs_browser_auth and not self._require_interactive_terminal(
+            # Cron/headless with no token cache cannot complete OAuth; fail clearly
+            # instead of prompting on an empty stdin ("No redirect URL provided").
+            if not has_cache and not self._require_interactive_terminal(
                 "OAuth authorization"
             ):
+                self.cab.log(REAUTHORIZE_MESSAGE, level="error")
                 raise SpotifyReauthorizationRequired(REAUTHORIZE_MESSAGE)
+
+            needs_browser_auth = not has_cache and self._should_open_browser()
 
             if self._should_open_browser():
                 self._prepare_oauth_port(redirect_port)
