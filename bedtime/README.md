@@ -1,10 +1,10 @@
 # Early bedtime
 
-If Apple Health shows less than 7 hours asleep from 6pm yesterday through noon, and today is not in `cabinet -g holidays`:
+If Apple Health shows less than 7 hours asleep from 6pm yesterday through noon:
 
 - RemindMail sends **Early Bedtime** at noon.
 - At 8:30pm, Pi-hole runs `downtime.py block afternoon --force` (the same YouTube/Roblox list as the 9:30pm cron).
-- Cherry sends a Telegram reminder at 8:30pm to be in bed by 10.
+- Cherry sends a Telegram reminder at 8:30pm to be in bed by 10pm, or by 11pm when tomorrow is a Saturday, Sunday, or in `cabinet -g holidays`.
 - Do Not Disturb turns on at 8:30pm when the shortcut below runs.
 
 A night with no sleep samples does not arm the protocol. The 9:30pm cron still runs on its usual days.
@@ -26,7 +26,7 @@ The `if` keeps the job quiet until the file is present.
 - **Early Bedtime Check** — personal automation, every day at 12:00pm, run immediately. Allow Shortcuts to read Sleep in Health.
 - **Early Bedtime Do Not Disturb** — personal automation, every day at 8:30pm, run immediately.
 
-The check shortcut SSHes to cloud (`192.168.1.101` port `62561`), the same host as Daily food log. It sends each sleep sample as `value<TAB>start<TAB>end`.
+The check shortcut SSHes to cloud (`192.168.1.101` port `62561`), the same host as Daily food log. It has three actions and no loop: find sleep since yesterday, send it as `VALUES`, `STARTS`, and `ENDS` lists, and show the reply (for example `Slept 6h 12m. Early bedtime tonight.`). Cloud adds up Core, Deep, and REM and saves the total in `cabinet -g bedtime sleep_hours`.
 
 After the Do Not Disturb shortcut is in the local Shortcuts library, the Mac can run it at 8:30pm. Focus has to be shared across devices for that to change the phone.
 

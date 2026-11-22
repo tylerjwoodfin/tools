@@ -77,6 +77,33 @@ class SleepHoursTests(unittest.TestCase):
         text = "nope\nCore\tnot-a-date\t2026-10-21T01:00:00-07:00\n"
         self.assertEqual(bedtime.parse_samples(text, PT), [])
 
+    def test_stages_win_over_another_apps_asleep(self):
+        samples = [sample("Asleep", at(22, day=20), at(8)), sample("Core", at(0), at(6))]
+        self.assertAlmostEqual(bedtime.sleep_hours(samples, NOW), 6.0)
+
+    def test_shortcut_lists(self):
+        text = (
+            "VALUES\nCore\nAwake\nREM\n"
+            "STARTS\n2026-10-21T00:00:00-07:00\n2026-10-21T03:00:00-07:00\n2026-10-21T04:00:00-07:00\n"
+            "ENDS\n2026-10-21T03:00:00-07:00\n2026-10-21T04:00:00-07:00\n2026-10-21T06:30:00-07:00\n"
+        )
+        self.assertAlmostEqual(bedtime.hours_from_text(text, NOW), 5.5)
+
+    def test_empty_lists_are_no_data(self):
+        self.assertIsNone(bedtime.hours_from_text("VALUES\n\nSTARTS\n\nENDS\n\n", NOW))
+
+    def test_uneven_lists_and_missing_times_are_rejected(self):
+        for text in (
+            "VALUES\nCore\nDeep\nSTARTS\n2026-10-21T01:00:00-07:00\nENDS\n",
+            "VALUES\nCore\nSTARTS\n2026-10-20\nENDS\n2026-10-21\n",
+        ):
+            with self.assertRaises(ValueError):
+                bedtime.hours_from_text(text, NOW)
+
+    def test_duration_never_rounds_up_to_seven(self):
+        self.assertEqual(bedtime.format_duration(6.999), "6h 59m")
+        self.assertEqual(bedtime.format_duration(6.2), "6h 12m")
+
 
 class PlanTests(unittest.TestCase):
     def test_short_night_arms_and_sends_once(self):
@@ -106,12 +133,31 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(plan.state.cherry, "")
         self.assertEqual(plan.state.reminded, TODAY)
 
-    def test_holiday_skips_and_disarms(self):
-        armed = bedtime.State(early_date=TODAY, reminded=TODAY)
-        plan = bedtime.plan_check(armed, TODAY, 4.0, [TODAY])
-        self.assertEqual(plan.outcome, "holiday")
-        self.assertFalse(plan.send_remind)
-        self.assertEqual(plan.state.early_date, "")
+    def test_holiday_still_arms(self):
+        plan = bedtime.plan_check(bedtime.State(), TODAY, 4.0, [TODAY])
+        self.assertEqual(plan.outcome, "early")
+        self.assertTrue(plan.send_remind)
+        self.assertEqual(plan.state.early_date, TODAY)
+
+    def test_eleven_before_a_day_off(self):
+        # 2026-10-21 is a Wednesday.
+        cases = {
+            ("2026-10-21", ()): 22,
+            ("2026-10-23", ()): 23,  # Friday night
+            ("2026-10-24", ()): 23,  # Saturday night
+            ("2026-10-25", ()): 22,  # Sunday night
+            ("2026-10-21", ("2026-10-22",)): 23,  # night before a holiday
+            ("2026-10-21", ("2026-10-21",)): 22,  # holiday, back to work tomorrow
+        }
+        for (day, holidays), hour in cases.items():
+            self.assertEqual(bedtime.bedtime_hour(day, list(holidays)), hour, day)
+
+    def test_messages_name_the_bedtime(self):
+        plan = bedtime.plan_check(bedtime.State(), TODAY, 6.0, [])
+        self.assertIn("in bed by 11pm", bedtime.check_message(plan, 23))
+        self.assertIn("by 11pm.", bedtime.cherry_message(23))
+        self.assertIn("by 10pm.", bedtime.cherry_message(22))
+        self.assertIn("11pm bedtime", bedtime.remind_notes(6.0, 23))
 
     def test_missing_holiday_list_does_not_arm(self):
         plan = bedtime.plan_check(bedtime.State(), TODAY, 4.0, None)
@@ -152,9 +198,9 @@ class PlanTests(unittest.TestCase):
         self.assertFalse(again.block)
         self.assertFalse(again.cherry)
 
-    def test_apply_skips_a_holiday_and_an_unarmed_day(self):
+    def test_apply_runs_on_a_holiday_but_not_an_unarmed_day(self):
         armed = bedtime.State(early_date=TODAY)
-        self.assertEqual(bedtime.plan_apply(armed, TODAY, [TODAY]), bedtime.ApplyPlan(False, False))
+        self.assertEqual(bedtime.plan_apply(armed, TODAY, [TODAY]), bedtime.ApplyPlan(True, True))
         self.assertEqual(
             bedtime.plan_apply(bedtime.State(), TODAY, []),
             bedtime.ApplyPlan(False, False),
@@ -175,7 +221,7 @@ class PlanTests(unittest.TestCase):
     def test_status_word(self):
         armed = bedtime.State(early_date=TODAY)
         self.assertEqual(bedtime.status_label(armed, TODAY, []), "early")
-        self.assertEqual(bedtime.status_label(armed, TODAY, [TODAY]), "normal")
+        self.assertEqual(bedtime.status_label(armed, TODAY, [TODAY]), "early")
         self.assertEqual(bedtime.status_label(bedtime.State(), TODAY, []), "normal")
         self.assertEqual(bedtime.status_label(armed, TODAY, None), "normal")
 
@@ -192,18 +238,24 @@ class ShortcutTests(unittest.TestCase):
         identifiers = [item["WFWorkflowActionIdentifier"] for item in workflow["WFWorkflowActions"]]
         self.assertIn("is.workflow.actions.filter.health.quantity", identifiers)
         self.assertIn("is.workflow.actions.runsshscript", identifiers)
-        ssh = workflow["WFWorkflowActions"][-1]["WFWorkflowActionParameters"]
+        self.assertEqual(len(identifiers), 3)
+        health, ssh = (item["WFWorkflowActionParameters"] for item in workflow["WFWorkflowActions"][:2])
         script = ssh["WFSSHScript"]["Value"]["string"]
         self.assertIn("early_bedtime.py", script)
         self.assertIn(" check ", script)
         self.assertEqual(ssh["WFSSHHost"], "192.168.1.101")
         self.assertEqual(ssh["WFSSHPort"], "62561")
-        health = workflow["WFWorkflowActions"][1]["WFWorkflowActionParameters"]
-        type_row = health["WFContentItemFilter"]["Value"]["WFActionParameterFilterTemplates"][0]
-        self.assertEqual(type_row["Values"]["Enumeration"]["Value"], "Sleep")
-        marker = script.index("\ufffc")
-        attachment = ssh["WFSSHScript"]["Value"]["attachmentsByRange"][f"{{{marker}, 1}}"]
-        self.assertEqual(attachment["OutputUUID"], shortcuts.COMBINE)
+        rows = health["WFContentItemFilter"]["Value"]["WFActionParameterFilterTemplates"]
+        self.assertEqual(rows[0]["Values"]["Enumeration"]["Value"], "Sleep")
+        self.assertEqual(rows[1]["Values"], {"Number": 1, "Unit": 16})
+        found = []
+        for where, token in ssh["WFSSHScript"]["Value"]["attachmentsByRange"].items():
+            self.assertEqual(script[int(where[1:].split(",")[0])], shortcuts.MARKER)
+            prop, *formats = token["Aggrandizements"]
+            found.append(prop["PropertyName"])
+            if formats:
+                self.assertTrue(formats[0]["WFISO8601IncludeTime"])
+        self.assertEqual(found, ["Value", "Start Date", "End Date"])
 
     def test_dnd_shortcut_turns_focus_on_only_after_status(self):
         workflow = shortcuts.dnd_workflow()

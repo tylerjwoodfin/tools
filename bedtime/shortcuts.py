@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Build the two Shortcuts that drive early bedtime.
 
-Early Bedtime Check reads Apple Health sleep and SSHes the rows to cloud.
+Early Bedtime Check sends last night's Apple Health sleep to cloud, which saves
+the time asleep and returns it for a notification.
 Early Bedtime Do Not Disturb asks cloud whether today is armed, and turns
 Do Not Disturb on only when the answer is early.
 
@@ -32,19 +33,12 @@ CLOUD_USER = "tyler"
 SCRIPT = '/usr/bin/python3 "$HOME/git/tools/bedtime/early_bedtime.py"'
 
 FIND = "4B1C0A11-4480-4E11-9C10-000000000001"
-REPEAT_GROUP = "4B1C0A11-4480-4E11-9C10-000000000002"
-DETAIL_VALUE = "4B1C0A11-4480-4E11-9C10-000000000003"
-DETAIL_START = "4B1C0A11-4480-4E11-9C10-000000000004"
-DETAIL_END = "4B1C0A11-4480-4E11-9C10-000000000005"
-FORMAT_START = "4B1C0A11-4480-4E11-9C10-000000000006"
-FORMAT_END = "4B1C0A11-4480-4E11-9C10-000000000007"
-TEXT = "4B1C0A11-4480-4E11-9C10-000000000008"
-COMBINE = "4B1C0A11-4480-4E11-9C10-000000000009"
 CHECK_SSH = "4B1C0A11-4480-4E11-9C10-00000000000A"
 DND_SSH = "4B1C0A11-4480-4E11-9C10-00000000000B"
 DND_GROUP = "4B1C0A11-4480-4E11-9C10-00000000000C"
 
 MARKER = "\ufffc"
+DAYS = 16  # NSCalendarUnitDay. 16384 is week-based years.
 
 
 def _action(identifier: str, **params: object) -> dict:
@@ -61,13 +55,6 @@ def _output(uuid: str, name: str) -> dict:
     }
 
 
-def _variable(name: str) -> dict:
-    return {
-        "Value": {"VariableName": name, "Type": "Variable"},
-        "WFSerializationType": "WFTextTokenAttachment",
-    }
-
-
 def _text(body: str, attachments: dict) -> dict:
     return {
         "Value": {"string": body, "attachmentsByRange": attachments},
@@ -75,29 +62,37 @@ def _text(body: str, attachments: dict) -> dict:
     }
 
 
-def _slot(body: str, uuid: str, name: str) -> dict:
-    """A text token whose only character is one action output."""
-    if body != MARKER:
-        raise ValueError("slot text must be the object-replacement character")
-    return _text(body, {"{0, 1}": {"OutputUUID": uuid, "Type": "ActionOutput", "OutputName": name}})
+def _property(name: str, *formats: dict) -> dict:
+    """One property of every sample found. A list becomes one item per line."""
+    return {
+        "OutputUUID": FIND,
+        "OutputName": "Health Samples",
+        "Type": "ActionOutput",
+        "Aggrandizements": [
+            {"Type": "WFPropertyVariableAggrandizement", "PropertyName": name},
+            *formats,
+        ],
+    }
 
 
 def check_ssh_script() -> dict:
-    """Remote command. The combined sample text is inserted before the heredoc end."""
-    prefix = SCRIPT + " check <<'EARLY_BEDTIME_END'\n"
-    suffix = "\nEARLY_BEDTIME_END\n"
-    body = prefix + MARKER + suffix
-    index = body.index(MARKER)
-    return _text(
-        body,
-        {
-            f"{{{index}, 1}}": {
-                "OutputUUID": COMBINE,
-                "Type": "ActionOutput",
-                "OutputName": "Combined Text",
-            }
-        },
-    )
+    """Remote command carrying three lists, so the phone needs no loop."""
+    iso_time = {
+        "Type": "WFDateFormatVariableAggrandizement",
+        "WFDateFormatStyle": "ISO 8601",
+        "WFISO8601IncludeTime": True,
+    }
+    body = SCRIPT + " check <<'EARLY_BEDTIME_END'\n"
+    attachments = {}
+    for header, token in (
+        ("VALUES", _property("Value")),
+        ("STARTS", _property("Start Date", iso_time)),
+        ("ENDS", _property("End Date", iso_time)),
+    ):
+        body += header + "\n"
+        attachments[f"{{{len(body)}, 1}}"] = token
+        body += MARKER + "\n"
+    return _text(body + "EARLY_BEDTIME_END\n", attachments)
 
 
 def _ssh(uuid: str, script) -> dict:
@@ -135,7 +130,7 @@ def _health_filter() -> dict:
                     "Operator": 1001,
                     "Property": "Start Date",
                     "Removable": True,
-                    "Values": {"Number": 2, "Unit": 16384},
+                    "Values": {"Number": 1, "Unit": DAYS},
                 },
             ],
         },
@@ -143,93 +138,29 @@ def _health_filter() -> dict:
     }
 
 
-def _detail(uuid: str, prop: str) -> dict:
-    return _action(
-        "is.workflow.actions.properties.health.quantity",
-        UUID=uuid,
-        WFContentItemPropertyName=prop,
-        WFInput=_variable("Repeat Item"),
-    )
-
-
-def _format_date(uuid: str, source: str, source_name: str) -> dict:
-    return _action(
-        "is.workflow.actions.format.date",
-        UUID=uuid,
-        WFDateFormatStyle="ISO 8601",
-        WFDate=_slot(MARKER, source, source_name),
-    )
-
-
 def check_workflow() -> dict:
-    """Shortcut run by a 12:00pm personal automation."""
-    sample_line = MARKER + "\t" + MARKER + "\t" + MARKER
+    """Find last night, send it to cloud, show the duration that came back."""
     actions = [
-        _action(
-            "is.workflow.actions.comment",
-            WFCommentActionText=(
-                "Automation: every day at 12:00pm, run immediately. "
-                "Allow Shortcuts to read Sleep in the Health app."
-            ),
-        ),
         _action(
             "is.workflow.actions.filter.health.quantity",
             UUID=FIND,
             WFContentItemFilter=_health_filter(),
         ),
+        _ssh(CHECK_SSH, check_ssh_script()),
         _action(
-            "is.workflow.actions.repeat.each",
-            GroupingIdentifier=REPEAT_GROUP,
-            WFControlFlowMode=0,
-            WFInput=_output(FIND, "Health Samples"),
-        ),
-        _detail(DETAIL_VALUE, "Value"),
-        _detail(DETAIL_START, "Start Date"),
-        _detail(DETAIL_END, "End Date"),
-        _format_date(FORMAT_START, DETAIL_START, "Start Date"),
-        _format_date(FORMAT_END, DETAIL_END, "End Date"),
-        _action(
-            "is.workflow.actions.gettext",
-            UUID=TEXT,
-            WFTextActionText=_text(
-                sample_line,
+            "is.workflow.actions.notification",
+            WFNotificationActionTitle="Early Bedtime",
+            WFNotificationActionBody=_text(
+                MARKER,
                 {
                     "{0, 1}": {
-                        "OutputUUID": DETAIL_VALUE,
+                        "OutputUUID": CHECK_SSH,
+                        "OutputName": "Shell Script Result",
                         "Type": "ActionOutput",
-                        "OutputName": "Value",
-                    },
-                    "{2, 1}": {
-                        "OutputUUID": FORMAT_START,
-                        "Type": "ActionOutput",
-                        "OutputName": "Formatted Date",
-                    },
-                    "{4, 1}": {
-                        "OutputUUID": FORMAT_END,
-                        "Type": "ActionOutput",
-                        "OutputName": "Formatted Date",
-                    },
+                    }
                 },
             ),
         ),
-        _action(
-            "is.workflow.actions.appendvariable",
-            WFVariableName="Samples",
-            WFInput=_output(TEXT, "Text"),
-        ),
-        _action(
-            "is.workflow.actions.repeat.each",
-            GroupingIdentifier=REPEAT_GROUP,
-            WFControlFlowMode=2,
-        ),
-        _action(
-            "is.workflow.actions.text.combine",
-            UUID=COMBINE,
-            WFTextSeparator="Custom",
-            WFTextCustomSeparator="\n",
-            text=_variable("Samples"),
-        ),
-        _ssh(CHECK_SSH, check_ssh_script()),
     ]
     return _workflow("Early Bedtime Check", actions)
 
@@ -318,7 +249,8 @@ def sign_file(path: Path) -> Path:
         raise OSError("The shortcuts CLI is not installed")
 
     workflow = plistlib.loads(path.read_bytes())
-    unsigned = path.with_name(f".{path.name}.unsigned")
+    # `shortcuts sign` rejects input whose name does not end in .shortcut.
+    unsigned = path.with_name(f"{path.stem}.unsigned.shortcut")
     backup = path.with_name(f".{path.name}.backup")
     with unsigned.open("wb") as handle:
         plistlib.dump(workflow, handle, fmt=plistlib.FMT_BINARY)
