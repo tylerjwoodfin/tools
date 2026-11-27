@@ -22,6 +22,9 @@
 ## Early bedtime
 - [`bedtime/`](bedtime/) — at noon, if Apple Health sleep last night was under 7 hours and today is not a holiday, send an Early Bedtime reminder and block Pi-hole at 8:30pm.
 
+## SFPL DIY Digi Lab
+- [`sfpl_digilab/`](sfpl_digilab/) — every 3 hours, email new open appointments at the SFPL DIY Digital Archive Lab. Sent slots live in Cabinet `sfpl_digilab.sent`.
+
 ## Amazon order (Playwright)
 - [`amazon/`](amazon/) — `amazon <description>` searches Amazon, uses ChatGPT to pick a match, confirms, and places the order. Optional browser server: `~/git/docker/playwright`.
 
