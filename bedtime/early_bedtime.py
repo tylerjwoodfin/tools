@@ -3,10 +3,11 @@
 
 At noon, an iPhone shortcut reads Apple Health and calls ``check``. When the
 asleep time from 6pm yesterday through noon is under 7 hours, this sends a
-RemindMail named Early Bedtime and arms 8:30pm. At 8:30pm, ``apply`` blocks the
-Pi-hole afternoon list (the same list as the 9:30pm cron) and asks Cherry to
-remind Tyler to be in bed by 10pm, or 11pm when tomorrow is a Saturday, Sunday,
-or in ``cabinet -g holidays``.
+RemindMail named Early Bedtime and arms the evening. Bedtime is 10pm, or 11pm
+when tomorrow is a Saturday, Sunday, or in ``cabinet -g holidays``. ``apply``
+runs from cron at 8:30pm and 10:30pm: Cherry sends a reminder at 8:30pm, and
+the Pi-hole afternoon list blocks an hour before its regular cron (8:30pm
+instead of 9:30pm, or 10:30pm instead of 11:30pm before a day off).
 
 No sleep samples means the watch did not report a night, so the protocol stays
 off.
@@ -29,6 +30,9 @@ BLOCK_MODE = "afternoon"
 REMIND_TITLE = "Early Bedtime"
 WEEKDAY_BEDTIME = 22
 DAY_OFF_BEDTIME = 23
+# Early block, an hour before the regular downtime cron for that night.
+BLOCK_AT = {WEEKDAY_BEDTIME: (20, 30), DAY_OFF_BEDTIME: (22, 30)}
+REGULAR_BLOCK_AT = {WEEKDAY_BEDTIME: (21, 30), DAY_OFF_BEDTIME: (23, 30)}
 DOWNTIME = Path(__file__).resolve().parent.parent / "pihole" / "downtime.py"
 
 ASLEEP_KEYS = {
@@ -77,7 +81,7 @@ class CheckPlan:
 
 @dataclass(frozen=True)
 class ApplyPlan:
-    """What ``apply`` should do at 8:30pm."""
+    """What an ``apply`` run should do now."""
 
     block: bool
     cherry: bool
@@ -284,11 +288,16 @@ def state_before_remind(previous: State, plan: CheckPlan) -> State:
     return plan.state
 
 
-def plan_apply(state: State, today: str, holidays: list[str] | None) -> ApplyPlan:
-    """8:30pm actions. An unreadable holiday list does nothing."""
+def plan_apply(
+    state: State, today: str, holidays: list[str] | None, block_due: bool = True
+) -> ApplyPlan:
+    """Evening actions. ``block_due`` is False before tonight's block time.
+
+    An unreadable holiday list does nothing.
+    """
     if holidays is None or state.early_date != today:
         return ApplyPlan(False, False)
-    return ApplyPlan(state.blocked != today, state.cherry != today)
+    return ApplyPlan(block_due and state.blocked != today, state.cherry != today)
 
 
 def bedtime_hour(today: str, holidays: list[str]) -> int:
@@ -299,15 +308,25 @@ def bedtime_hour(today: str, holidays: list[str]) -> int:
     return WEEKDAY_BEDTIME
 
 
-def clock(hour: int) -> str:
-    """``22`` -> ``10pm``."""
-    return f"{hour - 12}pm"
+def clock(hour: int, minute: int = 0) -> str:
+    """``22`` -> ``10pm``; ``(22, 30)`` -> ``10:30pm``."""
+    shown = f"{hour - 12}:{minute:02d}" if minute else f"{hour - 12}"
+    return f"{shown}pm"
+
+
+def block_due(hour: int, now: datetime) -> bool:
+    """True once ``now`` reaches the early block time for a ``hour`` bedtime."""
+    return (now.hour, now.minute) >= BLOCK_AT[hour]
 
 
 def cherry_message(hour: int) -> str:
     """The 8:30pm Telegram nudge."""
+    if BLOCK_AT[hour] <= (20, 30):
+        pihole = "Pi-hole is blocking now."
+    else:
+        pihole = f"Pi-hole blocks at {clock(*BLOCK_AT[hour])}."
     return (
-        "Early bedtime tonight. Pi-hole is blocking now. "
+        f"Early bedtime tonight. {pihole} "
         f"Start winding down so you can be in bed by {clock(hour)}."
     )
 
@@ -347,18 +366,26 @@ def remind_notes(hours: float, hour: int = WEEKDAY_BEDTIME) -> str:
     shown = f"{hours:.1f}"
     return (
         f"You slept {shown} hours last night, under 7.<br>"
-        "Pi-hole blocks at 8:30pm instead of 9:30pm.<br>"
-        f"Cherry will remind you at 8:30pm to prepare for a {clock(hour)} bedtime."
+        f"Pi-hole blocks at {clock(*BLOCK_AT[hour])} instead of "
+        f"{clock(*REGULAR_BLOCK_AT[hour])}.<br>"
+        f"Cherry will remind you at 8:30pm to be in bed by {clock(hour)}."
     )
 
 
-def run_apply(state: State, today: str, holidays: list[str] | None, block, cherry):
-    """Run the 8:30pm side effects.
+def run_apply(
+    state: State,
+    today: str,
+    holidays: list[str] | None,
+    block,
+    cherry,
+    due: bool = True,
+):
+    """Run the evening side effects. ``due`` is whether the block time has come.
 
     Returns ``(state, label)``. ``label`` is ``skip``, ``applied``, or
     ``cherry-failed``. A Pi-hole error is raised before Cherry is messaged.
     """
-    plan = plan_apply(state, today, holidays)
+    plan = plan_apply(state, today, holidays, due)
     current = state
     if plan.block:
         block()
@@ -458,7 +485,7 @@ def send_cherry(hour: int) -> None:
 
 
 def block_pihole() -> None:
-    """Block the 9:30pm distraction list.
+    """Block the regular downtime list (the 9:30pm and 11:30pm cron list).
 
     ``--force`` skips downtime's own check, which never blocks before a holiday.
     """
@@ -533,7 +560,8 @@ def cmd_apply(dry_run: bool) -> int:
     holidays = load_holidays(cab)
     previous = load_state(cab)
     today = _today()
-    plan = plan_apply(previous, today, holidays)
+    hour = bedtime_hour(today, holidays or [])
+    plan = plan_apply(previous, today, holidays, block_due(hour, _now()))
     if dry_run:
         print("block" if plan.block else "no-block")
         print("cherry" if plan.cherry else "no-cherry")
@@ -553,7 +581,7 @@ def cmd_apply(dry_run: bool) -> int:
         save_block()
     if plan.cherry:
         try:
-            send_cherry(bedtime_hour(today, holidays or []))
+            send_cherry(hour)
         except Exception as exc:  # cabinet/telegram failures are not one type
             print(f"cherry failed: {exc}", file=sys.stderr)
             return 1
@@ -579,7 +607,7 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("--hours", help="Skip samples and use this asleep total")
     check.add_argument("--dry-run", action="store_true")
 
-    apply_cmd = sub.add_parser("apply", help="8:30pm Pi-hole block and Cherry reminder")
+    apply_cmd = sub.add_parser("apply", help="Evening Pi-hole block and Cherry reminder (cron 8:30pm and 10:30pm)")
     apply_cmd.add_argument("--dry-run", action="store_true")
 
     sub.add_parser("status", help="Print early or normal")

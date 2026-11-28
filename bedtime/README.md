@@ -3,7 +3,7 @@
 If Apple Health shows less than 7 hours asleep from 6pm yesterday through noon:
 
 - RemindMail sends **Early Bedtime** at noon.
-- At 8:30pm, Pi-hole runs `downtime.py block afternoon --force` (the same YouTube/Roblox list as the 9:30pm cron).
+- Pi-hole runs `downtime.py block afternoon --force` (the same YouTube/Roblox list as the regular cron) an hour early: 8:30pm instead of 9:30pm, or 10:30pm instead of 11:30pm when tomorrow is a Saturday, Sunday, or holiday.
 - Cherry sends a Telegram reminder at 8:30pm to be in bed by 10pm, or by 11pm when tomorrow is a Saturday, Sunday, or in `cabinet -g holidays`.
 - Do Not Disturb turns on at 8:30pm when the shortcut below runs.
 
@@ -15,6 +15,7 @@ On cloud, after this repo is on `main`:
 
 ```cron
 30 20 * * * if [ -f "$HOME/git/tools/bedtime/early_bedtime.py" ]; then /usr/bin/python3 "$HOME/git/tools/bedtime/early_bedtime.py" apply; fi
+30 22 * * * if [ -f "$HOME/git/tools/bedtime/early_bedtime.py" ]; then /usr/bin/python3 "$HOME/git/tools/bedtime/early_bedtime.py" apply; fi
 ```
 
 The `if` keeps the job quiet until the file is present.

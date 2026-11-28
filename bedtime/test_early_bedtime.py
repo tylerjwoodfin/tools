@@ -157,7 +157,33 @@ class PlanTests(unittest.TestCase):
         self.assertIn("in bed by 11pm", bedtime.check_message(plan, 23))
         self.assertIn("by 11pm.", bedtime.cherry_message(23))
         self.assertIn("by 10pm.", bedtime.cherry_message(22))
-        self.assertIn("11pm bedtime", bedtime.remind_notes(6.0, 23))
+        self.assertIn("in bed by 11pm", bedtime.remind_notes(6.0, 23))
+
+    def test_block_an_hour_before_the_regular_cron(self):
+        self.assertIn("8:30pm instead of 9:30pm", bedtime.remind_notes(6.0, 22))
+        self.assertIn("10:30pm instead of 11:30pm", bedtime.remind_notes(6.0, 23))
+        self.assertIn("Pi-hole is blocking now.", bedtime.cherry_message(22))
+        self.assertIn("Pi-hole blocks at 10:30pm.", bedtime.cherry_message(23))
+
+    def test_block_waits_for_its_time(self):
+        def at_clock(h, m):
+            return datetime(2026, 11, 27, h, m, 1, tzinfo=PT)
+
+        self.assertTrue(bedtime.block_due(22, at_clock(20, 30)))
+        self.assertFalse(bedtime.block_due(23, at_clock(20, 30)))
+        self.assertTrue(bedtime.block_due(23, at_clock(22, 30)))
+
+        armed = bedtime.State(early_date=TODAY)
+        # Day off at 8:30pm: Cherry only. At 10:30pm: the block.
+        calls = []
+        state, _ = bedtime.run_apply(
+            armed, TODAY, [], lambda: calls.append("block"), lambda: calls.append("cherry"), False
+        )
+        state, _ = bedtime.run_apply(
+            state, TODAY, [], lambda: calls.append("block"), lambda: calls.append("cherry"), True
+        )
+        self.assertEqual(calls, ["cherry", "block"])
+        self.assertEqual((state.blocked, state.cherry), (TODAY, TODAY))
 
     def test_missing_holiday_list_does_not_arm(self):
         plan = bedtime.plan_check(bedtime.State(), TODAY, 4.0, None)
@@ -229,7 +255,7 @@ class PlanTests(unittest.TestCase):
         notes = bedtime.remind_notes(6.24)
         self.assertIn("6.2 hours", notes)
         self.assertIn("8:30pm", notes)
-        self.assertIn("10pm", notes)
+        self.assertIn("in bed by 10pm", notes)
 
 
 class ShortcutTests(unittest.TestCase):
